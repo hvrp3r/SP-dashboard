@@ -191,6 +191,7 @@ name VARCHAR(100) NOT NULL,
 description TEXT,
 image_url TEXT,
 cost_sp INT NOT NULL,                  -- mise fixe pour ouvrir cette caisse
+max_opens_per_player INT,              -- NULL = illimité ; sinon nb max d'ouvertures par joueur, à vie
 is_active BOOLEAN NOT NULL DEFAULT TRUE,
 created_by INT REFERENCES users(id),
 created_at TIMESTAMPTZ DEFAULT NOW()
@@ -382,7 +383,7 @@ Un défi peut réunir **plusieurs adversaires au sein d'un même défi** (un seu
 Section fusionnée dans une page joueur (`/gambling`, contrôles MSP visibles seulement si `user.role === 'admin'`) — même pattern que les Mini-Jeux, pas de page `/admin/gambling` séparée.
 
 #### Principe :
-- Le MSP configure une ou plusieurs **caisses** (`gambling_crates`) : nom, description, image, coût fixe (`cost_sp`) pour l'ouvrir.
+- Le MSP configure une ou plusieurs **caisses** (`gambling_crates`) : nom, description, image, coût fixe (`cost_sp`) pour l'ouvrir, et optionnellement un nombre max d'ouvertures par joueur (`max_opens_per_player`, NULL = illimité — ex : caisse événement limitée à 3 ouvertures/joueur, comptées à vie sur `gambling_opens`, pas remises à zéro par saison). Une fois la limite atteinte, le bouton d'ouverture est désactivé côté client et le serveur refuse quand même la requête (mêmes verrous que le plafond quotidien).
 - Chaque caisse a un pool de récompenses (`gambling_crate_rewards`) configuré librement par le MSP :
   - **Gain SP classique** (`type='sp'`) : montant SP fixe.
   - **Gain personnalisé** (`type='custom'`) : titre + image, **sans valeur SP** — purement cosmétique/collection, aucun effet sur l'économie.

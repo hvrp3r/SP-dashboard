@@ -2,6 +2,7 @@ import { pool } from '../db/pool.js';
 import * as spService from './sp.service.js';
 import * as configService from './config.service.js';
 import type {
+  GamblingCrateEntry,
   GamblingCrateRewardRow,
   GamblingCrateRow,
   GamblingInventoryEntry,
@@ -14,17 +15,22 @@ function todayStartUTC(): string {
   return `${new Date().toISOString().slice(0, 10)}T00:00:00.000Z`;
 }
 
-export async function listCrates(includeInactive: boolean): Promise<GamblingCrateRow[]> {
-  if (includeInactive) {
-    const { rows } = await pool.query<GamblingCrateRow>(
-      'SELECT * FROM gambling_crates ORDER BY created_at DESC'
-    );
-    return rows;
-  }
-  const { rows } = await pool.query<GamblingCrateRow>(
-    'SELECT * FROM gambling_crates WHERE is_active = true ORDER BY created_at DESC'
+export async function listCrates(
+  includeInactive: boolean,
+  userId: number
+): Promise<GamblingCrateEntry[]> {
+  const { rows } = await pool.query<GamblingCrateRow & { my_open_count: string }>(
+    `SELECT c.*,
+       (SELECT COUNT(*) FROM gambling_opens o WHERE o.crate_id = c.id AND o.user_id = $1) AS my_open_count
+     FROM gambling_crates c
+     ${includeInactive ? '' : 'WHERE c.is_active = true'}
+     ORDER BY c.created_at DESC`,
+    [userId]
   );
-  return rows;
+  return rows.map(({ my_open_count, ...crate }) => ({
+    ...crate,
+    myOpenCount: Number(my_open_count),
+  }));
 }
 
 export async function getCrateById(id: number): Promise<GamblingCrateRow | null> {
@@ -40,6 +46,7 @@ interface CreateCrateInput {
   description: string | null;
   imageUrl: string | null;
   costSp: number;
+  maxOpensPerPlayer: number | null;
   createdBy: number;
 }
 
@@ -48,13 +55,14 @@ export async function createCrate({
   description,
   imageUrl,
   costSp,
+  maxOpensPerPlayer,
   createdBy,
 }: CreateCrateInput): Promise<GamblingCrateRow> {
   const { rows } = await pool.query<GamblingCrateRow>(
-    `INSERT INTO gambling_crates (name, description, image_url, cost_sp, created_by)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO gambling_crates (name, description, image_url, cost_sp, max_opens_per_player, created_by)
+     VALUES ($1, $2, $3, $4, $5, $6)
      RETURNING *`,
-    [name, description, imageUrl, costSp, createdBy]
+    [name, description, imageUrl, costSp, maxOpensPerPlayer, createdBy]
   );
   return rows[0] as GamblingCrateRow;
 }
@@ -64,6 +72,7 @@ interface UpdateCrateInput {
   description?: string | null;
   imageUrl?: string | null;
   costSp?: number;
+  maxOpensPerPlayer?: number | null;
   isActive?: boolean;
 }
 
@@ -79,14 +88,25 @@ export async function updateCrate(
     description: patch.description !== undefined ? patch.description : current.description,
     image_url: patch.imageUrl !== undefined ? patch.imageUrl : current.image_url,
     cost_sp: patch.costSp ?? current.cost_sp,
+    max_opens_per_player:
+      patch.maxOpensPerPlayer !== undefined ? patch.maxOpensPerPlayer : current.max_opens_per_player,
     is_active: patch.isActive ?? current.is_active,
   };
 
   const { rows } = await pool.query<GamblingCrateRow>(
-    `UPDATE gambling_crates SET name = $1, description = $2, image_url = $3, cost_sp = $4, is_active = $5
-     WHERE id = $6
+    `UPDATE gambling_crates
+     SET name = $1, description = $2, image_url = $3, cost_sp = $4, max_opens_per_player = $5, is_active = $6
+     WHERE id = $7
      RETURNING *`,
-    [next.name, next.description, next.image_url, next.cost_sp, next.is_active, id]
+    [
+      next.name,
+      next.description,
+      next.image_url,
+      next.cost_sp,
+      next.max_opens_per_player,
+      next.is_active,
+      id,
+    ]
   );
   return rows[0] ?? null;
 }
@@ -127,9 +147,14 @@ export async function removeCrate(id: number): Promise<void> {
   }
 }
 
+/**
+ * Triée par poids croissant (donc du plus rare au plus commun) — c'est l'ordre
+ * d'affichage attendu côté joueur ("Gains possibles") et côté MSP ("Gérer les
+ * gains"), les deux réutilisant cette même liste.
+ */
 export async function listRewards(crateId: number): Promise<GamblingCrateRewardRow[]> {
   const { rows } = await pool.query<GamblingCrateRewardRow>(
-    'SELECT * FROM gambling_crate_rewards WHERE crate_id = $1 ORDER BY created_at ASC',
+    'SELECT * FROM gambling_crate_rewards WHERE crate_id = $1 ORDER BY weight ASC, created_at ASC',
     [crateId]
   );
   return rows;
@@ -212,6 +237,14 @@ export async function removeReward(id: number): Promise<void> {
   await pool.query('DELETE FROM gambling_crate_rewards WHERE id = $1', [id]);
 }
 
+export async function getUserOpenCount(userId: number, crateId: number): Promise<number> {
+  const { rows } = await pool.query<{ count: string }>(
+    'SELECT COUNT(*) FROM gambling_opens WHERE user_id = $1 AND crate_id = $2',
+    [userId, crateId]
+  );
+  return Number(rows[0]?.count ?? 0);
+}
+
 export async function getTodaySpend(userId: number): Promise<number> {
   const { rows } = await pool.query<{ spent: string | null }>(
     `SELECT SUM(-amount) AS spent FROM sp_transactions
@@ -242,8 +275,9 @@ interface OpenCrateResult {
  * Ouvre une caisse : débite le coût, tire un gain pondéré, crédite le gain SP
  * s'il y en a un. Le verrou de ligne sur l'utilisateur sérialise les ouvertures
  * concurrentes du même joueur — sans lui, deux requêtes parallèles pourraient
- * toutes les deux lire un budget quotidien encore sous le plafond avant qu'aucune
- * n'ait débité, et le dépasser (même raison que le bonus de connexion, voir
+ * toutes les deux lire un budget quotidien (ou un nombre d'ouvertures déjà
+ * effectuées sur cette caisse) encore sous le plafond avant qu'aucune n'ait
+ * débité/inséré, et le dépasser (même raison que le bonus de connexion, voir
  * loginBonus.service.ts).
  */
 export async function openCrate(
@@ -287,6 +321,22 @@ export async function openCrate(
         ),
         { status: 400 }
       );
+    }
+
+    if (crate.max_opens_per_player !== null) {
+      const { rows: openCountRows } = await client.query<{ count: string }>(
+        'SELECT COUNT(*) FROM gambling_opens WHERE user_id = $1 AND crate_id = $2',
+        [userId, crateId]
+      );
+      const openCount = Number(openCountRows[0]?.count ?? 0);
+      if (openCount >= crate.max_opens_per_player) {
+        throw Object.assign(
+          new Error(
+            `Tu as atteint la limite d'ouvertures pour cette caisse (${openCount}/${crate.max_opens_per_player})`
+          ),
+          { status: 400 }
+        );
+      }
     }
 
     const spendTx = await spService.debitSP({

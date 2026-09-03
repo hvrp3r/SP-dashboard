@@ -16,7 +16,7 @@ function withPercent(rewards: GamblingCrateRewardRow[]): GamblingCrateRewardView
 
 export async function listCrates(req: Request, res: Response): Promise<void> {
   const includeInactive = req.user?.role === 'admin' && req.query.includeInactive === 'true';
-  const crates = await gamblingService.listCrates(includeInactive);
+  const crates = await gamblingService.listCrates(includeInactive, req.user!.id);
   res.json(crates);
 }
 
@@ -32,7 +32,8 @@ export async function getCrate(req: Request<{ id: string }>, res: Response): Pro
     return;
   }
   const rewards = await gamblingService.listRewards(crateId);
-  res.json({ ...crate, rewards: withPercent(rewards) });
+  const myOpenCount = await gamblingService.getUserOpenCount(req.user!.id, crateId);
+  res.json({ ...crate, rewards: withPercent(rewards), myOpenCount });
 }
 
 interface CreateCrateBody {
@@ -40,6 +41,7 @@ interface CreateCrateBody {
   description?: string;
   imageUrl?: string;
   costSp?: number;
+  maxOpensPerPlayer?: number | null;
 }
 
 export async function createCrate(
@@ -50,6 +52,7 @@ export async function createCrate(
   const description = req.body?.description?.trim();
   const imageUrl = req.body?.imageUrl?.trim();
   const costSp = req.body?.costSp;
+  const maxOpensPerPlayer = req.body?.maxOpensPerPlayer;
 
   if (!name) {
     res.status(400).json({ error: 'Le nom est requis' });
@@ -59,12 +62,23 @@ export async function createCrate(
     res.status(400).json({ error: 'Le coût doit être un entier positif' });
     return;
   }
+  if (
+    maxOpensPerPlayer !== undefined &&
+    maxOpensPerPlayer !== null &&
+    (!Number.isInteger(maxOpensPerPlayer) || maxOpensPerPlayer <= 0)
+  ) {
+    res
+      .status(400)
+      .json({ error: "La limite d'ouvertures par joueur doit être un entier positif" });
+    return;
+  }
 
   const crate = await gamblingService.createCrate({
     name,
     description: description || null,
     imageUrl: imageUrl || null,
     costSp: costSp as number,
+    maxOpensPerPlayer: maxOpensPerPlayer ?? null,
     createdBy: req.user!.id,
   });
   res.status(201).json(crate);
@@ -75,6 +89,7 @@ interface UpdateCrateBody {
   description?: string | null;
   imageUrl?: string | null;
   costSp?: number;
+  maxOpensPerPlayer?: number | null;
   isActive?: boolean;
 }
 
@@ -92,12 +107,23 @@ export async function updateCrate(
     res.status(400).json({ error: 'Le coût doit être un entier positif' });
     return;
   }
+  if (
+    body.maxOpensPerPlayer !== undefined &&
+    body.maxOpensPerPlayer !== null &&
+    (!Number.isInteger(body.maxOpensPerPlayer) || body.maxOpensPerPlayer <= 0)
+  ) {
+    res
+      .status(400)
+      .json({ error: "La limite d'ouvertures par joueur doit être un entier positif" });
+    return;
+  }
 
   const updated = await gamblingService.updateCrate(crateId, {
     name: body.name?.trim(),
     description: body.description !== undefined ? body.description?.trim() || null : undefined,
     imageUrl: body.imageUrl !== undefined ? body.imageUrl?.trim() || null : undefined,
     costSp: body.costSp,
+    maxOpensPerPlayer: body.maxOpensPerPlayer,
     isActive: body.isActive,
   });
   if (!updated) {

@@ -93,6 +93,7 @@ export default function GamblingCrateDetail() {
   const [editDescription, setEditDescription] = useState('');
   const [editImageUrl, setEditImageUrl] = useState('');
   const [editCostSp, setEditCostSp] = useState('');
+  const [editMaxOpensPerPlayer, setEditMaxOpensPerPlayer] = useState('');
   const [savingCrate, setSavingCrate] = useState(false);
   const [deletingCrate, setDeletingCrate] = useState(false);
 
@@ -115,6 +116,9 @@ export default function GamblingCrateDetail() {
       setEditDescription(data.description ?? '');
       setEditImageUrl(data.image_url ?? '');
       setEditCostSp(String(data.cost_sp));
+      setEditMaxOpensPerPlayer(
+        data.max_opens_per_player !== null ? String(data.max_opens_per_player) : ''
+      );
       setRewardDrafts(Object.fromEntries(data.rewards.map((r) => [r.id, draftFromReward(r)])));
       setError(null);
     } catch (err) {
@@ -147,6 +151,7 @@ export default function GamblingCrateDetail() {
         prev ? { ...prev, spentToday: result.spentToday, maxWagerPerDay: result.maxWagerPerDay } : prev
       );
       if (user) setUser({ ...user, sp_balance: result.balance });
+      setCrate((prev) => (prev ? { ...prev, myOpenCount: prev.myOpenCount + 1 } : prev));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur inconnue');
       setOpening(false);
@@ -170,6 +175,7 @@ export default function GamblingCrateDetail() {
         description: editDescription.trim() || null,
         imageUrl: editImageUrl.trim() || null,
         costSp: Number(editCostSp),
+        maxOpensPerPlayer: editMaxOpensPerPlayer.trim() ? Number(editMaxOpensPerPlayer) : null,
       });
       setCrate((prev) => (prev ? { ...prev, ...updated } : prev));
     } catch (err) {
@@ -314,8 +320,15 @@ export default function GamblingCrateDetail() {
   const budgetLeft = Math.max(0, maxWagerPerDay - spentToday);
   const canAfford = (user?.sp_balance ?? 0) >= crate.cost_sp;
   const withinBudget = spentToday + crate.cost_sp <= maxWagerPerDay;
+  const reachedOpenLimit =
+    crate.max_opens_per_player !== null && crate.myOpenCount >= crate.max_opens_per_player;
   const canOpen =
-    crate.is_active && (status?.enabled ?? true) && canAfford && withinBudget && !opening;
+    crate.is_active &&
+    (status?.enabled ?? true) &&
+    canAfford &&
+    withinBudget &&
+    !reachedOpenLimit &&
+    !opening;
 
   return (
     <div className="min-h-screen bg-zinc-950 py-10 px-4">
@@ -353,10 +366,20 @@ export default function GamblingCrateDetail() {
           >
             {opening ? 'Ouverture…' : `Ouvrir (${crate.cost_sp} SP)`}
           </button>
-          {!canAfford && (
+          {crate.max_opens_per_player !== null && (
+            <p className="text-xs text-zinc-500 mt-2">
+              {crate.myOpenCount}/{crate.max_opens_per_player} ouvertures utilisées
+            </p>
+          )}
+          {reachedOpenLimit && (
+            <p className="text-xs text-red-400 mt-2">
+              Tu as atteint la limite d'ouvertures pour cette caisse.
+            </p>
+          )}
+          {!reachedOpenLimit && !canAfford && (
             <p className="text-xs text-red-400 mt-2">Solde SP insuffisant.</p>
           )}
-          {canAfford && !withinBudget && (
+          {!reachedOpenLimit && canAfford && !withinBudget && (
             <p className="text-xs text-red-400 mt-2">
               Budget quotidien atteint — il te reste {budgetLeft} SP à miser aujourd'hui.
             </p>
@@ -483,6 +506,14 @@ export default function GamblingCrateDetail() {
                   value={editCostSp}
                   onChange={(e) => setEditCostSp(e.target.value)}
                   placeholder="Coût (SP)"
+                  className="w-full rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+                <input
+                  type="number"
+                  min={1}
+                  value={editMaxOpensPerPlayer}
+                  onChange={(e) => setEditMaxOpensPerPlayer(e.target.value)}
+                  placeholder="Limite d'ouvertures par joueur (optionnel, illimité par défaut)"
                   className="w-full rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 />
               </div>

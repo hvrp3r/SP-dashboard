@@ -4,13 +4,13 @@ import { useAuth } from '../hooks/useAuth.jsx';
 import * as gamblingApi from '../api/gambling.js';
 import GamblingBudgetBar from '../components/GamblingBudgetBar.jsx';
 import CrateIcon from '../components/CrateIcon.jsx';
-import type { GamblingCrate, GamblingStatus } from '../types.js';
+import type { GamblingCrateEntry, GamblingStatus } from '../types.js';
 
 export default function Gambling() {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
 
-  const [crates, setCrates] = useState<GamblingCrate[]>([]);
+  const [crates, setCrates] = useState<GamblingCrateEntry[]>([]);
   const [status, setStatus] = useState<GamblingStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -20,6 +20,7 @@ export default function Gambling() {
   const [description, setDescription] = useState('');
   const [imageUrl, setImageUrl] = useState('');
   const [costSp, setCostSp] = useState('');
+  const [maxOpensPerPlayer, setMaxOpensPerPlayer] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   async function load() {
@@ -55,11 +56,13 @@ export default function Gambling() {
         description: description.trim() || undefined,
         imageUrl: imageUrl.trim() || undefined,
         costSp: Number(costSp),
+        maxOpensPerPlayer: maxOpensPerPlayer.trim() ? Number(maxOpensPerPlayer) : null,
       });
       setName('');
       setDescription('');
       setImageUrl('');
       setCostSp('');
+      setMaxOpensPerPlayer('');
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur inconnue');
@@ -113,6 +116,14 @@ export default function Gambling() {
                 onChange={(e) => setCostSp(e.target.value)}
                 className="w-full rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
               />
+              <input
+                type="number"
+                min={1}
+                placeholder="Limite d'ouvertures par joueur (optionnel, illimité par défaut)"
+                value={maxOpensPerPlayer}
+                onChange={(e) => setMaxOpensPerPlayer(e.target.value)}
+                className="w-full rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              />
               <button
                 type="submit"
                 disabled={submitting}
@@ -161,6 +172,12 @@ export default function Gambling() {
                   )}
                   <p className="text-sm text-emerald-400 font-semibold mt-0.5">
                     {c.cost_sp} SP
+                    {c.max_opens_per_player !== null && (
+                      <span className="text-zinc-500 font-normal">
+                        {' '}
+                        · {c.myOpenCount}/{c.max_opens_per_player}
+                      </span>
+                    )}
                   </p>
                 </div>
               </Link>

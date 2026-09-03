@@ -2,6 +2,7 @@ import { apiClient } from './client.js';
 import type {
   GamblingCrate,
   GamblingCrateDetail,
+  GamblingCrateEntry,
   GamblingCrateReward,
   GamblingInventoryEntry,
   GamblingOpenEntry,
@@ -11,7 +12,7 @@ import type {
 } from '../types.js';
 
 export const listCrates = (includeInactive?: boolean) =>
-  apiClient.get<GamblingCrate[]>(
+  apiClient.get<GamblingCrateEntry[]>(
     `/api/gambling/crates${includeInactive ? '?includeInactive=true' : ''}`
   );
 
@@ -31,6 +32,7 @@ export const createCrate = (input: {
   description?: string;
   imageUrl?: string;
   costSp: number;
+  maxOpensPerPlayer?: number | null;
 }) => apiClient.post<GamblingCrate>('/api/gambling/crates', input);
 
 export const updateCrate = (
@@ -40,6 +42,7 @@ export const updateCrate = (
     description: string | null;
     imageUrl: string | null;
     costSp: number;
+    maxOpensPerPlayer: number | null;
     isActive: boolean;
   }>
 ) => apiClient.put<GamblingCrate>(`/api/gambling/crates/${id}`, patch);

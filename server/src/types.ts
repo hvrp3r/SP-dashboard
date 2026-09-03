@@ -249,6 +249,7 @@ export interface GamblingCrateRow {
   description: string | null;
   image_url: string | null;
   cost_sp: number;
+  max_opens_per_player: number | null;
   is_active: boolean;
   created_by: number | null;
   created_at: string;
@@ -269,7 +270,11 @@ export interface GamblingCrateRewardView extends GamblingCrateRewardRow {
   weight_percent: number;
 }
 
-export interface GamblingCrateDetail extends GamblingCrateRow {
+export interface GamblingCrateEntry extends GamblingCrateRow {
+  myOpenCount: number;
+}
+
+export interface GamblingCrateDetail extends GamblingCrateEntry {
   rewards: GamblingCrateRewardView[];
 }
 
