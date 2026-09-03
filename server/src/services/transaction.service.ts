@@ -17,7 +17,7 @@ export async function listUserTransactions({
   const { rows } = await pool.query<SpTransactionRow>(
     `SELECT * FROM sp_transactions
      WHERE user_id = $1
-     ORDER BY created_at DESC
+     ORDER BY created_at DESC, id DESC
      LIMIT $2 OFFSET $3`,
     [userId, limit, offset]
   );
@@ -63,7 +63,7 @@ export async function listAllTransactions({
      FROM sp_transactions t
      JOIN users u ON u.id = t.user_id
      ${where}
-     ORDER BY t.created_at DESC
+     ORDER BY t.created_at DESC, t.id DESC
      LIMIT $${params.length - 1} OFFSET $${params.length}`,
     params
   );

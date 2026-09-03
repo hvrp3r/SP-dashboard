@@ -2,7 +2,13 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { useAuth } from '../hooks/useAuth.jsx';
 import * as challengesApi from '../api/challenges.js';
 import * as leaderboardApi from '../api/leaderboard.js';
-import type { Challenge, ChallengeParticipant, ChallengeStatus, LeaderboardEntry } from '../types.js';
+import type {
+  Challenge,
+  ChallengeParticipant,
+  ChallengeQuota,
+  ChallengeStatus,
+  LeaderboardEntry,
+} from '../types.js';
 
 const STATUS_LABELS: Record<ChallengeStatus, string> = {
   pending: 'En attente',
@@ -19,14 +25,18 @@ const PARTICIPANT_STATUS_LABELS: Record<ChallengeParticipant['status'], string> 
   declined: 'décliné',
 };
 
+const ACTIVE_STATUSES: ChallengeStatus[] = ['pending', 'accepted'];
+
 const POLL_INTERVAL_MS = 5000;
 
 export default function Challenges() {
   const { user } = useAuth();
   const [challenges, setChallenges] = useState<Challenge[]>([]);
   const [players, setPlayers] = useState<LeaderboardEntry[]>([]);
+  const [quota, setQuota] = useState<ChallengeQuota | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showFinished, setShowFinished] = useState(false);
 
   const [opponentIds, setOpponentIds] = useState<number[]>([]);
   const [wager, setWager] = useState('');
@@ -46,8 +56,13 @@ export default function Challenges() {
     }
   }
 
+  function loadQuota() {
+    challengesApi.getStatus().then(setQuota).catch(() => {});
+  }
+
   useEffect(() => {
     loadChallenges();
+    loadQuota();
     leaderboardApi
       .getLeaderboard('sp_balance')
       .then(setPlayers)
@@ -60,6 +75,7 @@ export default function Challenges() {
   }, []);
 
   const opponents = players.filter((p) => p.id !== user?.id);
+  const quotaReached = quota !== null && quota.countToday >= quota.maxPerDay;
 
   function toggleOpponent(id: number) {
     setOpponentIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -67,7 +83,7 @@ export default function Challenges() {
 
   async function handleCreate(e: FormEvent) {
     e.preventDefault();
-    if (opponentIds.length === 0 || !wager) return;
+    if (opponentIds.length === 0 || !wager || quotaReached) return;
     setError(null);
     setSubmitting(true);
     try {
@@ -76,6 +92,7 @@ export default function Challenges() {
       setOpponentIds([]);
       setDescription('');
       await loadChallenges();
+      loadQuota();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur inconnue');
     } finally {
@@ -98,6 +115,9 @@ export default function Challenges() {
 
   if (!user) return null;
 
+  const activeChallenges = challenges.filter((c) => ACTIVE_STATUSES.includes(c.status));
+  const finishedChallenges = challenges.filter((c) => !ACTIVE_STATUSES.includes(c.status));
+
   return (
     <div className="min-h-screen bg-zinc-950 py-10 px-4">
       <div className="max-w-2xl mx-auto">
@@ -106,7 +126,18 @@ export default function Challenges() {
         {error && <p className="mb-4 text-sm text-red-400">{error}</p>}
 
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl shadow-md p-6 mb-6">
-          <h2 className="font-semibold text-zinc-200 mb-3">Lancer un défi</h2>
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <h2 className="font-semibold text-zinc-200">Lancer un défi</h2>
+            {quota && (
+              <span
+                className={`text-xs px-2 py-1 rounded-full flex-shrink-0 ${
+                  quotaReached ? 'bg-red-500/15 text-red-400' : 'bg-zinc-800 text-zinc-400'
+                }`}
+              >
+                {quota.countToday}/{quota.maxPerDay} défis lancés aujourd'hui
+              </span>
+            )}
+          </div>
           <form onSubmit={handleCreate} className="flex flex-wrap gap-2">
             <div className="w-full">
               <span className="text-sm text-zinc-400">
@@ -159,13 +190,18 @@ export default function Challenges() {
             />
             <button
               type="submit"
-              disabled={submitting || opponentIds.length === 0}
+              disabled={submitting || opponentIds.length === 0 || quotaReached}
               className="bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-semibold px-4 py-2 rounded-md transition disabled:opacity-50"
             >
               Défier{opponentIds.length > 1 ? ` (${opponentIds.length})` : ''}
             </button>
           </form>
-          {opponentIds.length > 1 && wager && (
+          {quotaReached && (
+            <p className="mt-2 text-xs text-red-400">
+              Limite de {quota?.maxPerDay} défis par jour atteinte — reviens demain.
+            </p>
+          )}
+          {!quotaReached && opponentIds.length > 1 && wager && (
             <p className="mt-2 text-xs text-zinc-500">
               Chacun mise {wager} SP · le gagnant remporte le pot entier (
               {Number(wager) * (opponentIds.length + 1)} SP si tout le monde accepte)
@@ -173,153 +209,197 @@ export default function Challenges() {
           )}
         </div>
 
-        <div className="space-y-3">
-          {loading ? (
-            <p className="text-zinc-500">Chargement…</p>
-          ) : challenges.length === 0 ? (
-            <p className="text-zinc-500">Aucun défi pour le moment.</p>
-          ) : (
-            challenges.map((c) => {
-              const me = c.participants.find((p) => p.user_id === user.id);
-              const others = c.participants.filter((p) => p.user_id !== user.id);
-              const acceptedParticipants = c.participants.filter((p) => p.status === 'accepted');
-              const pot = c.wager_amount * acceptedParticipants.length;
+        {loading ? (
+          <p className="text-zinc-500">Chargement…</p>
+        ) : (
+          <>
+            <div className="space-y-3">
+              {activeChallenges.length === 0 ? (
+                <p className="text-zinc-500">Aucun défi en cours.</p>
+              ) : (
+                activeChallenges.map((c) => (
+                  <ChallengeCard
+                    key={c.id}
+                    challenge={c}
+                    userId={user.id}
+                    actingId={actingId}
+                    runAction={runAction}
+                  />
+                ))
+              )}
+            </div>
 
-              const disputedReports = acceptedParticipants
-                .map((p) => p.reported_winner_id)
-                .filter((id): id is number => id !== null);
-              const disputed =
-                disputedReports.length >= 2 && new Set(disputedReports).size > 1;
-
-              const winner = c.participants.find((p) => p.user_id === c.winner_id);
-
-              return (
-                <div key={c.id} className="bg-zinc-900 border border-zinc-800 rounded-xl shadow-md p-4">
-                  <div className="flex items-center justify-between mb-2 gap-2">
-                    <p className="font-medium text-zinc-100">
-                      Toi vs {others.map((p) => p.username).join(', ')}
-                    </p>
-                    <span className="text-xs px-2 py-1 rounded-full bg-zinc-800 text-zinc-400 flex-shrink-0">
-                      {STATUS_LABELS[c.status]}
-                    </span>
+            {finishedChallenges.length > 0 && (
+              <div className="mt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowFinished((prev) => !prev)}
+                  className="mb-3 text-sm text-zinc-400 hover:text-zinc-200 font-medium transition"
+                >
+                  {showFinished
+                    ? 'Masquer les défis terminés'
+                    : `Voir les défis terminés ou annulés (${finishedChallenges.length})`}
+                </button>
+                {showFinished && (
+                  <div className="space-y-3">
+                    {finishedChallenges.map((c) => (
+                      <ChallengeCard
+                        key={c.id}
+                        challenge={c}
+                        userId={user.id}
+                        actingId={actingId}
+                        runAction={runAction}
+                      />
+                    ))}
                   </div>
+                )}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
 
-                  {others.length > 1 && (
-                    <div className="mb-2 flex flex-wrap gap-1.5">
-                      {others.map((p) => (
-                        <span
-                          key={p.id}
-                          className={`text-xs px-2 py-0.5 rounded-full ${
-                            p.status === 'accepted'
-                              ? 'bg-emerald-500/15 text-emerald-400'
-                              : p.status === 'declined'
-                                ? 'bg-red-500/15 text-red-400'
-                                : 'bg-zinc-800 text-zinc-400'
-                          }`}
-                        >
-                          {p.username} · {PARTICIPANT_STATUS_LABELS[p.status]}
-                        </span>
-                      ))}
-                    </div>
-                  )}
+function ChallengeCard({
+  challenge: c,
+  userId,
+  actingId,
+  runAction,
+}: {
+  challenge: Challenge;
+  userId: number;
+  actingId: number | null;
+  runAction: (id: number, action: () => Promise<unknown>) => Promise<void>;
+}) {
+  const me = c.participants.find((p) => p.user_id === userId);
+  const others = c.participants.filter((p) => p.user_id !== userId);
+  const acceptedParticipants = c.participants.filter((p) => p.status === 'accepted');
+  const pot = c.wager_amount * acceptedParticipants.length;
 
-                  <div className="mb-3">
-                    <p className="text-sm text-zinc-400">
-                      Mise : {c.wager_amount} SP par joueur
-                      {acceptedParticipants.length >= 2 && ` · pot : ${pot} SP`}
-                    </p>
-                    {c.description && (
-                      <p className="text-sm text-zinc-500 italic">{c.description}</p>
-                    )}
-                  </div>
+  const disputedReports = acceptedParticipants
+    .map((p) => p.reported_winner_id)
+    .filter((id): id is number => id !== null);
+  const disputed = disputedReports.length >= 2 && new Set(disputedReports).size > 1;
 
-                  {c.status === 'pending' && me?.status === 'pending' && (
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => runAction(c.id, () => challengesApi.acceptChallenge(c.id))}
-                        disabled={actingId === c.id}
-                        className="text-sm bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-semibold px-3 py-1.5 rounded-md transition disabled:opacity-50"
-                      >
-                        Accepter
-                      </button>
-                      <button
-                        onClick={() => runAction(c.id, () => challengesApi.declineChallenge(c.id))}
-                        disabled={actingId === c.id}
-                        className="text-sm bg-zinc-800 hover:bg-zinc-700 text-zinc-200 px-3 py-1.5 rounded-md transition disabled:opacity-50"
-                      >
-                        Décliner
-                      </button>
-                    </div>
-                  )}
+  const winner = c.participants.find((p) => p.user_id === c.winner_id);
 
-                  {c.status === 'pending' && me?.status !== 'pending' && (
-                    <p className="text-sm text-zinc-500">
-                      En attente de la réponse de{' '}
-                      {others
-                        .filter((p) => p.status === 'pending')
-                        .map((p) => p.username)
-                        .join(', ')}
-                      …
-                    </p>
-                  )}
+  return (
+    <div className="bg-zinc-900 border border-zinc-800 rounded-xl shadow-md p-4">
+      <div className="flex items-center justify-between mb-2 gap-2">
+        <p className="font-medium text-zinc-100">
+          Toi vs {others.map((p) => p.username).join(', ')}
+        </p>
+        <span className="text-xs px-2 py-1 rounded-full bg-zinc-800 text-zinc-400 flex-shrink-0">
+          {STATUS_LABELS[c.status]}
+        </span>
+      </div>
 
-                  {c.status === 'accepted' && (
-                    <div>
-                      {disputed && (
-                        <p className="text-sm text-red-400 mb-2">
-                          Vos déclarations ne correspondent pas — le MSP va devoir arbitrer.
-                        </p>
-                      )}
-                      {me?.status === 'accepted' ? (
-                        me.reported_winner_id !== null ? (
-                          <p className="text-sm text-zinc-500">
-                            Tu as déclaré{' '}
-                            {c.participants.find((p) => p.user_id === me.reported_winner_id)
-                              ?.username ?? '???'}{' '}
-                            gagnant. En attente de confirmation.
-                          </p>
-                        ) : (
-                          <div>
-                            <p className="text-sm text-zinc-400 mb-2">Qui a gagné ?</p>
-                            <div className="flex flex-wrap gap-2">
-                              {acceptedParticipants.map((p) => (
-                                <button
-                                  key={p.id}
-                                  onClick={() =>
-                                    runAction(c.id, () =>
-                                      challengesApi.reportResult(c.id, p.user_id)
-                                    )
-                                  }
-                                  disabled={actingId === c.id}
-                                  className="text-sm bg-zinc-800 hover:bg-zinc-700 text-zinc-200 px-3 py-1.5 rounded-md transition disabled:opacity-50"
-                                >
-                                  {p.user_id === user.id ? 'Toi' : p.username}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        )
-                      ) : (
-                        <p className="text-sm text-zinc-500">Tu ne participes plus à ce défi.</p>
-                      )}
-                    </div>
-                  )}
+      {others.length > 1 && (
+        <div className="mb-2 flex flex-wrap gap-1.5">
+          {others.map((p) => (
+            <span
+              key={p.id}
+              className={`text-xs px-2 py-0.5 rounded-full ${
+                p.status === 'accepted'
+                  ? 'bg-emerald-500/15 text-emerald-400'
+                  : p.status === 'declined'
+                    ? 'bg-red-500/15 text-red-400'
+                    : 'bg-zinc-800 text-zinc-400'
+              }`}
+            >
+              {p.username} · {PARTICIPANT_STATUS_LABELS[p.status]}
+            </span>
+          ))}
+        </div>
+      )}
 
-                  {c.status === 'resolved' && (
-                    <p className="text-sm">
-                      <span className="text-zinc-400">Gagnant : </span>
-                      <span className="text-emerald-400 font-medium">
-                        {winner?.user_id === user.id ? 'Toi' : (winner?.username ?? '???')}
-                      </span>
-                      <span className="text-zinc-500"> ({pot} SP)</span>
-                    </p>
-                  )}
+      <div className="mb-3">
+        <p className="text-sm text-zinc-400">
+          Mise : {c.wager_amount} SP par joueur
+          {acceptedParticipants.length >= 2 && ` · pot : ${pot} SP`}
+        </p>
+        {c.description && <p className="text-sm text-zinc-500 italic">{c.description}</p>}
+      </div>
+
+      {c.status === 'pending' && me?.status === 'pending' && (
+        <div className="flex gap-2">
+          <button
+            onClick={() => runAction(c.id, () => challengesApi.acceptChallenge(c.id))}
+            disabled={actingId === c.id}
+            className="text-sm bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-semibold px-3 py-1.5 rounded-md transition disabled:opacity-50"
+          >
+            Accepter
+          </button>
+          <button
+            onClick={() => runAction(c.id, () => challengesApi.declineChallenge(c.id))}
+            disabled={actingId === c.id}
+            className="text-sm bg-zinc-800 hover:bg-zinc-700 text-zinc-200 px-3 py-1.5 rounded-md transition disabled:opacity-50"
+          >
+            Décliner
+          </button>
+        </div>
+      )}
+
+      {c.status === 'pending' && me?.status !== 'pending' && (
+        <p className="text-sm text-zinc-500">
+          En attente de la réponse de{' '}
+          {others
+            .filter((p) => p.status === 'pending')
+            .map((p) => p.username)
+            .join(', ')}
+          …
+        </p>
+      )}
+
+      {c.status === 'accepted' && (
+        <div>
+          {disputed && (
+            <p className="text-sm text-red-400 mb-2">
+              Vos déclarations ne correspondent pas — le MSP va devoir arbitrer.
+            </p>
+          )}
+          {me?.status === 'accepted' ? (
+            me.reported_winner_id !== null ? (
+              <p className="text-sm text-zinc-500">
+                Tu as déclaré{' '}
+                {c.participants.find((p) => p.user_id === me.reported_winner_id)?.username ??
+                  '???'}{' '}
+                gagnant. En attente de confirmation.
+              </p>
+            ) : (
+              <div>
+                <p className="text-sm text-zinc-400 mb-2">Qui a gagné ?</p>
+                <div className="flex flex-wrap gap-2">
+                  {acceptedParticipants.map((p) => (
+                    <button
+                      key={p.id}
+                      onClick={() => runAction(c.id, () => challengesApi.reportResult(c.id, p.user_id))}
+                      disabled={actingId === c.id}
+                      className="text-sm bg-zinc-800 hover:bg-zinc-700 text-zinc-200 px-3 py-1.5 rounded-md transition disabled:opacity-50"
+                    >
+                      {p.user_id === userId ? 'Toi' : p.username}
+                    </button>
+                  ))}
                 </div>
-              );
-            })
+              </div>
+            )
+          ) : (
+            <p className="text-sm text-zinc-500">Tu ne participes plus à ce défi.</p>
           )}
         </div>
-      </div>
+      )}
+
+      {c.status === 'resolved' && (
+        <p className="text-sm">
+          <span className="text-zinc-400">Gagnant : </span>
+          <span className="text-emerald-400 font-medium">
+            {winner?.user_id === userId ? 'Toi' : (winner?.username ?? '???')}
+          </span>
+          <span className="text-zinc-500"> ({pot} SP)</span>
+        </p>
+      )}
     </div>
   );
 }

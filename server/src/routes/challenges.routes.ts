@@ -4,6 +4,7 @@ import * as challengesController from '../controllers/challenges.controller.js';
 
 const router = Router();
 
+router.get('/status', requireAuth, challengesController.getStatus);
 router.get('/', requireAuth, challengesController.listMyChallenges);
 router.get('/admin', requireAuth, requireAdmin, challengesController.listAllChallenges);
 router.post('/', requireAuth, challengesController.createChallenge);

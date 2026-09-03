@@ -143,6 +143,11 @@ export interface Challenge {
   resolutionError?: string;
 }
 
+export interface ChallengeQuota {
+  maxPerDay: number;
+  countToday: number;
+}
+
 export type MinigameStatus = 'open' | 'closed';
 
 export const MINIGAME_GAME_TYPES = ['quiz'] as const;

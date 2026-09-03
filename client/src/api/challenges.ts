@@ -1,5 +1,7 @@
 import { apiClient } from './client.js';
-import type { Challenge, ChallengeStatus } from '../types.js';
+import type { Challenge, ChallengeQuota, ChallengeStatus } from '../types.js';
+
+export const getStatus = () => apiClient.get<ChallengeQuota>('/api/challenges/status');
 
 export const listMyChallenges = () => apiClient.get<Challenge[]>('/api/challenges');
 

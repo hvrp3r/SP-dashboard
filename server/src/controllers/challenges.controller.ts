@@ -177,6 +177,14 @@ export async function createChallenge(
   res.status(201).json(entry);
 }
 
+export async function getStatus(req: Request, res: Response): Promise<void> {
+  const [maxPerDay, countToday] = await Promise.all([
+    configService.getConfigNumber('max_challenges_per_day', 5),
+    challengeService.countChallengesToday(req.user!.id),
+  ]);
+  res.json({ maxPerDay, countToday });
+}
+
 export async function listMyChallenges(req: Request, res: Response): Promise<void> {
   await expireAndNotify();
   const challenges = await challengeService.listMyChallenges(req.user!.id);
