@@ -58,8 +58,8 @@ export async function createCrate(
     res.status(400).json({ error: 'Le nom est requis' });
     return;
   }
-  if (!Number.isInteger(costSp) || (costSp as number) <= 0) {
-    res.status(400).json({ error: 'Le coût doit être un entier positif' });
+  if (!Number.isInteger(costSp) || (costSp as number) < 0) {
+    res.status(400).json({ error: 'Le coût doit être un entier positif ou nul (caisse gratuite)' });
     return;
   }
   if (
@@ -73,14 +73,21 @@ export async function createCrate(
     return;
   }
 
-  const crate = await gamblingService.createCrate({
-    name,
-    description: description || null,
-    imageUrl: imageUrl || null,
-    costSp: costSp as number,
-    maxOpensPerPlayer: maxOpensPerPlayer ?? null,
-    createdBy: req.user!.id,
-  });
+  let crate;
+  try {
+    crate = await gamblingService.createCrate({
+      name,
+      description: description || null,
+      imageUrl: imageUrl || null,
+      costSp: costSp as number,
+      maxOpensPerPlayer: maxOpensPerPlayer ?? null,
+      createdBy: req.user!.id,
+    });
+  } catch (err) {
+    const status = (err as { status?: number }).status ?? 500;
+    res.status(status).json({ error: err instanceof Error ? err.message : 'Erreur serveur' });
+    return;
+  }
   res.status(201).json(crate);
 }
 
@@ -103,8 +110,8 @@ export async function updateCrate(
     return;
   }
   const body = req.body ?? {};
-  if (body.costSp !== undefined && (!Number.isInteger(body.costSp) || body.costSp <= 0)) {
-    res.status(400).json({ error: 'Le coût doit être un entier positif' });
+  if (body.costSp !== undefined && (!Number.isInteger(body.costSp) || body.costSp < 0)) {
+    res.status(400).json({ error: 'Le coût doit être un entier positif ou nul (caisse gratuite)' });
     return;
   }
   if (
@@ -118,14 +125,21 @@ export async function updateCrate(
     return;
   }
 
-  const updated = await gamblingService.updateCrate(crateId, {
-    name: body.name?.trim(),
-    description: body.description !== undefined ? body.description?.trim() || null : undefined,
-    imageUrl: body.imageUrl !== undefined ? body.imageUrl?.trim() || null : undefined,
-    costSp: body.costSp,
-    maxOpensPerPlayer: body.maxOpensPerPlayer,
-    isActive: body.isActive,
-  });
+  let updated;
+  try {
+    updated = await gamblingService.updateCrate(crateId, {
+      name: body.name?.trim(),
+      description: body.description !== undefined ? body.description?.trim() || null : undefined,
+      imageUrl: body.imageUrl !== undefined ? body.imageUrl?.trim() || null : undefined,
+      costSp: body.costSp,
+      maxOpensPerPlayer: body.maxOpensPerPlayer,
+      isActive: body.isActive,
+    });
+  } catch (err) {
+    const status = (err as { status?: number }).status ?? 500;
+    res.status(status).json({ error: err instanceof Error ? err.message : 'Erreur serveur' });
+    return;
+  }
   if (!updated) {
     res.status(404).json({ error: 'Caisse introuvable' });
     return;

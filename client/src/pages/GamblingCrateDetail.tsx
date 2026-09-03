@@ -329,6 +329,7 @@ export default function GamblingCrateDetail() {
     withinBudget &&
     !reachedOpenLimit &&
     !opening;
+  const editFreeWithoutLimit = editCostSp.trim() === '0' && !editMaxOpensPerPlayer.trim();
 
   return (
     <div className="min-h-screen bg-zinc-950 py-10 px-4">
@@ -364,7 +365,7 @@ export default function GamblingCrateDetail() {
             disabled={!canOpen}
             className="bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-bold px-6 py-3 rounded-md transition disabled:opacity-40 disabled:cursor-not-allowed transform hover:scale-105 active:scale-95"
           >
-            {opening ? 'Ouverture…' : `Ouvrir (${crate.cost_sp} SP)`}
+            {opening ? 'Ouverture…' : `Ouvrir (${crate.cost_sp > 0 ? `${crate.cost_sp} SP` : 'Gratuit'})`}
           </button>
           {crate.max_opens_per_player !== null && (
             <p className="text-xs text-zinc-500 mt-2">
@@ -501,11 +502,11 @@ export default function GamblingCrateDetail() {
                 />
                 <input
                   type="number"
-                  min={1}
+                  min={0}
                   required
                   value={editCostSp}
                   onChange={(e) => setEditCostSp(e.target.value)}
-                  placeholder="Coût (SP)"
+                  placeholder="Coût (SP, 0 = gratuit)"
                   className="w-full rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 />
                 <input
@@ -516,6 +517,11 @@ export default function GamblingCrateDetail() {
                   placeholder="Limite d'ouvertures par joueur (optionnel, illimité par défaut)"
                   className="w-full rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 />
+                {editFreeWithoutLimit && (
+                  <p className="text-xs text-red-400">
+                    Une caisse gratuite doit avoir une limite d'ouvertures par joueur.
+                  </p>
+                )}
               </div>
               <div className="flex items-center justify-between mt-4 gap-2">
                 <div className="flex items-center gap-2">
@@ -542,14 +548,15 @@ export default function GamblingCrateDetail() {
                 </div>
                 <button
                   type="submit"
-                  disabled={savingCrate || deletingCrate}
+                  disabled={savingCrate || deletingCrate || editFreeWithoutLimit}
                   className="text-sm bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-semibold px-3 py-1.5 rounded-md transition disabled:opacity-50"
                 >
                   Enregistrer
                 </button>
               </div>
               <p className="text-xs text-zinc-500 mt-3">
-                Espérance de gain : {expectedReturn.toFixed(1)} SP pour {crate.cost_sp} SP misés
+                Espérance de gain : {expectedReturn.toFixed(1)} SP pour{' '}
+                {crate.cost_sp > 0 ? `${crate.cost_sp} SP misés` : 'une ouverture gratuite'}
                 {expectedReturn > crate.cost_sp && (
                   <span className="text-red-400"> — cette caisse est gagnante pour les joueurs en moyenne</span>
                 )}

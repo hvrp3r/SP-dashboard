@@ -190,7 +190,7 @@ id SERIAL PRIMARY KEY,
 name VARCHAR(100) NOT NULL,
 description TEXT,
 image_url TEXT,
-cost_sp INT NOT NULL,                  -- mise fixe pour ouvrir cette caisse
+cost_sp INT NOT NULL,                  -- mise fixe pour ouvrir cette caisse ; 0 = gratuite, exige max_opens_per_player
 max_opens_per_player INT,              -- NULL = illimité ; sinon nb max d'ouvertures par joueur, à vie
 is_active BOOLEAN NOT NULL DEFAULT TRUE,
 created_by INT REFERENCES users(id),
@@ -384,6 +384,7 @@ Section fusionnée dans une page joueur (`/gambling`, contrôles MSP visibles se
 
 #### Principe :
 - Le MSP configure une ou plusieurs **caisses** (`gambling_crates`) : nom, description, image, coût fixe (`cost_sp`) pour l'ouvrir, et optionnellement un nombre max d'ouvertures par joueur (`max_opens_per_player`, NULL = illimité — ex : caisse événement limitée à 3 ouvertures/joueur, comptées à vie sur `gambling_opens`, pas remises à zéro par saison). Une fois la limite atteinte, le bouton d'ouverture est désactivé côté client et le serveur refuse quand même la requête (mêmes verrous que le plafond quotidien).
+- **Caisse gratuite** (`cost_sp = 0`) : autorisée **uniquement** si `max_opens_per_player` est défini (contrainte BDD `gambling_crates_free_requires_limit`) — sans limite, une caisse gratuite serait une fuite de SP infinie. Une ouverture gratuite ne débite rien (aucune transaction `gambling_spend`) et n'entame pas le budget gambling quotidien du joueur.
 - Chaque caisse a un pool de récompenses (`gambling_crate_rewards`) configuré librement par le MSP :
   - **Gain SP classique** (`type='sp'`) : montant SP fixe.
   - **Gain personnalisé** (`type='custom'`) : titre + image, **sans valeur SP** — purement cosmétique/collection, aucun effet sur l'économie.
@@ -394,7 +395,7 @@ Section fusionnée dans une page joueur (`/gambling`, contrôles MSP visibles se
 
 #### Flux d'ouverture :
 1. Vérifier `gambling_enabled`, le solde du joueur (`sp_balance >= cost_sp`), et que la mise du jour + `cost_sp` ne dépasse pas `gambling_max_wager_per_day`.
-2. Débiter `cost_sp` (transaction `gambling_spend`, **toujours**, quel que soit le résultat du tirage).
+2. Débiter `cost_sp` (transaction `gambling_spend`, **toujours**, quel que soit le résultat du tirage) — sauf si `cost_sp = 0` (caisse gratuite), auquel cas aucune transaction de débit n'est créée.
 3. Tirer une récompense pondérée dans le pool de la caisse.
 4. Si `type='sp'` → créditer le montant (transaction `gambling_win`) ; si `type='custom'` → insérer une ligne dans `gambling_inventory` (aucune transaction SP).
 5. Enregistrer l'ouverture dans `gambling_opens` (traçabilité/anti-triche).

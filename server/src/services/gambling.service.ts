@@ -58,6 +58,13 @@ export async function createCrate({
   maxOpensPerPlayer,
   createdBy,
 }: CreateCrateInput): Promise<GamblingCrateRow> {
+  if (costSp === 0 && maxOpensPerPlayer === null) {
+    throw Object.assign(
+      new Error("Une caisse gratuite doit avoir une limite d'ouvertures par joueur"),
+      { status: 400 }
+    );
+  }
+
   const { rows } = await pool.query<GamblingCrateRow>(
     `INSERT INTO gambling_crates (name, description, image_url, cost_sp, max_opens_per_player, created_by)
      VALUES ($1, $2, $3, $4, $5, $6)
@@ -92,6 +99,13 @@ export async function updateCrate(
       patch.maxOpensPerPlayer !== undefined ? patch.maxOpensPerPlayer : current.max_opens_per_player,
     is_active: patch.isActive ?? current.is_active,
   };
+
+  if (next.cost_sp === 0 && next.max_opens_per_player === null) {
+    throw Object.assign(
+      new Error("Une caisse gratuite doit avoir une limite d'ouvertures par joueur"),
+      { status: 400 }
+    );
+  }
 
   const { rows } = await pool.query<GamblingCrateRow>(
     `UPDATE gambling_crates
@@ -339,19 +353,22 @@ export async function openCrate(
       }
     }
 
-    const spendTx = await spService.debitSP({
-      userId,
-      amount: crate.cost_sp,
-      type: 'gambling_spend',
-      seasonId,
-      relatedId: crateId,
-      note: `Ouverture caisse « ${crate.name} »`,
-      client,
-    });
+    let spTransactionId: number | null = null;
+    if (crate.cost_sp > 0) {
+      const spendTx = await spService.debitSP({
+        userId,
+        amount: crate.cost_sp,
+        type: 'gambling_spend',
+        seasonId,
+        relatedId: crateId,
+        note: `Ouverture caisse « ${crate.name} »`,
+        client,
+      });
+      spTransactionId = spendTx.id;
+    }
 
     const reward = drawReward(rewards);
 
-    let spTransactionId: number | null = spendTx.id;
     if (reward.type === 'sp' && reward.sp_amount) {
       const winTx = await spService.creditSP({
         userId,

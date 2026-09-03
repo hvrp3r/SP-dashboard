@@ -45,9 +45,12 @@ export default function Gambling() {
     gamblingApi.getStatus().then(setStatus).catch(() => {});
   }, []);
 
+  const isFreeCrate = costSp.trim() === '0';
+  const freeWithoutLimit = isFreeCrate && !maxOpensPerPlayer.trim();
+
   async function handleCreate(e: FormEvent) {
     e.preventDefault();
-    if (!name.trim() || !costSp) return;
+    if (!name.trim() || !costSp || freeWithoutLimit) return;
     setError(null);
     setSubmitting(true);
     try {
@@ -109,9 +112,9 @@ export default function Gambling() {
               />
               <input
                 type="number"
-                min={1}
+                min={0}
                 required
-                placeholder="Coût par ouverture (SP)"
+                placeholder="Coût par ouverture (SP, 0 = gratuit)"
                 value={costSp}
                 onChange={(e) => setCostSp(e.target.value)}
                 className="w-full rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
@@ -124,9 +127,14 @@ export default function Gambling() {
                 onChange={(e) => setMaxOpensPerPlayer(e.target.value)}
                 className="w-full rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
               />
+              {freeWithoutLimit && (
+                <p className="text-xs text-red-400">
+                  Une caisse gratuite doit avoir une limite d'ouvertures par joueur.
+                </p>
+              )}
               <button
                 type="submit"
-                disabled={submitting}
+                disabled={submitting || freeWithoutLimit}
                 className="bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-semibold px-4 py-2 rounded-md transition disabled:opacity-50"
               >
                 Créer
@@ -171,7 +179,7 @@ export default function Gambling() {
                     <p className="text-sm text-zinc-500 truncate">{c.description}</p>
                   )}
                   <p className="text-sm text-emerald-400 font-semibold mt-0.5">
-                    {c.cost_sp} SP
+                    {c.cost_sp > 0 ? `${c.cost_sp} SP` : 'Gratuit'}
                     {c.max_opens_per_player !== null && (
                       <span className="text-zinc-500 font-normal">
                         {' '}
