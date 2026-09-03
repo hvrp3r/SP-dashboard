@@ -91,6 +91,42 @@ export async function updateCrate(
   return rows[0] ?? null;
 }
 
+/**
+ * Supprime une caisse et son pool de récompenses. Refuse si la caisse a déjà été
+ * ouverte au moins une fois (gambling_opens la référence, pour la traçabilité
+ * anti-triche) — dans ce cas le MSP doit l'archiver (`is_active = false`) plutôt
+ * que la supprimer : une caisse archivée disparaît de la liste des joueurs (et de
+ * la liste par défaut du MSP, qui doit cliquer sur « Voir les caisses archivées »
+ * pour la retrouver) sans perdre son historique d'ouvertures.
+ */
+export async function removeCrate(id: number): Promise<void> {
+  const { rows } = await pool.query<{ count: string }>(
+    'SELECT COUNT(*) FROM gambling_opens WHERE crate_id = $1',
+    [id]
+  );
+  if (Number(rows[0]?.count ?? 0) > 0) {
+    throw Object.assign(
+      new Error(
+        'Cette caisse a déjà été ouverte, elle ne peut plus être supprimée — archive-la plutôt'
+      ),
+      { status: 409 }
+    );
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('DELETE FROM gambling_crate_rewards WHERE crate_id = $1', [id]);
+    await client.query('DELETE FROM gambling_crates WHERE id = $1', [id]);
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 export async function listRewards(crateId: number): Promise<GamblingCrateRewardRow[]> {
   const { rows } = await pool.query<GamblingCrateRewardRow>(
     'SELECT * FROM gambling_crate_rewards WHERE crate_id = $1 ORDER BY created_at ASC',
@@ -217,7 +253,7 @@ export async function openCrate(
 ): Promise<OpenCrateResult> {
   const crate = await getCrateById(crateId);
   if (!crate || !crate.is_active) {
-    throw Object.assign(new Error('Caisse introuvable ou désactivée'), { status: 404 });
+    throw Object.assign(new Error('Caisse introuvable ou archivée'), { status: 404 });
   }
 
   const enabled = await configService.getConfigBool('gambling_enabled', true);

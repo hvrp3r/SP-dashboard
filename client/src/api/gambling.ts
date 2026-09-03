@@ -44,6 +44,8 @@ export const updateCrate = (
   }>
 ) => apiClient.put<GamblingCrate>(`/api/gambling/crates/${id}`, patch);
 
+export const removeCrate = (id: number) => apiClient.delete<void>(`/api/gambling/crates/${id}`);
+
 export const openCrate = (crateId: number) =>
   apiClient.post<GamblingOpenResult>(`/api/gambling/crates/${crateId}/open`);
 

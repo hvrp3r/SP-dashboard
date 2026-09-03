@@ -14,6 +14,7 @@ export default function Gambling() {
   const [status, setStatus] = useState<GamblingStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -24,7 +25,7 @@ export default function Gambling() {
   async function load() {
     setLoading(true);
     try {
-      const data = await gamblingApi.listCrates(isAdmin);
+      const data = await gamblingApi.listCrates(isAdmin && showArchived);
       setCrates(data);
       setError(null);
     } catch (err) {
@@ -37,7 +38,7 @@ export default function Gambling() {
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAdmin]);
+  }, [isAdmin, showArchived]);
 
   useEffect(() => {
     gamblingApi.getStatus().then(setStatus).catch(() => {});
@@ -123,6 +124,16 @@ export default function Gambling() {
           </div>
         )}
 
+        {isAdmin && (
+          <button
+            type="button"
+            onClick={() => setShowArchived((prev) => !prev)}
+            className="mb-3 text-sm text-zinc-400 hover:text-zinc-200 font-medium transition"
+          >
+            {showArchived ? 'Masquer les caisses archivées' : 'Voir les caisses archivées'}
+          </button>
+        )}
+
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {loading ? (
             <p className="text-zinc-500">Chargement…</p>
@@ -141,7 +152,7 @@ export default function Gambling() {
                     <p className="font-medium text-zinc-100 truncate">{c.name}</p>
                     {isAdmin && !c.is_active && (
                       <span className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500 font-medium uppercase tracking-wide">
-                        Désactivée
+                        Archivée
                       </span>
                     )}
                   </div>

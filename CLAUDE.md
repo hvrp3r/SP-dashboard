@@ -388,6 +388,8 @@ Section fusionnée dans une page joueur (`/gambling`, contrôles MSP visibles se
   - **Gain personnalisé** (`type='custom'`) : titre + image, **sans valeur SP** — purement cosmétique/collection, aucun effet sur l'économie.
   - Chaque récompense a un poids de tirage (`weight`) ; le MSP peut voir le poids normalisé en % dans l'UI (auto-recalculé, pas besoin que la somme fasse exactement 100).
 - Le tirage est **pondéré et effectué côté serveur uniquement** (jamais côté client) — un joueur ne doit jamais pouvoir influencer ou prédire le résultat.
+- Le MSP peut **supprimer** une caisse (et son pool de récompenses) uniquement si elle n'a **jamais été ouverte** — sinon `gambling_opens` y référerait des lignes fantômes et l'historique anti-triche perdrait son sens. Une caisse déjà ouverte au moins une fois ne peut plus être que **archivée** (`is_active = false`), jamais supprimée. Même règle déjà en place pour un gain individuel d'une caisse (`removeReward`).
+- **Archivage** : une caisse archivée (`is_active = false`) disparaît de la liste des joueurs (`/gambling`) et ne peut plus être ouverte, sans perdre son historique (`gambling_opens`/`gambling_inventory` restent intacts). Côté MSP, la liste `/gambling` n'affiche par défaut que les caisses actives elle aussi — un bouton « Voir les caisses archivées » (opt-in, replié par défaut) est nécessaire pour les faire réapparaître. Une caisse archivée peut être désarchivée à tout moment.
 
 #### Flux d'ouverture :
 1. Vérifier `gambling_enabled`, le solde du joueur (`sp_balance >= cost_sp`), et que la mise du jour + `cost_sp` ne dépasse pas `gambling_max_wager_per_day`.
@@ -449,7 +451,7 @@ Sections dans des pages `/admin/...` dédiées :
 
 Sections fusionnées dans la page joueur correspondante (visibles seulement si MSP) :
 - **Mini-Jeux** (`/mini-jeux`, `/mini-jeux/:id`) : créer une session, poser/clôturer une question, attribuer les SP librement, clôturer la session
-- **Gambling** (`/gambling`) : créer/éditer des caisses, gérer le pool de récompenses par caisse (SP ou custom, poids de tirage), activer/désactiver une caisse — même logique que les Mini-Jeux, ne pas créer de page `/admin/gambling` séparée
+- **Gambling** (`/gambling`) : créer/éditer des caisses, gérer le pool de récompenses par caisse (SP ou custom, poids de tirage), archiver/désarchiver une caisse (masquée aux joueurs et repliée par défaut même côté MSP, derrière « Voir les caisses archivées »), supprimer une caisse jamais ouverte (sinon archivage seulement, pour préserver l'historique anti-triche — voir section 7) — même logique que les Mini-Jeux, ne pas créer de page `/admin/gambling` séparée
 
 ---
 

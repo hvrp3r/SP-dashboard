@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth.jsx';
 import { useConfirm } from '../hooks/useConfirm.jsx';
 import * as gamblingApi from '../api/gambling.js';
@@ -72,6 +72,7 @@ function draftFromReward(r: GamblingCrateReward): RewardDraft {
 export default function GamblingCrateDetail() {
   const { id } = useParams<{ id: string }>();
   const crateId = Number(id);
+  const navigate = useNavigate();
   const { user, setUser } = useAuth();
   const confirm = useConfirm();
   const isAdmin = user?.role === 'admin';
@@ -93,6 +94,7 @@ export default function GamblingCrateDetail() {
   const [editImageUrl, setEditImageUrl] = useState('');
   const [editCostSp, setEditCostSp] = useState('');
   const [savingCrate, setSavingCrate] = useState(false);
+  const [deletingCrate, setDeletingCrate] = useState(false);
 
   const [newRewardType, setNewRewardType] = useState<GamblingRewardType>('sp');
   const [newRewardTitle, setNewRewardTitle] = useState('');
@@ -188,6 +190,26 @@ export default function GamblingCrateDetail() {
       setError(err instanceof Error ? err.message : 'Erreur inconnue');
     } finally {
       setSavingCrate(false);
+    }
+  }
+
+  async function handleDeleteCrate() {
+    if (!crate) return;
+    const ok = await confirm({
+      title: 'Supprimer la caisse',
+      message: `« ${crate.name} » et ses gains configurés seront définitivement supprimés.`,
+      confirmLabel: 'Supprimer',
+      danger: true,
+    });
+    if (!ok) return;
+    setDeletingCrate(true);
+    setError(null);
+    try {
+      await gamblingApi.removeCrate(crateId);
+      navigate('/gambling');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erreur inconnue');
+      setDeletingCrate(false);
     }
   }
 
@@ -312,7 +334,7 @@ export default function GamblingCrateDetail() {
           </div>
           {isAdmin && !crate.is_active && (
             <span className="ml-auto flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500 font-medium uppercase tracking-wide">
-              Désactivée
+              Archivée
             </span>
           )}
         </div>
@@ -464,22 +486,32 @@ export default function GamblingCrateDetail() {
                   className="w-full rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 />
               </div>
-              <div className="flex items-center justify-between mt-4">
-                <button
-                  type="button"
-                  onClick={handleToggleActive}
-                  disabled={savingCrate}
-                  className={`text-sm font-semibold px-3 py-1.5 rounded-md transition disabled:opacity-50 ${
-                    crate.is_active
-                      ? 'bg-zinc-800 hover:bg-zinc-700 text-zinc-200'
-                      : 'bg-emerald-500 hover:bg-emerald-400 text-zinc-950'
-                  }`}
-                >
-                  {crate.is_active ? 'Désactiver la caisse' : 'Activer la caisse'}
-                </button>
+              <div className="flex items-center justify-between mt-4 gap-2">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleToggleActive}
+                    disabled={savingCrate || deletingCrate}
+                    className={`text-sm font-semibold px-3 py-1.5 rounded-md transition disabled:opacity-50 ${
+                      crate.is_active
+                        ? 'bg-zinc-800 hover:bg-zinc-700 text-zinc-200'
+                        : 'bg-emerald-500 hover:bg-emerald-400 text-zinc-950'
+                    }`}
+                  >
+                    {crate.is_active ? 'Archiver la caisse' : 'Désarchiver la caisse'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDeleteCrate}
+                    disabled={savingCrate || deletingCrate}
+                    className="text-sm text-red-400 font-medium hover:underline disabled:opacity-50"
+                  >
+                    {deletingCrate ? 'Suppression…' : 'Supprimer la caisse'}
+                  </button>
+                </div>
                 <button
                   type="submit"
-                  disabled={savingCrate}
+                  disabled={savingCrate || deletingCrate}
                   className="text-sm bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-semibold px-3 py-1.5 rounded-md transition disabled:opacity-50"
                 >
                   Enregistrer

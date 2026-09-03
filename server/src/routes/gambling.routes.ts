@@ -12,6 +12,7 @@ router.get('/crates', requireAuth, gamblingController.listCrates);
 router.get('/crates/:id', requireAuth, gamblingController.getCrate);
 router.post('/crates', requireAuth, requireAdmin, gamblingController.createCrate);
 router.put('/crates/:id', requireAuth, requireAdmin, gamblingController.updateCrate);
+router.delete('/crates/:id', requireAuth, requireAdmin, gamblingController.removeCrate);
 router.post('/crates/:id/open', requireAuth, gamblingController.openCrate);
 router.post('/crates/:id/rewards', requireAuth, requireAdmin, gamblingController.addReward);
 router.put(

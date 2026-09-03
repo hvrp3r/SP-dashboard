@@ -107,6 +107,29 @@ export async function updateCrate(
   res.json(updated);
 }
 
+export async function removeCrate(req: Request<{ id: string }>, res: Response): Promise<void> {
+  const crateId = Number(req.params.id);
+  if (!Number.isInteger(crateId)) {
+    res.status(400).json({ error: 'Identifiant de caisse invalide' });
+    return;
+  }
+
+  const existing = await gamblingService.getCrateById(crateId);
+  if (!existing) {
+    res.status(404).json({ error: 'Caisse introuvable' });
+    return;
+  }
+
+  try {
+    await gamblingService.removeCrate(crateId);
+  } catch (err) {
+    const status = (err as { status?: number }).status ?? 500;
+    res.status(status).json({ error: err instanceof Error ? err.message : 'Erreur serveur' });
+    return;
+  }
+  res.status(204).end();
+}
+
 interface AddRewardBody {
   type?: GamblingRewardType;
   title?: string;
