@@ -1,0 +1,28 @@
+FROM node:20-alpine AS build
+
+WORKDIR /app
+
+RUN corepack enable
+
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
+COPY client/package.json ./client/package.json
+RUN pnpm install --frozen-lockfile --filter sp-client
+
+COPY client ./client
+COPY tsconfig.base.json ./tsconfig.base.json
+
+WORKDIR /app/client
+
+# Vite bakes VITE_* vars into the build at build time. Left empty, API calls are
+# same-origin (relative fetch) — Caddy reverse-proxies /api and /uploads to the
+# server container, so no CORS is involved in production.
+ARG VITE_API_URL=""
+ENV VITE_API_URL=$VITE_API_URL
+RUN pnpm build
+
+FROM caddy:2-alpine
+
+COPY client/Caddyfile /etc/caddy/Caddyfile
+COPY --from=build /app/client/dist /srv
+
+EXPOSE 80 443

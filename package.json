@@ -1,0 +1,16 @@
+{
+  "name": "points-sourires",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev:server": "pnpm --filter sp-server dev",
+    "dev:client": "pnpm --filter sp-client dev",
+    "build": "pnpm --filter sp-server build && pnpm --filter sp-client build",
+    "migrate": "pnpm --filter sp-server migrate",
+    "typecheck": "pnpm --filter sp-server typecheck && pnpm --filter sp-client typecheck"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@9.15.9"
+}

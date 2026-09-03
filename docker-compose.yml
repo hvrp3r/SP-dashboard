@@ -1,0 +1,57 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: sp_user
+      POSTGRES_PASSWORD: sp_password
+      POSTGRES_DB: points_sourires
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sp_user -d points_sourires"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  server:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ./server/.env
+    environment:
+      DATABASE_URL: postgresql://sp_user:sp_password@postgres:5432/points_sourires
+    ports:
+      - "3001:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./server:/app/server
+      - server-node-modules:/app/server/node_modules
+    command: sh -c "cd /app && pnpm install --frozen-lockfile --filter sp-server && cd /app/server && pnpm migrate && pnpm dev"
+
+  client:
+    build:
+      context: .
+      dockerfile: client/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ./client/.env
+    ports:
+      - "5173:5173"
+    depends_on:
+      - server
+    volumes:
+      - ./client:/app/client
+      - client-node-modules:/app/client/node_modules
+    command: sh -c "cd /app && pnpm install --frozen-lockfile --filter sp-client && cd /app/client && pnpm dev"
+
+volumes:
+  postgres-data:
+  server-node-modules:
+  client-node-modules:

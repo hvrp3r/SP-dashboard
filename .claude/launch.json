@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "sp-client",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "sp-client", "dev"],
+      "port": 5173
+    }
+  ]
+}
