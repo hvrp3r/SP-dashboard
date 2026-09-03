@@ -60,6 +60,7 @@ interface CreateSessionBody {
   gameType?: string;
   title?: string;
   description?: string;
+  entryFee?: number;
 }
 
 export async function createSession(
@@ -69,6 +70,7 @@ export async function createSession(
   const gameType = req.body?.gameType;
   const title = req.body?.title?.trim();
   const description = req.body?.description?.trim();
+  const entryFeeRaw = req.body?.entryFee;
 
   if (!gameType || !(MINIGAME_GAME_TYPES as readonly string[]).includes(gameType)) {
     res.status(400).json({ error: 'Type de mini-jeu invalide' });
@@ -83,6 +85,15 @@ export async function createSession(
     return;
   }
 
+  let entryFee: number | null = null;
+  if (entryFeeRaw !== undefined && entryFeeRaw !== null) {
+    if (!Number.isInteger(entryFeeRaw) || entryFeeRaw <= 0) {
+      res.status(400).json({ error: 'La mise doit être un entier positif' });
+      return;
+    }
+    entryFee = entryFeeRaw;
+  }
+
   const activeSeason = await seasonService.getActiveSeason();
 
   const session = await minigameService.createSession({
@@ -90,6 +101,7 @@ export async function createSession(
     gameType,
     title,
     description: description || null,
+    entryFee,
     createdBy: req.user!.id,
   });
 
@@ -168,7 +180,7 @@ export async function joinSession(req: Request<{ id: string }>, res: Response): 
   }
 
   try {
-    await minigameService.addParticipant(sessionId, req.user!.id);
+    await minigameService.joinSession(sessionId, req.user!.id);
   } catch (err) {
     const status = (err as { status?: number }).status ?? 500;
     res.status(status).json({ error: err instanceof Error ? err.message : 'Erreur serveur' });

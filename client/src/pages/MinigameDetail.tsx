@@ -227,6 +227,11 @@ export default function MinigameDetail() {
                 <span className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-400 font-medium uppercase tracking-wide">
                   {gameTypeLabel(session.game_type)}
                 </span>
+                {session.entry_fee && (
+                  <span className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 font-medium uppercase tracking-wide">
+                    {session.entry_fee} SP
+                  </span>
+                )}
               </div>
               <span
                 className={`flex-shrink-0 text-xs px-2 py-1 rounded-full ${
@@ -248,7 +253,11 @@ export default function MinigameDetail() {
                 disabled={joining}
                 className="mb-6 bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-semibold px-4 py-2 rounded-md transition disabled:opacity-50"
               >
-                {joining ? 'Inscription…' : 'Rejoindre le mini-jeu'}
+                {joining
+                  ? 'Inscription…'
+                  : session.entry_fee
+                    ? `Rejoindre le mini-jeu (-${session.entry_fee} SP)`
+                    : 'Rejoindre le mini-jeu'}
               </button>
             )}
 

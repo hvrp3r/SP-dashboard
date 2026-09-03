@@ -98,6 +98,9 @@ export default function NavBar() {
           <NavLink to="/mini-jeux" className={linkClass}>
             Mini-jeux
           </NavLink>
+          <NavLink to="/gambling" className={linkClass}>
+            Gambling
+          </NavLink>
           {isAdmin && <AdminMenu />}
         </div>
         <NotificationBell />

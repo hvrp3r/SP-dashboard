@@ -1,0 +1,19 @@
+export interface ConfigSection {
+  title: string;
+  keys: string[];
+}
+
+export const CONFIG_SECTIONS: ConfigSection[] = [
+  {
+    title: 'Connexion quotidienne & Streak',
+    keys: ['login_bonus_base', 'streak_bonus_step', 'streak_bonus_max', 'streak_required_days'],
+  },
+  {
+    title: 'Défis',
+    keys: ['max_wager_amount', 'max_challenges_per_day'],
+  },
+  {
+    title: 'Gambling',
+    keys: ['gambling_enabled', 'gambling_max_wager_per_day'],
+  },
+];

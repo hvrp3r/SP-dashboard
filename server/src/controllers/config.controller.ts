@@ -21,8 +21,10 @@ export async function updateConfig(
     res.status(400).json({ error: 'La valeur est requise' });
     return;
   }
-  if (!/^-?\d+$/.test(value)) {
-    res.status(400).json({ error: 'La valeur doit être un nombre entier' });
+  // Le store est générique (clé/valeur en texte) : la plupart des clés sont des
+  // entiers, mais certaines (ex: gambling_enabled) sont des booléens 'true'/'false'.
+  if (!/^-?\d+$/.test(value) && value !== 'true' && value !== 'false') {
+    res.status(400).json({ error: 'La valeur doit être un nombre entier ou true/false' });
     return;
   }
 

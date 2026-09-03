@@ -1,8 +1,11 @@
 import { apiClient } from './client.js';
-import type { PlayerStats, User } from '../types.js';
+import type { DailyBonusClaimResult, PlayerStats, User } from '../types.js';
 
 export const getPublicProfile = (username: string) =>
   apiClient.get<User>(`/api/users/${username}`);
+
+export const claimDailyBonus = () =>
+  apiClient.post<DailyBonusClaimResult>('/api/users/me/claim-daily-bonus');
 
 export const getStats = (username: string) =>
   apiClient.get<PlayerStats>(`/api/users/${username}/stats`);

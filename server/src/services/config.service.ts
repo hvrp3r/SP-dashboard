@@ -16,6 +16,12 @@ export async function getConfigNumber(key: string, fallback: number): Promise<nu
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+export async function getConfigBool(key: string, fallback: boolean): Promise<boolean> {
+  const raw = await getConfigValue(key);
+  if (raw === null) return fallback;
+  return raw === 'true';
+}
+
 export async function listConfig(): Promise<AdminConfigRow[]> {
   const { rows } = await pool.query<AdminConfigRow>('SELECT * FROM admin_config ORDER BY key ASC');
   return rows;

@@ -9,6 +9,7 @@ import configRoutes from './routes/config.routes.js';
 import transactionsRoutes from './routes/transactions.routes.js';
 import challengesRoutes from './routes/challenges.routes.js';
 import minigamesRoutes from './routes/minigames.routes.js';
+import gamblingRoutes from './routes/gambling.routes.js';
 import notificationsRoutes from './routes/notifications.routes.js';
 import { UPLOADS_DIR } from './middleware/upload.js';
 import { notFoundHandler, errorHandler } from './middleware/errorHandler.js';
@@ -36,6 +37,7 @@ export function createApp(): Express {
   app.use('/api/transactions', transactionsRoutes);
   app.use('/api/challenges', challengesRoutes);
   app.use('/api/minigames', minigamesRoutes);
+  app.use('/api/gambling', gamblingRoutes);
   app.use('/api/notifications', notificationsRoutes);
 
   app.use(notFoundHandler);

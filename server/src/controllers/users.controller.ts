@@ -3,6 +3,7 @@ import path from 'node:path';
 import type { Request, Response } from 'express';
 import * as userService from '../services/user.service.js';
 import * as statsService from '../services/stats.service.js';
+import * as loginBonusService from '../services/loginBonus.service.js';
 import { AVATARS_DIR } from '../middleware/upload.js';
 
 export async function getMe(req: Request, res: Response): Promise<void> {
@@ -12,6 +13,24 @@ export async function getMe(req: Request, res: Response): Promise<void> {
     return;
   }
   res.json(profile);
+}
+
+export async function claimDailyBonus(req: Request, res: Response): Promise<void> {
+  let claim;
+  try {
+    claim = await loginBonusService.claimDailyLoginBonus(req.user!.id);
+  } catch (err) {
+    const status = (err as { status?: number }).status ?? 500;
+    res.status(status).json({ error: err instanceof Error ? err.message : 'Erreur serveur' });
+    return;
+  }
+
+  const profile = await userService.getPrivateProfile(req.user!.id);
+  if (!profile) {
+    res.status(404).json({ error: 'Utilisateur introuvable' });
+    return;
+  }
+  res.json({ profile, alreadyClaimed: claim.alreadyClaimed, amount: claim.amount, streak: claim.streak });
 }
 
 export async function getPublicProfile(

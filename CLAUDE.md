@@ -93,6 +93,7 @@ amount INT NOT NULL,                   -- positif = crédit, négatif = débit
 type VARCHAR(50) NOT NULL,
   -- 'login_bonus' | 'challenge_win' | 'challenge_loss'
   -- 'minigame_reward' | 'admin_grant' | 'admin_deduct'
+  -- 'gambling_spend' | 'gambling_win'
 related_id INT,                        -- challenge_id ou minigame_session_id (nullable)
 note TEXT,
 created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -182,6 +183,54 @@ submitted_at TIMESTAMPTZ DEFAULT NOW(),
 UNIQUE (question_id, user_id)
 ```
 
+### `gambling_crates`
+-- Une "caisse" configurable par le MSP : coût fixe pour l'ouvrir, pool de récompenses associé.
+```sql
+id SERIAL PRIMARY KEY,
+name VARCHAR(100) NOT NULL,
+description TEXT,
+image_url TEXT,
+cost_sp INT NOT NULL,                  -- mise fixe pour ouvrir cette caisse
+is_active BOOLEAN NOT NULL DEFAULT TRUE,
+created_by INT REFERENCES users(id),
+created_at TIMESTAMPTZ DEFAULT NOW()
+```
+
+### `gambling_crate_rewards`
+-- Pool de récompenses d'une caisse, tirage pondéré (poids, pas un % brut — évite de devoir recalculer les autres lignes à chaque ajout/retrait).
+```sql
+id SERIAL PRIMARY KEY,
+crate_id INT REFERENCES gambling_crates(id),
+type VARCHAR(20) NOT NULL,             -- 'sp' | 'custom'
+title VARCHAR(255) NOT NULL,
+image_url TEXT,                        -- icône SP par défaut si type='sp', image dédiée si 'custom'
+sp_amount INT,                         -- rempli uniquement si type='sp'
+weight INT NOT NULL,                   -- poids de tirage, normalisé en % à l'affichage
+created_at TIMESTAMPTZ DEFAULT NOW()
+```
+
+### `gambling_opens`
+-- Historique de chaque ouverture (transparence/anti-triche).
+```sql
+id SERIAL PRIMARY KEY,
+user_id INT REFERENCES users(id),
+crate_id INT REFERENCES gambling_crates(id),
+reward_id INT REFERENCES gambling_crate_rewards(id),
+season_id INT REFERENCES seasons(id),
+sp_transaction_id INT REFERENCES sp_transactions(id),  -- NULL si le gain tiré était de type 'custom'
+opened_at TIMESTAMPTZ DEFAULT NOW()
+```
+
+### `gambling_inventory`
+-- Collection persistante des gains 'custom' obtenus par un joueur (vitrine de profil). Un item reste acquis à vie, ce n'est pas un consommable.
+```sql
+id SERIAL PRIMARY KEY,
+user_id INT REFERENCES users(id),
+reward_id INT REFERENCES gambling_crate_rewards(id),
+gambling_open_id INT REFERENCES gambling_opens(id),
+obtained_at TIMESTAMPTZ DEFAULT NOW()
+```
+
 ### `notifications`
 ```sql
 id SERIAL PRIMARY KEY,
@@ -203,12 +252,14 @@ description TEXT,
 updated_by INT REFERENCES users(id),
 updated_at TIMESTAMPTZ DEFAULT NOW()
 -- Clés attendues :
---   max_wager_amount          (défaut: 100)
---   max_challenges_per_day    (défaut: 5)
---   login_bonus_base          (défaut: 10)
+--   max_wager_amount          (défaut: 10)
+--   max_challenges_per_day    (défaut: 2)
+--   login_bonus_base          (défaut: 5)
 --   streak_bonus_step         (SP bonus par palier de streak, défaut: 2)
---   streak_bonus_max          (plafond du bonus streak, défaut: 20)
---   streak_required_days      (nb jours consécutifs par palier, défaut: 7)
+--   streak_bonus_max          (plafond du bonus streak, défaut: 30)
+--   streak_required_days      (nb jours consécutifs par palier, défaut: 3)
+--   gambling_enabled          (active/désactive globalement la section gambling, défaut: true)
+--   gambling_max_wager_per_day (SP total misé/jour sur le gambling, tous crates confondus, défaut: 50)
 -- Note : minigame_reward_1st/2nd/3rd ont existé puis ont été supprimées (migration 005) —
 -- l'attribution des SP en mini-jeu est un montant libre par joueur, plus des récompenses fixes par rang.
 ```
@@ -247,18 +298,18 @@ updated_at TIMESTAMPTZ DEFAULT NOW()
 
 ### 3. Bonus de connexion quotidienne + Streak
 
-- Déclenché à la **première requête authentifiée de la journée** (comparaison date UTC)
+- **Réclamé manuellement par le joueur** via un bouton "Réclamer" sur son profil (`POST /api/users/me/claim-daily-bonus`) — plus d'auto-crédit silencieux à la première requête authentifiée de la journée (comportement initial abandonné à la demande explicite de l'utilisateur). Idempotent par date UTC : un second appel le même jour renvoie `alreadyClaimed: true` sans re-créditer ; le bouton disparaît côté client dès que `last_login_date` correspond à aujourd'hui (UTC).
 - Montant de base : `login_bonus_base` SP (configurable par le MSP)
 - **Système de streak** :
   - Si l'utilisateur s'est connecté la veille, le streak augmente de 1
   - Si non, le streak repart à 1
   - Bonus supplémentaire : `floor(streak / streak_required_days) × streak_bonus_step` SP, plafonné à `streak_bonus_max`
-  - Exemple avec défauts (step=2, required=7, max=20) : streak 1–6 → +0 SP, 7–13 → +2 SP, 14–20 → +4 SP, 70+ → +20 SP (plafond)
+  - Exemple avec défauts (step=2, required=3, max=30) : streak 1–2 → +0 SP, 3–5 → +2 SP, 6–8 → +4 SP, 45+ → +30 SP (plafond)
 - Chaque bonus génère une entrée dans `sp_transactions` (type `login_bonus`, note indique le streak)
 - Le streak et les paramètres sont modifiables par le MSP (admin_config + reset manuel possible)
 
 > **Pièges d'implémentation rencontrés** (à garder en tête pour toute modif de cette logique) :
-> - **Race condition** : plusieurs requêtes authentifiées en parallèle peuvent toutes lire `last_login_date` avant qu'aucune ne l'ait réécrit → double/triple crédit. Toute la séquence check-then-act doit être dans une seule transaction avec `SELECT ... FOR UPDATE` sur la ligne user ; `creditSP`/`debitSP` acceptent un `client` (PoolClient) optionnel pour rejoindre cette transaction plutôt que d'en ouvrir une nouvelle (sinon deadlock).
+> - **Race condition** : plusieurs clics/onglets peuvent appeler `claim-daily-bonus` en parallèle pour le même joueur, chacun lisant `last_login_date` avant qu'aucun ne l'ait réécrit → double/triple crédit. Toute la séquence check-then-act doit être dans une seule transaction avec `SELECT ... FOR UPDATE` sur la ligne user ; `creditSP`/`debitSP` acceptent un `client` (PoolClient) optionnel pour rejoindre cette transaction plutôt que d'en ouvrir une nouvelle (sinon deadlock).
 > - **Parsing de `DATE` par `pg`** : node-postgres convertit par défaut une colonne `DATE` en objet `Date` construit avec les composantes *locales*, ce qui décale silencieusement la date d'un jour dans les fuseaux UTC+ (France) une fois reconverti en UTC — casse totalement la comparaison "connecté hier ?". Le parser du type `DATE` est neutralisé globalement dans `server/src/db/pool.ts` (`types.setTypeParser(types.builtins.DATE, v => v)`), pour garder les dates comme simples chaînes `'YYYY-MM-DD'`.
 
 ### 4. Système de défis (SP Wager)
@@ -326,6 +377,37 @@ Un défi peut réunir **plusieurs adversaires au sein d'un même défi** (un seu
 - Une notification (`notifications`, type + message + `link` de redirection) est créée pour : défi reçu/accepté/décliné/résolu/annulé/expiré, mini-jeu ouvert, gain de SP, perte de SP
 - Toujours déclenchée depuis les **contrôleurs**, jamais depuis les services (les services ne connaissent pas la couche notification)
 
+### 7. Gambling — Case Opening
+
+Section fusionnée dans une page joueur (`/gambling`, contrôles MSP visibles seulement si `user.role === 'admin'`) — même pattern que les Mini-Jeux, pas de page `/admin/gambling` séparée.
+
+#### Principe :
+- Le MSP configure une ou plusieurs **caisses** (`gambling_crates`) : nom, description, image, coût fixe (`cost_sp`) pour l'ouvrir.
+- Chaque caisse a un pool de récompenses (`gambling_crate_rewards`) configuré librement par le MSP :
+  - **Gain SP classique** (`type='sp'`) : montant SP fixe.
+  - **Gain personnalisé** (`type='custom'`) : titre + image, **sans valeur SP** — purement cosmétique/collection, aucun effet sur l'économie.
+  - Chaque récompense a un poids de tirage (`weight`) ; le MSP peut voir le poids normalisé en % dans l'UI (auto-recalculé, pas besoin que la somme fasse exactement 100).
+- Le tirage est **pondéré et effectué côté serveur uniquement** (jamais côté client) — un joueur ne doit jamais pouvoir influencer ou prédire le résultat.
+
+#### Flux d'ouverture :
+1. Vérifier `gambling_enabled`, le solde du joueur (`sp_balance >= cost_sp`), et que la mise du jour + `cost_sp` ne dépasse pas `gambling_max_wager_per_day`.
+2. Débiter `cost_sp` (transaction `gambling_spend`, **toujours**, quel que soit le résultat du tirage).
+3. Tirer une récompense pondérée dans le pool de la caisse.
+4. Si `type='sp'` → créditer le montant (transaction `gambling_win`) ; si `type='custom'` → insérer une ligne dans `gambling_inventory` (aucune transaction SP).
+5. Enregistrer l'ouverture dans `gambling_opens` (traçabilité/anti-triche).
+
+#### Garde-fou économique :
+- Le seul plafond dur est `gambling_max_wager_per_day` : la somme des `gambling_spend` du jour (date UTC) d'un joueur, tous crates confondus, ne peut pas dépasser cette valeur. Pas de plafond séparé sur le nombre d'ouvertures/jour — un joueur peut ouvrir autant de petites caisses qu'il veut tant qu'il reste sous son budget SP du jour (décision explicite : garder ce système simple, un seul levier).
+- Le MSP reste entièrement libre de configurer les probabilités et montants de chaque caisse (pas de validation automatique d'espérance de gain) — l'UI d'édition de caisse affiche cependant l'**espérance de gain calculée en direct** (ex : "coûte 10 SP, rapporte en moyenne 8.5 SP") à titre d'aide à la décision, pour que le MSP voie si une caisse est structurellement gagnante pour les joueurs avant de la publier.
+
+#### Collection (`gambling_inventory`) :
+- Chaque gain `custom` obtenu reste acquis à vie et s'affiche dans une vitrine sur le profil du joueur (titre + image + date d'obtention).
+- Un même gain `custom` peut être obtenu plusieurs fois (pas d'unicité) ; chaque obtention crée une ligne distincte dans `gambling_inventory`.
+
+#### Contraintes MSP (via admin_config) :
+- `gambling_enabled` : coupe-circuit global de la section
+- `gambling_max_wager_per_day` : plafond de mise SP/jour, tous crates confondus, par joueur
+
 ---
 
 ## Rôles & Permissions
@@ -335,9 +417,11 @@ Un défi peut réunir **plusieurs adversaires au sein d'un même défi** (un seu
 | Se connecter, voir le leaderboard    | ✅ | ✅ |
 | Créer/accepter des défis             | ✅ | ✅ |
 | Participer aux mini-jeux             | ✅ | ✅ |
+| Ouvrir des caisses (gambling)         | ✅ | ✅ |
 | Voir ses transactions                | ✅ | ✅ |
 | Créer/clôturer une session mini-jeu  | ❌ | ✅ |
 | Attribuer les SP d'un mini-jeu       | ❌ | ✅ |
+| Créer/configurer une caisse gambling | ❌ | ✅ |
 | Arbitrer un défi                     | ❌ | ✅ |
 | Gérer les saisons                    | ❌ | ✅ |
 | Modifier admin_config                | ❌ | ✅ |
@@ -365,6 +449,7 @@ Sections dans des pages `/admin/...` dédiées :
 
 Sections fusionnées dans la page joueur correspondante (visibles seulement si MSP) :
 - **Mini-Jeux** (`/mini-jeux`, `/mini-jeux/:id`) : créer une session, poser/clôturer une question, attribuer les SP librement, clôturer la session
+- **Gambling** (`/gambling`) : créer/éditer des caisses, gérer le pool de récompenses par caisse (SP ou custom, poids de tirage), activer/désactiver une caisse — même logique que les Mini-Jeux, ne pas créer de page `/admin/gambling` séparée
 
 ---
 
@@ -480,4 +565,8 @@ VITE_API_URL=http://localhost:3001
 | Synchronisation temps réel ? | Polling à intervalles courts par écran (pas de WebSocket) — voir section 6 |
 | Le MSP peut-il être caché du classement ? | Oui — `is_leaderboard_hidden`, n'affecte que les classements, pas le profil/les transactions |
 | Le MSP peut-il révoquer une transaction ? | Oui, sauf si sa saison est archivée (`closed`) — jamais de suppression, toujours un ajustement inverse tracé |
-| Architecture des pages admin ? | Mixte : pages `/admin/...` dédiées pour Config/Saisons/Joueurs/Défis/Transactions, mais Mini-Jeux est fusionné dans la page joueur (contrôles visibles si MSP) — décision explicite de l'utilisateur, ne pas re-séparer |
+| Architecture des pages admin ? | Mixte : pages `/admin/...` dédiées pour Config/Saisons/Joueurs/Défis/Transactions, mais Mini-Jeux et Gambling sont fusionnés dans la page joueur (contrôles visibles si MSP) — décision explicite de l'utilisateur, ne pas re-séparer |
+| Type de gambling au lancement ? | **Case opening uniquement** — caisses configurables par le MSP (coût, pool de récompenses), autres formats de jeu non prévus pour l'instant |
+| Les gains "custom" (image+titre) ont-ils une valeur SP ? | **Non** — purement cosmétiques, aucun effet sur l'économie SP, juste une collection affichée sur le profil (`gambling_inventory`) |
+| Plafond anti-abus du gambling ? | Un seul levier : `gambling_max_wager_per_day` (SP misé/jour, tous crates confondus) — pas de plafond séparé sur le nombre d'ouvertures, décision explicite de garder un seul paramètre simple |
+| Le MSP doit-il respecter une espérance de gain négative imposée par le système ? | Non — configuration totalement libre des probabilités/montants, mais l'UI affiche l'espérance de gain calculée en direct pour l'aider à ne pas créer de caisse structurellement gagnante pour les joueurs |

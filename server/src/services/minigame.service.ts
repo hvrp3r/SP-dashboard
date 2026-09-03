@@ -14,6 +14,7 @@ interface CreateSessionInput {
   gameType: string;
   title: string;
   description: string | null;
+  entryFee: number | null;
   createdBy: number;
 }
 
@@ -22,13 +23,14 @@ export async function createSession({
   gameType,
   title,
   description,
+  entryFee,
   createdBy,
 }: CreateSessionInput): Promise<MinigameSessionRow> {
   const { rows } = await pool.query<MinigameSessionRow>(
-    `INSERT INTO minigame_sessions (season_id, game_type, title, description, status, created_by)
-     VALUES ($1, $2, $3, $4, 'open', $5)
+    `INSERT INTO minigame_sessions (season_id, game_type, title, description, entry_fee, status, created_by)
+     VALUES ($1, $2, $3, $4, $5, 'open', $6)
      RETURNING *`,
-    [seasonId, gameType, title, description, createdBy]
+    [seasonId, gameType, title, description, entryFee, createdBy]
   );
   return rows[0] as MinigameSessionRow;
 }
@@ -96,6 +98,61 @@ export async function addParticipant(
     [sessionId, userId]
   );
   return rows[0] as MinigameParticipantRow;
+}
+
+/**
+ * Auto-inscription d'un joueur. Si la session est payante (`entry_fee`), le
+ * débit et l'inscription sont composés dans une seule transaction — un solde
+ * insuffisant fait échouer l'inscription sans débiter personne. L'ajout
+ * manuel d'un participant par le MSP (`addParticipant`) ne passe pas par ce
+ * droit d'entrée.
+ */
+export async function joinSession(
+  sessionId: number,
+  userId: number
+): Promise<MinigameParticipantRow> {
+  const session = await getSessionById(sessionId);
+  if (!session) {
+    throw Object.assign(new Error('Session introuvable'), { status: 404 });
+  }
+
+  const existing = await getParticipantByUser(sessionId, userId);
+  if (existing) {
+    throw Object.assign(new Error('Ce joueur participe déjà à cette session'), { status: 409 });
+  }
+
+  if (!session.entry_fee) {
+    const { rows } = await pool.query<MinigameParticipantRow>(
+      `INSERT INTO minigame_participants (session_id, user_id) VALUES ($1, $2) RETURNING *`,
+      [sessionId, userId]
+    );
+    return rows[0] as MinigameParticipantRow;
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await spService.debitSP({
+      userId,
+      amount: session.entry_fee,
+      type: 'minigame_entry',
+      seasonId: session.season_id,
+      relatedId: session.id,
+      note: session.title ?? 'Mini-jeu',
+      client,
+    });
+    const { rows } = await client.query<MinigameParticipantRow>(
+      `INSERT INTO minigame_participants (session_id, user_id) VALUES ($1, $2) RETURNING *`,
+      [sessionId, userId]
+    );
+    await client.query('COMMIT');
+    return rows[0] as MinigameParticipantRow;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 export async function removeParticipant(participantId: number): Promise<boolean> {

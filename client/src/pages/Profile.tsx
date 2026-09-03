@@ -3,21 +3,32 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth.jsx';
 import * as transactionsApi from '../api/transactions.js';
 import * as usersApi from '../api/users.js';
+import * as gamblingApi from '../api/gambling.js';
 import { TRANSACTION_TYPE_LABELS } from '../lib/transactionLabels.js';
 import Avatar from '../components/Avatar.jsx';
-import type { SpTransaction } from '../types.js';
+import RankBadge from '../components/RankBadge.jsx';
+import type { GamblingInventoryEntry, SpTransaction } from '../types.js';
 
 const TRANSACTIONS_POLL_INTERVAL_MS = 10000;
+
+function todayUTC(): string {
+  return new Date().toISOString().slice(0, 10);
+}
 
 export default function Profile() {
   const { user, logout, setUser } = useAuth();
   const navigate = useNavigate();
   const [transactions, setTransactions] = useState<SpTransaction[]>([]);
   const [loadingTransactions, setLoadingTransactions] = useState(true);
+  const [inventory, setInventory] = useState<GamblingInventoryEntry[]>([]);
+  const [rank, setRank] = useState<number | null | undefined>(undefined);
   const [uploading, setUploading] = useState(false);
   const [avatarError, setAvatarError] = useState<string | null>(null);
   const [togglingVisibility, setTogglingVisibility] = useState(false);
   const [visibilityError, setVisibilityError] = useState<string | null>(null);
+  const [claimingBonus, setClaimingBonus] = useState(false);
+  const [bonusError, setBonusError] = useState<string | null>(null);
+  const [bonusAmount, setBonusAmount] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -34,6 +45,18 @@ export default function Profile() {
     const interval = setInterval(loadTransactions, TRANSACTIONS_POLL_INTERVAL_MS);
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    gamblingApi.getMyInventory().then(setInventory).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    usersApi
+      .getStats(user.username)
+      .then((s) => setRank(s.rank))
+      .catch(() => {});
+  }, [user?.username]);
 
   async function handleLogout() {
     await logout();
@@ -71,7 +94,27 @@ export default function Profile() {
     }
   }
 
+  async function handleClaimBonus() {
+    setBonusError(null);
+    setClaimingBonus(true);
+    try {
+      const result = await usersApi.claimDailyBonus();
+      setUser(result.profile);
+      if (result.alreadyClaimed) {
+        setBonusError('Bonus déjà réclamé aujourd\'hui.');
+      } else {
+        setBonusAmount(result.amount);
+      }
+    } catch (err) {
+      setBonusError(err instanceof Error ? err.message : 'Erreur inconnue');
+    } finally {
+      setClaimingBonus(false);
+    }
+  }
+
   if (!user) return null;
+
+  const bonusClaimedToday = user.last_login_date === todayUTC();
 
   return (
     <div className="min-h-screen bg-zinc-950 flex items-center justify-center py-10 px-4">
@@ -84,7 +127,12 @@ export default function Profile() {
             className="relative group disabled:opacity-50"
             title="Changer l'avatar"
           >
-            <Avatar username={user.username} avatarUrl={user.avatar_url} size={64} />
+            <Avatar
+              username={user.username}
+              avatarUrl={user.avatar_url}
+              size={64}
+              crown={rank === 1}
+            />
             <span className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-xs text-white">
               {uploading ? '…' : 'Modifier'}
             </span>
@@ -97,7 +145,10 @@ export default function Profile() {
             className="hidden"
           />
           <div>
-            <h1 className="text-xl font-bold text-zinc-50">{user.username}</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl font-bold text-zinc-50">{user.username}</h1>
+              {rank !== undefined && <RankBadge rank={rank} size="sm" />}
+            </div>
             <p className="text-sm text-zinc-400">{user.email}</p>
             <Link
               to={`/joueurs/${user.username}`}
@@ -109,6 +160,32 @@ export default function Profile() {
         </div>
 
         {avatarError && <p className="mb-4 text-sm text-red-400">{avatarError}</p>}
+
+        <div className="flex items-center justify-between gap-4 bg-zinc-800 rounded-lg p-4 mb-4">
+          <div>
+            <p className="text-sm font-medium text-zinc-100">
+              {bonusClaimedToday ? 'Bonus quotidien réclamé ✓' : 'Bonus quotidien disponible'}
+            </p>
+            <p className="text-xs text-zinc-500">
+              {bonusClaimedToday
+                ? 'Reviens demain pour continuer ta série.'
+                : 'Réclame-le pour garder ta série en vie.'}
+            </p>
+            {bonusAmount !== null && (
+              <p className="text-xs text-emerald-400 font-medium mt-1">+{bonusAmount} SP reçus</p>
+            )}
+          </div>
+          {!bonusClaimedToday && (
+            <button
+              onClick={handleClaimBonus}
+              disabled={claimingBonus}
+              className="flex-shrink-0 bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-semibold px-4 py-2 rounded-md transition disabled:opacity-50"
+            >
+              {claimingBonus ? '…' : 'Réclamer'}
+            </button>
+          )}
+        </div>
+        {bonusError && <p className="mb-4 text-sm text-red-400">{bonusError}</p>}
 
         <dl className="grid grid-cols-2 gap-4 mb-6">
           <div className="bg-emerald-500/10 rounded-lg p-4">
@@ -197,6 +274,36 @@ export default function Profile() {
             </ul>
           )}
         </div>
+
+        {inventory.length > 0 && (
+          <div className="mt-6">
+            <h2 className="text-sm font-semibold text-zinc-300 uppercase mb-3">
+              Collection gambling
+            </h2>
+            <div className="grid grid-cols-3 gap-2">
+              {inventory.map((item) => (
+                <div
+                  key={item.id}
+                  className="bg-zinc-800/60 rounded-lg p-2 flex flex-col items-center text-center"
+                  title={item.title}
+                >
+                  {item.image_url ? (
+                    <img
+                      src={item.image_url}
+                      alt={item.title}
+                      className="w-10 h-10 rounded-lg object-cover mb-1"
+                    />
+                  ) : (
+                    <div className="w-10 h-10 rounded-lg bg-zinc-700 flex items-center justify-center text-lg mb-1">
+                      🎁
+                    </div>
+                  )}
+                  <p className="text-xs text-zinc-300 truncate w-full">{item.title}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

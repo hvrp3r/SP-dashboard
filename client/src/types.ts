@@ -19,6 +19,13 @@ export interface AuthResponse {
   accessToken: string;
 }
 
+export interface DailyBonusClaimResult {
+  profile: User;
+  alreadyClaimed: boolean;
+  amount: number;
+  streak: number;
+}
+
 export type SeasonStatus = 'active' | 'closed';
 
 export interface Season {
@@ -65,8 +72,11 @@ export type SpTransactionType =
   | 'challenge_win'
   | 'challenge_loss'
   | 'minigame_reward'
+  | 'minigame_entry'
   | 'admin_grant'
-  | 'admin_deduct';
+  | 'admin_deduct'
+  | 'gambling_spend'
+  | 'gambling_win';
 
 export interface SpTransaction {
   id: number;
@@ -144,6 +154,7 @@ export interface MinigameSession {
   game_type: string;
   title: string | null;
   description: string | null;
+  entry_fee: number | null;
   status: MinigameStatus;
   created_by: number | null;
   created_at: string;
@@ -206,6 +217,76 @@ export interface AppNotification {
   link: string | null;
   read_at: string | null;
   created_at: string;
+}
+
+export type GamblingRewardType = 'sp' | 'custom';
+
+export interface GamblingCrate {
+  id: number;
+  name: string;
+  description: string | null;
+  image_url: string | null;
+  cost_sp: number;
+  is_active: boolean;
+  created_by: number | null;
+  created_at: string;
+}
+
+export interface GamblingCrateReward {
+  id: number;
+  crate_id: number;
+  type: GamblingRewardType;
+  title: string;
+  image_url: string | null;
+  sp_amount: number | null;
+  weight: number;
+  created_at: string;
+}
+
+export interface GamblingCrateRewardView extends GamblingCrateReward {
+  weight_percent: number;
+}
+
+export interface GamblingCrateDetail extends GamblingCrate {
+  rewards: GamblingCrateRewardView[];
+}
+
+export interface GamblingOpenResult {
+  reward: GamblingCrateReward;
+  balance: number;
+  spentToday: number;
+  maxWagerPerDay: number;
+}
+
+export interface GamblingStatus {
+  enabled: boolean;
+  maxWagerPerDay: number;
+  spentToday: number;
+}
+
+export interface GamblingInventoryEntry {
+  id: number;
+  user_id: number;
+  reward_id: number;
+  gambling_open_id: number;
+  obtained_at: string;
+  title: string;
+  image_url: string | null;
+}
+
+export interface GamblingOpenEntry {
+  id: number;
+  user_id: number;
+  crate_id: number;
+  reward_id: number;
+  season_id: number | null;
+  sp_transaction_id: number | null;
+  opened_at: string;
+  crate_name: string;
+  reward_title: string;
+  reward_type: GamblingRewardType;
+  reward_image_url: string | null;
+  sp_amount: number | null;
 }
 
 export interface PlayerStats {

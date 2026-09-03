@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import * as leaderboardApi from '../api/leaderboard.js';
 import * as seasonsApi from '../api/seasons.js';
 import Avatar from '../components/Avatar.jsx';
+import RankBadge from '../components/RankBadge.jsx';
 import type { LeaderboardEntry, LeaderboardSort, Season, SeasonSnapshotEntry } from '../types.js';
 
 const POLL_INTERVAL_MS = 60_000;
@@ -171,13 +172,20 @@ export default function Leaderboard() {
                     <tbody key={sort} style={{ animation: 'fadeIn 0.25s ease-out' }}>
                       {entries.map((entry, i) => (
                         <tr key={entry.id} className="border-t border-zinc-800">
-                          <td className="px-4 py-3 font-semibold text-zinc-500">{i + 1}</td>
+                          <td className="px-4 py-3">
+                            <RankBadge rank={i + 1} size="sm" />
+                          </td>
                           <td className="px-4 py-3">
                             <Link
                               to={`/joueurs/${entry.username}`}
                               className="flex items-center gap-2 hover:opacity-80 transition"
                             >
-                              <Avatar username={entry.username} avatarUrl={entry.avatar_url} size={32} />
+                              <Avatar
+                                username={entry.username}
+                                avatarUrl={entry.avatar_url}
+                                size={32}
+                                crown={i + 1 === 1}
+                              />
                               <span className="font-medium text-zinc-100 whitespace-nowrap">
                                 {entry.username}
                               </span>
@@ -250,7 +258,9 @@ export default function Leaderboard() {
                     <tbody>
                       {snapshot.map((entry) => (
                         <tr key={entry.id} className="border-t border-zinc-800">
-                          <td className="px-4 py-3 font-semibold text-zinc-500">{entry.rank}</td>
+                          <td className="px-4 py-3">
+                            <RankBadge rank={entry.rank} size="sm" />
+                          </td>
                           <td className="px-4 py-3">
                             <Link
                               to={`/joueurs/${entry.username}`}

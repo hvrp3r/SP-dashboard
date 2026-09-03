@@ -16,6 +16,8 @@ export default function Minigames() {
   const [gameType, setGameType] = useState<MinigameGameType>(MINIGAME_GAME_TYPES[0]);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [isPaid, setIsPaid] = useState(false);
+  const [entryFee, setEntryFee] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   async function load() {
@@ -35,14 +37,29 @@ export default function Minigames() {
     load();
   }, []);
 
+  const showPaidOption = gameType === 'quiz';
+  const paidFeeValue = showPaidOption && isPaid ? Number(entryFee) : NaN;
+  const paidFeeInvalid = showPaidOption && isPaid && (!Number.isInteger(paidFeeValue) || paidFeeValue <= 0);
+
   async function handleCreate(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    if (paidFeeInvalid) {
+      setError('La mise doit être un entier positif');
+      return;
+    }
     setSubmitting(true);
     try {
-      await minigamesApi.createSession(gameType, title.trim(), description.trim() || undefined);
+      await minigamesApi.createSession(
+        gameType,
+        title.trim(),
+        description.trim() || undefined,
+        showPaidOption && isPaid ? paidFeeValue : undefined
+      );
       setTitle('');
       setDescription('');
+      setIsPaid(false);
+      setEntryFee('');
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur inconnue');
@@ -64,7 +81,14 @@ export default function Minigames() {
             <form onSubmit={handleCreate} className="space-y-2">
               <select
                 value={gameType}
-                onChange={(e) => setGameType(e.target.value as MinigameGameType)}
+                onChange={(e) => {
+                  const nextType = e.target.value as MinigameGameType;
+                  setGameType(nextType);
+                  if (nextType !== 'quiz') {
+                    setIsPaid(false);
+                    setEntryFee('');
+                  }
+                }}
                 className="w-full rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
               >
                 {MINIGAME_GAME_TYPES.map((type) => (
@@ -89,9 +113,34 @@ export default function Minigames() {
                 rows={2}
                 className="w-full rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
               />
+              {showPaidOption && (
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2 text-sm text-zinc-300">
+                    <input
+                      type="checkbox"
+                      checked={isPaid}
+                      onChange={(e) => setIsPaid(e.target.checked)}
+                      className="h-4 w-4 rounded border-zinc-700 bg-zinc-950 text-emerald-500 focus:ring-emerald-500"
+                    />
+                    Payant
+                  </label>
+                  {isPaid && (
+                    <input
+                      type="number"
+                      required
+                      min={1}
+                      step={1}
+                      placeholder="Mise pour accéder au quiz (SP)"
+                      value={entryFee}
+                      onChange={(e) => setEntryFee(e.target.value)}
+                      className="w-full rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  )}
+                </div>
+              )}
               <button
                 type="submit"
-                disabled={submitting}
+                disabled={submitting || paidFeeInvalid}
                 className="bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-semibold px-4 py-2 rounded-md transition disabled:opacity-50"
               >
                 Créer
@@ -118,6 +167,11 @@ export default function Minigames() {
                     <span className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-400 font-medium uppercase tracking-wide">
                       {gameTypeLabel(s.game_type)}
                     </span>
+                    {s.entry_fee && (
+                      <span className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 font-medium uppercase tracking-wide">
+                        {s.entry_fee} SP
+                      </span>
+                    )}
                   </div>
                   <span
                     className={`flex-shrink-0 text-xs px-2 py-1 rounded-full ${

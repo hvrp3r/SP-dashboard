@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import * as usersApi from '../api/users.js';
 import Avatar from '../components/Avatar.jsx';
+import RankBadge from '../components/RankBadge.jsx';
 import { TRANSACTION_TYPE_LABELS } from '../lib/transactionLabels.js';
 import type { PlayerStats as PlayerStatsType, SpTransactionType, User } from '../types.js';
 
@@ -41,13 +42,20 @@ export default function PlayerStats() {
         ) : (
           <>
             <div className="flex items-center gap-4 mt-4 mb-6">
-              <Avatar username={profile.username} avatarUrl={profile.avatar_url} size={64} />
+              <Avatar
+                username={profile.username}
+                avatarUrl={profile.avatar_url}
+                size={64}
+                crown={stats.rank === 1}
+              />
               <div>
                 <h1 className="text-2xl font-bold text-zinc-50">{profile.username}</h1>
-                <p className="text-sm text-zinc-400">
-                  {profile.role === 'admin' ? 'MSP' : 'Joueur'} ·{' '}
-                  {stats.rank !== null ? `Rang #${stats.rank}` : 'Hors classement'}
-                </p>
+                <div className="flex items-center gap-2 mt-1">
+                  <p className="text-sm text-zinc-400">
+                    {profile.role === 'admin' ? 'MSP' : 'Joueur'}
+                  </p>
+                  <RankBadge rank={stats.rank} size="sm" />
+                </div>
               </div>
             </div>
 

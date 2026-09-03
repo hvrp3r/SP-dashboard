@@ -15,8 +15,12 @@ export const getSession = (id: number) =>
 export const listQuestions = (sessionId: number) =>
   apiClient.get<MinigameQuestionView[]>(`/api/minigames/${sessionId}/questions`);
 
-export const createSession = (gameType: string, title: string, description?: string) =>
-  apiClient.post<MinigameSession>('/api/minigames', { gameType, title, description });
+export const createSession = (
+  gameType: string,
+  title: string,
+  description?: string,
+  entryFee?: number
+) => apiClient.post<MinigameSession>('/api/minigames', { gameType, title, description, entryFee });
 
 export const joinSession = (sessionId: number) =>
   apiClient.post<MinigameSessionDetail>(`/api/minigames/${sessionId}/join`);

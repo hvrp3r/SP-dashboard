@@ -90,8 +90,11 @@ export type SpTransactionType =
   | 'challenge_win'
   | 'challenge_loss'
   | 'minigame_reward'
+  | 'minigame_entry'
   | 'admin_grant'
-  | 'admin_deduct';
+  | 'admin_deduct'
+  | 'gambling_spend'
+  | 'gambling_win';
 
 export interface SpTransactionRow {
   id: number;
@@ -174,6 +177,7 @@ export interface MinigameSessionRow {
   game_type: string;
   title: string | null;
   description: string | null;
+  entry_fee: number | null;
   status: MinigameStatus;
   created_by: number | null;
   created_at: string;
@@ -236,6 +240,72 @@ export type NotificationType =
   | 'minigame_open'
   | 'sp_gained'
   | 'sp_lost';
+
+export type GamblingRewardType = 'sp' | 'custom';
+
+export interface GamblingCrateRow {
+  id: number;
+  name: string;
+  description: string | null;
+  image_url: string | null;
+  cost_sp: number;
+  is_active: boolean;
+  created_by: number | null;
+  created_at: string;
+}
+
+export interface GamblingCrateRewardRow {
+  id: number;
+  crate_id: number;
+  type: GamblingRewardType;
+  title: string;
+  image_url: string | null;
+  sp_amount: number | null;
+  weight: number;
+  created_at: string;
+}
+
+export interface GamblingCrateRewardView extends GamblingCrateRewardRow {
+  weight_percent: number;
+}
+
+export interface GamblingCrateDetail extends GamblingCrateRow {
+  rewards: GamblingCrateRewardView[];
+}
+
+export interface GamblingOpenRow {
+  id: number;
+  user_id: number;
+  crate_id: number;
+  reward_id: number;
+  season_id: number | null;
+  sp_transaction_id: number | null;
+  opened_at: string;
+}
+
+export interface GamblingOpenEntry extends GamblingOpenRow {
+  crate_name: string;
+  reward_title: string;
+  reward_type: GamblingRewardType;
+  reward_image_url: string | null;
+  sp_amount: number | null;
+}
+
+export interface GamblingInventoryEntry {
+  id: number;
+  user_id: number;
+  reward_id: number;
+  gambling_open_id: number;
+  obtained_at: string;
+  title: string;
+  image_url: string | null;
+}
+
+export interface GamblingStatusInfo {
+  enabled: boolean;
+  maxWagerPerDay: number;
+  spentToday: number;
+}
 
 export interface NotificationRow {
   id: number;

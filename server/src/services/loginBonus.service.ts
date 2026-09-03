@@ -21,20 +21,25 @@ function isYesterday(lastLoginDate: string, today: string): boolean {
   return last === yesterday.getTime();
 }
 
+export interface DailyBonusClaimResult {
+  alreadyClaimed: boolean;
+  amount: number;
+  streak: number;
+}
+
 /**
- * Applique le bonus de connexion quotidienne (+ streak) si ce n'est pas déjà fait
- * pour la date UTC courante. Idempotent : ne fait rien si l'utilisateur a déjà été
- * crédité aujourd'hui.
+ * Réclame le bonus de connexion quotidienne (+ streak) pour la date UTC courante,
+ * à l'appel explicite du joueur (bouton "Réclamer" sur son profil). Idempotent :
+ * un second appel le même jour renvoie `alreadyClaimed: true` sans re-créditer.
  *
  * Tout se passe dans une seule transaction avec verrou de ligne (SELECT ... FOR UPDATE) :
- * comme cette fonction tourne sur chaque requête authentifiée, le client envoie souvent
- * plusieurs requêtes en parallèle (leaderboard, profil, saison active...). Sans ce verrou,
- * elles liraient toutes last_login_date avant qu'aucune ne l'ait mis à jour et créditeraient
- * le bonus plusieurs fois pour la même journée. Le verrou sérialise les requêtes concurrentes
- * du même utilisateur : la seconde attend que la première commite, puis voit last_login_date
- * déjà à jour et s'arrête sans rien créditer.
+ * plusieurs clics ou onglets peuvent appeler cette fonction en parallèle pour le même
+ * utilisateur. Sans ce verrou, ils liraient tous last_login_date avant qu'aucun ne l'ait
+ * mis à jour et créditeraient le bonus plusieurs fois pour la même journée. Le verrou
+ * sérialise les appels concurrents du même utilisateur : le second attend que le premier
+ * commite, puis voit last_login_date déjà à jour et s'arrête sans rien créditer.
  */
-export async function applyDailyLoginBonus(userId: number): Promise<void> {
+export async function claimDailyLoginBonus(userId: number): Promise<DailyBonusClaimResult> {
   const today = todayUTC();
   const client = await pool.connect();
 
@@ -47,14 +52,13 @@ export async function applyDailyLoginBonus(userId: number): Promise<void> {
     }>('SELECT last_login_date, login_streak FROM users WHERE id = $1 FOR UPDATE', [userId]);
     const user = rows[0];
     if (!user) {
-      await client.query('ROLLBACK');
-      return;
+      throw Object.assign(new Error('Utilisateur introuvable'), { status: 404 });
     }
 
     const lastLoginDate = toDateOnlyString(user.last_login_date);
     if (lastLoginDate === today) {
       await client.query('ROLLBACK');
-      return;
+      return { alreadyClaimed: true, amount: 0, streak: user.login_streak };
     }
 
     const newStreak = lastLoginDate && isYesterday(lastLoginDate, today) ? user.login_streak + 1 : 1;
@@ -89,6 +93,7 @@ export async function applyDailyLoginBonus(userId: number): Promise<void> {
     }
 
     await client.query('COMMIT');
+    return { alreadyClaimed: false, amount: totalAmount, streak: newStreak };
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;
