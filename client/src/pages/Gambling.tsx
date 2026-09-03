@@ -15,6 +15,7 @@ export default function Gambling() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
+  const [showLimitReached, setShowLimitReached] = useState(false);
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -73,6 +74,11 @@ export default function Gambling() {
       setSubmitting(false);
     }
   }
+
+  const limitReached = (c: GamblingCrateEntry) =>
+    c.max_opens_per_player !== null && c.myOpenCount >= c.max_opens_per_player;
+  const availableCrates = crates.filter((c) => !limitReached(c));
+  const limitReachedCrates = crates.filter(limitReached);
 
   return (
     <div className="min-h-screen bg-zinc-950 py-10 px-4">
@@ -153,46 +159,72 @@ export default function Gambling() {
           </button>
         )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {loading ? (
-            <p className="text-zinc-500">Chargement…</p>
-          ) : crates.length === 0 ? (
-            <p className="text-zinc-500">Aucune caisse pour le moment.</p>
-          ) : (
-            crates.map((c) => (
-              <Link
-                key={c.id}
-                to={`/gambling/${c.id}`}
-                className="flex items-center gap-3 bg-zinc-900 border border-zinc-800 rounded-xl shadow-md p-4 hover:border-emerald-500/50 transition"
-              >
-                <CrateIcon imageUrl={c.image_url} size={48} />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <p className="font-medium text-zinc-100 truncate">{c.name}</p>
-                    {isAdmin && !c.is_active && (
-                      <span className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500 font-medium uppercase tracking-wide">
-                        Archivée
-                      </span>
-                    )}
+        {loading ? (
+          <p className="text-zinc-500">Chargement…</p>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {availableCrates.length === 0 ? (
+                <p className="text-zinc-500">Aucune caisse disponible pour le moment.</p>
+              ) : (
+                availableCrates.map((c) => <CrateCard key={c.id} crate={c} isAdmin={isAdmin} />)
+              )}
+            </div>
+
+            {limitReachedCrates.length > 0 && (
+              <div className="mt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowLimitReached((prev) => !prev)}
+                  className="mb-3 text-sm text-zinc-400 hover:text-zinc-200 font-medium transition"
+                >
+                  {showLimitReached
+                    ? 'Masquer les caisses dont tu as atteint la limite'
+                    : `Voir les caisses dont tu as atteint la limite (${limitReachedCrates.length})`}
+                </button>
+                {showLimitReached && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {limitReachedCrates.map((c) => (
+                      <CrateCard key={c.id} crate={c} isAdmin={isAdmin} />
+                    ))}
                   </div>
-                  {c.description && (
-                    <p className="text-sm text-zinc-500 truncate">{c.description}</p>
-                  )}
-                  <p className="text-sm text-emerald-400 font-semibold mt-0.5">
-                    {c.cost_sp > 0 ? `${c.cost_sp} SP` : 'Gratuit'}
-                    {c.max_opens_per_player !== null && (
-                      <span className="text-zinc-500 font-normal">
-                        {' '}
-                        · {c.myOpenCount}/{c.max_opens_per_player}
-                      </span>
-                    )}
-                  </p>
-                </div>
-              </Link>
-            ))
-          )}
-        </div>
+                )}
+              </div>
+            )}
+          </>
+        )}
       </div>
     </div>
+  );
+}
+
+function CrateCard({ crate: c, isAdmin }: { crate: GamblingCrateEntry; isAdmin: boolean }) {
+  return (
+    <Link
+      to={`/gambling/${c.id}`}
+      className="flex items-center gap-3 bg-zinc-900 border border-zinc-800 rounded-xl shadow-md p-4 hover:border-emerald-500/50 transition"
+    >
+      <CrateIcon imageUrl={c.image_url} size={48} />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <p className="font-medium text-zinc-100 truncate">{c.name}</p>
+          {isAdmin && !c.is_active && (
+            <span className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500 font-medium uppercase tracking-wide">
+              Archivée
+            </span>
+          )}
+        </div>
+        {c.description && <p className="text-sm text-zinc-500 truncate">{c.description}</p>}
+        <p className="text-sm text-emerald-400 font-semibold mt-0.5">
+          {c.cost_sp > 0 ? `${c.cost_sp} SP` : 'Gratuit'}
+          {c.max_opens_per_player !== null && (
+            <span className="text-zinc-500 font-normal">
+              {' '}
+              · {c.myOpenCount}/{c.max_opens_per_player}
+            </span>
+          )}
+        </p>
+      </div>
+    </Link>
   );
 }
