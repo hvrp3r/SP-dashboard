@@ -136,6 +136,13 @@ export async function createChallenge(
     res.status(400).json({ error: 'Solde SP insuffisant pour cette mise' });
     return;
   }
+  const brokeOpponents = opponents.filter((o) => o!.sp_balance < (wagerAmount as number));
+  if (brokeOpponents.length > 0) {
+    res.status(400).json({
+      error: `Solde SP insuffisant pour : ${brokeOpponents.map((o) => o!.username).join(', ')}`,
+    });
+    return;
+  }
 
   const maxPerDay = await configService.getConfigNumber('max_challenges_per_day', 5);
   const countToday = await challengeService.countChallengesToday(req.user!.id);
@@ -204,6 +211,17 @@ export async function acceptChallenge(req: Request<{ id: string }>, res: Respons
   await expireAndNotify();
   const challengeId = parseChallengeId(req, res);
   if (challengeId === null) return;
+
+  const challenge = await challengeService.getChallengeById(challengeId);
+  if (!challenge) {
+    res.status(404).json({ error: 'Défi introuvable' });
+    return;
+  }
+  const me = await userService.findById(req.user!.id);
+  if (!me || me.sp_balance < challenge.wager_amount) {
+    res.status(400).json({ error: 'Solde SP insuffisant pour accepter ce défi' });
+    return;
+  }
 
   try {
     await challengeService.respondToChallenge(challengeId, req.user!.id, 'accepted');

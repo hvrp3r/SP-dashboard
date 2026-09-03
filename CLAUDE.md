@@ -278,9 +278,11 @@ Un défi peut réunir **plusieurs adversaires au sein d'un même défi** (un seu
 
 #### Validation (avant création) :
 - `challenger.sp_balance >= wager_amount` (le challenger ne risque que sa propre mise, quel que soit le nombre d'adversaires)
+- **Tous les adversaires invités ont déjà `sp_balance >= wager_amount` au moment de la création** — bloque la création avec le nom des adversaires concernés plutôt que de laisser un défi injouable se créer
 - `wager_amount <= max_wager_amount`
 - Nombre de défis créés aujourd'hui par ce joueur < `max_challenges_per_day` (**un défi à N adversaires compte pour 1**, pas pour N)
 - Pas de défi contre soi-même, pas d'adversaire dupliqué
+- **À l'acceptation** : le joueur qui accepte doit toujours avoir `sp_balance >= wager_amount` à cet instant (son solde a pu changer depuis l'invitation) — sinon l'acceptation est refusée
 - Vérifier à la résolution que chaque perdant a un solde suffisant (si changé entre-temps sur l'un d'eux → toute la résolution échoue et rien n'est modifié, le MSP gère ensuite via arbitrage)
 
 #### Contraintes MSP (via admin_config) :

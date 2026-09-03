@@ -5,14 +5,41 @@ import * as seasonsApi from '../api/seasons.js';
 import Avatar from '../components/Avatar.jsx';
 import type { LeaderboardEntry, LeaderboardSort, Season, SeasonSnapshotEntry } from '../types.js';
 
-const SORT_LABELS: Record<LeaderboardSort, string> = {
-  sp_balance: 'Solde actuel',
-  sp_total_earned: 'Total gagné',
-};
-
 const POLL_INTERVAL_MS = 60_000;
 
 type View = 'live' | 'archives';
+
+function SortableHeader({
+  label,
+  active,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <th className="px-4 py-3 text-right">
+      <button
+        type="button"
+        onClick={onClick}
+        className={`group inline-flex items-center gap-1 transition-all duration-150 transform hover:scale-105 active:scale-95 cursor-pointer ${
+          active ? 'text-emerald-400' : 'text-zinc-400 hover:text-zinc-200'
+        }`}
+      >
+        <span className={active ? 'font-bold' : undefined}>{label}</span>
+        <span
+          className={`text-[10px] transition-opacity duration-150 ${
+            active ? 'opacity-100' : 'opacity-0 group-hover:opacity-40'
+          }`}
+          style={active ? { animation: 'popIn 0.25s ease-out' } : undefined}
+        >
+          ▼
+        </span>
+      </button>
+    </th>
+  );
+}
 
 export default function Leaderboard() {
   const [view, setView] = useState<View>('live');
@@ -117,22 +144,6 @@ export default function Leaderboard() {
 
         {view === 'live' ? (
           <>
-            <div className="flex gap-2 mb-4">
-              {(Object.keys(SORT_LABELS) as LeaderboardSort[]).map((key) => (
-                <button
-                  key={key}
-                  onClick={() => setSort(key)}
-                  className={`px-3 py-1.5 rounded-md text-sm font-medium transition ${
-                    sort === key
-                      ? 'bg-emerald-500 text-zinc-950'
-                      : 'bg-zinc-900 text-zinc-300 border border-zinc-700 hover:bg-zinc-800'
-                  }`}
-                >
-                  {SORT_LABELS[key]}
-                </button>
-              ))}
-            </div>
-
             <div className="bg-zinc-900 border border-zinc-800 rounded-xl shadow-md overflow-hidden">
               {loading ? (
                 <p className="p-6 text-center text-zinc-500">Chargement…</p>
@@ -141,15 +152,23 @@ export default function Leaderboard() {
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
-                    <thead className="bg-zinc-800/60 text-zinc-400 uppercase text-xs">
+                    <thead className="bg-zinc-800/60 text-zinc-400 uppercase text-xs select-none">
                       <tr>
                         <th className="px-4 py-3 text-left">Rang</th>
                         <th className="px-4 py-3 text-left">Joueur</th>
-                        <th className="px-4 py-3 text-right">Solde SP</th>
-                        <th className="px-4 py-3 text-right">Total gagné</th>
+                        <SortableHeader
+                          label="Solde SP"
+                          active={sort === 'sp_balance'}
+                          onClick={() => setSort('sp_balance')}
+                        />
+                        <SortableHeader
+                          label="Total gagné"
+                          active={sort === 'sp_total_earned'}
+                          onClick={() => setSort('sp_total_earned')}
+                        />
                       </tr>
                     </thead>
-                    <tbody>
+                    <tbody key={sort} style={{ animation: 'fadeIn 0.25s ease-out' }}>
                       {entries.map((entry, i) => (
                         <tr key={entry.id} className="border-t border-zinc-800">
                           <td className="px-4 py-3 font-semibold text-zinc-500">{i + 1}</td>
