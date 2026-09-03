@@ -1,10 +1,17 @@
 {$DOMAIN} {
 	encode gzip
 
-	@api path /api/* /uploads/*
-	reverse_proxy @api server:3001
+	handle /api/* {
+		reverse_proxy server:3001
+	}
 
-	root * /srv
-	try_files {path} /index.html
-	file_server
+	handle /uploads/* {
+		reverse_proxy server:3001
+	}
+
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
 }
