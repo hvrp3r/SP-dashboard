@@ -115,21 +115,26 @@ interface UserCosmeticJoinRow extends CosmeticRow {
   obtained_at: string;
 }
 
+interface UserCosmeticJoinRowWithQuantity extends UserCosmeticJoinRow {
+  quantity: number;
+}
+
 export async function getUserCosmetics(userId: number): Promise<UserCosmeticEntry[]> {
-  const { rows } = await pool.query<UserCosmeticJoinRow>(
-    `SELECT uc.id AS uc_id, uc.equipped, uc.obtained_source, uc.obtained_at, c.*
+  const { rows } = await pool.query<UserCosmeticJoinRowWithQuantity>(
+    `SELECT uc.id AS uc_id, uc.equipped, uc.quantity, uc.obtained_source, uc.obtained_at, c.*
      FROM user_cosmetics uc
      JOIN cosmetics c ON c.id = uc.cosmetic_id
      WHERE uc.user_id = $1
      ORDER BY c.slot ASC, uc.obtained_at DESC`,
     [userId]
   );
-  return rows.map(({ uc_id, equipped, obtained_source, obtained_at, ...cosmetic }) => ({
+  return rows.map(({ uc_id, equipped, quantity, obtained_source, obtained_at, ...cosmetic }) => ({
     id: uc_id,
     user_id: userId,
     cosmetic_id: cosmetic.id,
     slot: cosmetic.slot,
     equipped,
+    quantity,
     obtained_source,
     obtained_at,
     cosmetic,
@@ -204,10 +209,12 @@ export async function getEquippedForUsers(userIds: number[]): Promise<Map<number
 }
 
 /**
- * Octroie un cosmétique à un joueur (caisse gambling ou octroi MSP).
- * Idempotent : un octroi déjà possédé ne recrée pas de ligne. Accepte un
- * `client` optionnel pour composer avec la transaction d'ouverture de
- * caisse (même signature que creditSP/debitSP).
+ * Octroie un cosmétique à un joueur (caisse gambling, octroi MSP, ou vente
+ * aux enchères gagnée). Empilable : un exemplaire supplémentaire d'un
+ * cosmétique déjà possédé incrémente `quantity` au lieu d'être ignoré.
+ * Accepte un `client` optionnel pour composer avec la transaction appelante
+ * (ouverture de caisse, résolution d'enchère — même signature que
+ * creditSP/debitSP).
  */
 export async function grant(
   userId: number,
@@ -221,11 +228,41 @@ export async function grant(
     throw Object.assign(new Error('Cosmétique introuvable'), { status: 404 });
   }
   await db.query(
-    `INSERT INTO user_cosmetics (user_id, cosmetic_id, slot, obtained_source)
-     VALUES ($1, $2, $3, $4)
-     ON CONFLICT (user_id, cosmetic_id) DO NOTHING`,
+    `INSERT INTO user_cosmetics (user_id, cosmetic_id, slot, obtained_source, quantity)
+     VALUES ($1, $2, $3, $4, 1)
+     ON CONFLICT (user_id, cosmetic_id) DO UPDATE SET quantity = user_cosmetics.quantity + 1`,
     [userId, cosmeticId, cosmetic.slot, source]
   );
+}
+
+/**
+ * Retire un exemplaire d'un cosmétique possédé (vente aux enchères conclue).
+ * Si `quantity` retombe à 0 et que le cosmétique était équipé, le déséquipe
+ * automatiquement — le joueur retombe sur le défaut de l'emplacement, même
+ * repli que removeCosmetic()/getEquipped() pour un cosmétique supprimé du
+ * catalogue.
+ */
+export async function consumeOneCopy(
+  userId: number,
+  cosmeticId: number,
+  client?: PoolClient
+): Promise<void> {
+  const db: Pool | PoolClient = client ?? pool;
+  const { rows } = await db.query<{ quantity: number; equipped: boolean }>(
+    `UPDATE user_cosmetics SET quantity = quantity - 1
+     WHERE user_id = $1 AND cosmetic_id = $2 AND quantity > 0
+     RETURNING quantity, equipped`,
+    [userId, cosmeticId]
+  );
+  if (!rows[0]) {
+    throw Object.assign(new Error('Ce joueur ne possède pas cet exemplaire'), { status: 409 });
+  }
+  if (rows[0].quantity === 0 && rows[0].equipped) {
+    await db.query(
+      'UPDATE user_cosmetics SET equipped = false WHERE user_id = $1 AND cosmetic_id = $2',
+      [userId, cosmeticId]
+    );
+  }
 }
 
 /**
@@ -242,7 +279,7 @@ export async function equip(userId: number, cosmeticId: number | null): Promise<
     if (cosmeticId !== null) {
       const { rows } = await client.query<{ slot: CosmeticSlot }>(
         `SELECT c.slot FROM user_cosmetics uc JOIN cosmetics c ON c.id = uc.cosmetic_id
-         WHERE uc.user_id = $1 AND uc.cosmetic_id = $2`,
+         WHERE uc.user_id = $1 AND uc.cosmetic_id = $2 AND uc.quantity > 0`,
         [userId, cosmeticId]
       );
       if (!rows[0]) {
@@ -347,9 +384,15 @@ export async function updateCosmetic(
 
 /**
  * Supprime un cosmétique — refuse s'il est le défaut de son emplacement
- * (toujours nécessaire comme repli), déjà possédé par au moins un joueur, ou
- * référencé par une récompense de caisse gambling (même règle que
- * removeReward/removeCrate — préserve l'historique).
+ * (toujours nécessaire comme repli) ou référencé par une récompense de
+ * caisse gambling (même règle que removeReward/removeCrate — le MSP doit
+ * d'abord retirer la récompense, sinon la caisse référencerait un cosmétique
+ * fantôme). En revanche, un cosmétique déjà possédé par des joueurs PEUT être
+ * supprimé — contrairement aux autres suppressions de ce type dans l'app, il
+ * n'y a pas d'historique anti-triche à préserver ici, juste une apparence.
+ * Les possessions (`user_cosmetics`) sont supprimées avec lui ; un joueur qui
+ * l'avait équipé retombe automatiquement sur le défaut de l'emplacement
+ * (aucune ligne équipée restante → repli géré par getEquipped).
  */
 export async function removeCosmetic(id: number): Promise<void> {
   const cosmetic = await getCosmeticById(id);
@@ -358,17 +401,6 @@ export async function removeCosmetic(id: number): Promise<void> {
   if (cosmetic.is_default) {
     throw Object.assign(
       new Error('Ce cosmétique est le défaut de son emplacement, il ne peut pas être supprimé'),
-      { status: 409 }
-    );
-  }
-
-  const { rows: ownedRows } = await pool.query<{ count: string }>(
-    'SELECT COUNT(*) FROM user_cosmetics WHERE cosmetic_id = $1',
-    [id]
-  );
-  if (Number(ownedRows[0]?.count ?? 0) > 0) {
-    throw Object.assign(
-      new Error('Ce cosmétique est déjà possédé par au moins un joueur, il ne peut plus être supprimé'),
       { status: 409 }
     );
   }
@@ -384,5 +416,27 @@ export async function removeCosmetic(id: number): Promise<void> {
     );
   }
 
-  await pool.query('DELETE FROM cosmetics WHERE id = $1', [id]);
+  const { rows: auctionRows } = await pool.query<{ count: string }>(
+    `SELECT COUNT(*) FROM cosmetic_auctions WHERE cosmetic_id = $1 AND status = 'active'`,
+    [id]
+  );
+  if (Number(auctionRows[0]?.count ?? 0) > 0) {
+    throw Object.assign(
+      new Error('Ce cosmétique est dans une enchère en cours, attends qu\'elle se termine ou annule-la d\'abord'),
+      { status: 409 }
+    );
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('DELETE FROM user_cosmetics WHERE cosmetic_id = $1', [id]);
+    await client.query('DELETE FROM cosmetics WHERE id = $1', [id]);
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
 }

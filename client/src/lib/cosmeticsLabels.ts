@@ -32,6 +32,16 @@ const SHORT_SLOT_LABELS: Record<CosmeticSlot, string> = {
   name_font: 'Police',
 };
 
+/** Icône générique par catégorie — utilisée comme visuel par défaut d'un gain
+ * cosmétique de caisse gambling qui n'a pas d'image configurée. */
+export const SLOT_ICONS: Record<CosmeticSlot, string> = {
+  avatar_frame: '⭕',
+  banner: '🖼️',
+  name_color: '🎨',
+  title: '🏷️',
+  name_font: '🔤',
+};
+
 /**
  * Libellé suggéré pour une récompense de caisse "pool" (catégorie et/ou
  * rareté, cosmétique précis tiré au hasard à l'ouverture) — ex: "Titre +
@@ -74,3 +84,23 @@ export const RARITY_TEXT_CLASSES: Record<CosmeticRarity, string> = {
   epic: 'text-violet-400',
   legendary: 'text-amber-400',
 };
+
+/**
+ * Visuel par défaut d'un gain cosmétique de caisse gambling sans image
+ * configurée : icône selon la catégorie (précise, ou filtre de la récompense
+ * "pool"), couleur selon la rareté. `null` sur un axe (ex: pool "Épique"
+ * toutes catégories, ou "Cadre" toutes raretés) retombe sur un visuel neutre
+ * pour cet axe — délibérément **distinct** du gris de la rareté Commune
+ * (bordure pointillée + gris plus clair) pour ne pas laisser croire que le
+ * pool est garanti Commun alors qu'il couvre toutes les raretés.
+ */
+export function cosmeticRewardVisual(
+  slot: CosmeticSlot | null,
+  rarity: CosmeticRarity | null
+): { icon: string; textClass: string; borderClass: string } {
+  return {
+    icon: slot ? SLOT_ICONS[slot] : '✨',
+    textClass: rarity ? RARITY_TEXT_CLASSES[rarity] : 'text-zinc-100',
+    borderClass: rarity ? RARITY_BORDER_CLASSES[rarity] : 'border-dashed border-zinc-500',
+  };
+}

@@ -112,7 +112,10 @@ export type SpTransactionType =
   | 'admin_grant'
   | 'admin_deduct'
   | 'gambling_spend'
-  | 'gambling_win';
+  | 'gambling_win'
+  | 'auction_bid_hold'
+  | 'auction_bid_refund'
+  | 'auction_sale';
 
 export interface SpTransactionRow {
   id: number;
@@ -259,12 +262,17 @@ export type NotificationType =
   | 'minigame_open'
   | 'sp_gained'
   | 'sp_lost'
-  | 'cosmetic_earned';
+  | 'cosmetic_earned'
+  | 'auction_outbid'
+  | 'auction_won'
+  | 'auction_sold'
+  | 'auction_expired'
+  | 'auction_cancelled';
 
 export type CosmeticSlot = 'avatar_frame' | 'banner' | 'name_color' | 'title' | 'name_font';
 export type CosmeticRarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
 /** Comment un joueur a obtenu un cosmétique — miroir de sp_transactions.type mais scoping propre à ce système. */
-export type CosmeticObtainedSource = 'gambling' | 'admin_grant';
+export type CosmeticObtainedSource = 'gambling' | 'admin_grant' | 'auction';
 
 export interface CosmeticRow {
   id: number;
@@ -287,6 +295,7 @@ export interface UserCosmeticRow {
   cosmetic_id: number;
   slot: CosmeticSlot;
   equipped: boolean;
+  quantity: number;
   obtained_source: CosmeticObtainedSource;
   obtained_at: string;
 }
@@ -303,6 +312,50 @@ export interface EquippedCosmetic {
   image_url: string | null;
   color_value: string | null;
   font_family: string | null;
+}
+
+export type AuctionStatus = 'active' | 'sold' | 'expired' | 'cancelled';
+export type AuctionBidStatus = 'active' | 'refunded' | 'won';
+
+export interface CosmeticAuctionRow {
+  id: number;
+  seller_id: number;
+  cosmetic_id: number;
+  starting_price: number;
+  current_bid: number | null;
+  current_bidder_id: number | null;
+  status: AuctionStatus;
+  created_at: string;
+  ends_at: string;
+  resolved_at: string | null;
+  cancelled_by: number | null;
+  cancelled_at: string | null;
+}
+
+export interface CosmeticAuctionEntry extends CosmeticAuctionRow {
+  cosmetic: CosmeticRow;
+  seller_username: string;
+  current_bidder_username: string | null;
+  bid_count: number;
+}
+
+export interface AuctionBidRow {
+  id: number;
+  auction_id: number;
+  bidder_id: number;
+  amount: number;
+  status: AuctionBidStatus;
+  created_at: string;
+  hold_transaction_id: number | null;
+  refund_transaction_id: number | null;
+}
+
+export interface AuctionBidEntry extends AuctionBidRow {
+  bidder_username: string;
+}
+
+export interface CosmeticAuctionDetail extends CosmeticAuctionEntry {
+  bids: AuctionBidEntry[];
 }
 
 export type GamblingRewardType = 'sp' | 'custom' | 'cosmetic';

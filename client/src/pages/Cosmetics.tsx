@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import * as cosmeticsApi from '../api/cosmetics.js';
 import CosmeticPreview from '../components/CosmeticPreview.jsx';
 import {
@@ -16,11 +17,13 @@ const SLOTS: CosmeticSlot[] = ['avatar_frame', 'banner', 'name_color', 'title', 
 function CosmeticCard({
   cosmetic,
   status,
+  quantity,
   onEquip,
   equipping,
 }: {
   cosmetic: Cosmetic;
   status: 'equipped' | 'owned' | 'locked';
+  quantity?: number;
   onEquip: () => void;
   equipping: boolean;
 }) {
@@ -30,13 +33,25 @@ function CosmeticCard({
     >
       <CosmeticPreview cosmetic={cosmetic} />
       <div className="min-w-0 flex-1">
-        <p className="font-medium text-zinc-100 truncate">{cosmetic.name}</p>
+        <p className="font-medium text-zinc-100 truncate">
+          {cosmetic.name}
+          {quantity !== undefined && quantity > 1 && (
+            <span className="ml-1.5 text-xs font-semibold bg-zinc-950/50 text-emerald-300 px-1.5 py-0.5 rounded-full">
+              ×{quantity}
+            </span>
+          )}
+        </p>
         {cosmetic.description && (
           <p className="text-xs text-zinc-500 truncate">{cosmetic.description}</p>
         )}
         <p className={`text-xs font-medium mt-0.5 ${RARITY_TEXT_CLASSES[cosmetic.rarity]}`}>
           {RARITY_LABELS[cosmetic.rarity]}
         </p>
+        {status === 'owned' && !cosmetic.is_default && (
+          <Link to="/encheres" className="text-xs text-zinc-500 hover:text-zinc-300 underline">
+            Mettre en enchère
+          </Link>
+        )}
       </div>
       {status === 'equipped' ? (
         <span className="flex-shrink-0 text-xs font-semibold text-emerald-400 px-3 py-1.5">
@@ -173,7 +188,8 @@ export default function Cosmetics() {
               </h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {items.map((c) => {
-                  const isOwned = c.is_default || owned.some((o) => o.cosmetic_id === c.id);
+                  const ownedEntry = owned.find((o) => o.cosmetic_id === c.id && o.quantity > 0);
+                  const isOwned = c.is_default || ownedEntry !== undefined;
                   const status: 'equipped' | 'owned' | 'locked' =
                     c.key === equippedKey ? 'equipped' : isOwned ? 'owned' : 'locked';
                   return (
@@ -181,6 +197,7 @@ export default function Cosmetics() {
                       key={c.id}
                       cosmetic={c}
                       status={status}
+                      quantity={ownedEntry?.quantity}
                       onEquip={() => handleEquip(c)}
                       equipping={equippingId === (c.is_default ? 'default' : c.id)}
                     />

@@ -9,6 +9,7 @@ import {
   RARITY_LABELS,
   RARITY_TEXT_CLASSES as COSMETIC_RARITY_TEXT_CLASSES,
   SLOT_LABELS,
+  cosmeticRewardVisual,
   poolRewardLabel,
 } from '../lib/cosmeticsLabels.js';
 import {
@@ -43,22 +44,43 @@ const COSMETIC_SLOTS: CosmeticSlot[] = ['avatar_frame', 'banner', 'name_color', 
 type CosmeticRewardMode = 'exact' | 'pool';
 
 function RewardIcon({
-  imageUrl,
-  type,
+  reward,
+  cosmeticCatalog,
   size = 40,
 }: {
-  imageUrl: string | null;
-  type: GamblingRewardType;
+  reward: Pick<
+    GamblingCrateReward,
+    'type' | 'image_url' | 'cosmetic_id' | 'cosmetic_slot_filter' | 'cosmetic_rarity_filter'
+  >;
+  cosmeticCatalog: Cosmetic[];
   size?: number;
 }) {
-  if (imageUrl) {
+  if (reward.image_url) {
     return (
       <img
-        src={imageUrl}
+        src={reward.image_url}
         alt=""
         style={{ width: size, height: size }}
         className="rounded-lg object-cover flex-shrink-0"
       />
+    );
+  }
+  if (reward.type === 'cosmetic') {
+    // Précis : catégorie/rareté du cosmétique visé. Pool : celles du filtre
+    // (peut être partiel — ex: "Épique" seul, toutes catégories confondues).
+    const exact = reward.cosmetic_id
+      ? cosmeticCatalog.find((c) => c.id === reward.cosmetic_id)
+      : null;
+    const slot = exact?.slot ?? reward.cosmetic_slot_filter;
+    const rarity = exact?.rarity ?? reward.cosmetic_rarity_filter;
+    const visual = cosmeticRewardVisual(slot, rarity);
+    return (
+      <div
+        style={{ width: size, height: size, fontSize: Math.round(size * 0.5) }}
+        className={`rounded-lg bg-zinc-800 border ${visual.borderClass} ${visual.textClass} flex items-center justify-center flex-shrink-0`}
+      >
+        {visual.icon}
+      </div>
     );
   }
   return (
@@ -66,7 +88,7 @@ function RewardIcon({
       style={{ width: size, height: size, fontSize: Math.round(size * 0.5) }}
       className="rounded-lg bg-zinc-800 flex items-center justify-center flex-shrink-0"
     >
-      {rewardFallbackEmoji(type)}
+      {rewardFallbackEmoji(reward.type)}
     </div>
   );
 }
@@ -175,8 +197,10 @@ export default function GamblingCrateDetail() {
   }, [crateId]);
 
   useEffect(() => {
-    if (isAdmin) cosmeticsApi.getCatalog().then(setCosmeticCatalog).catch(() => {});
-  }, [isAdmin]);
+    // Chargé pour tout le monde (pas seulement le MSP) : sert aussi à afficher
+    // l'icône/couleur par défaut des gains cosmétiques dans "Gains possibles".
+    cosmeticsApi.getCatalog().then(setCosmeticCatalog).catch(() => {});
+  }, []);
 
   // Suggère un titre à partir du filtre pool ("Titre + Épique"), sans écraser
   // un titre déjà saisi par le MSP.
@@ -509,6 +533,7 @@ export default function GamblingCrateDetail() {
                 winner={pendingWinner}
                 spinToken={spinToken}
                 onLanded={handleReelLanded}
+                cosmeticCatalog={cosmeticCatalog}
               />
             </div>
           )}
@@ -556,7 +581,7 @@ export default function GamblingCrateDetail() {
             <ul className="divide-y divide-zinc-800">
               {crate.rewards.map((r) => (
                 <li key={r.id} className="flex items-center gap-3 px-4 py-3">
-                  <RewardIcon imageUrl={r.image_url} type={r.type} size={40} />
+                  <RewardIcon reward={r} cosmeticCatalog={cosmeticCatalog} size={40} />
                   <div className="min-w-0 flex-1">
                     <p className="text-zinc-100 font-medium truncate">{r.title}</p>
                     <p className="text-xs text-zinc-500">{REWARD_TYPE_LABELS[r.type]}</p>

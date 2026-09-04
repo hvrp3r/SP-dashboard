@@ -22,6 +22,7 @@ const NAV_CARDS: NavCard[] = [
   { to: '/mini-jeux', label: 'Mini-jeux', description: 'Rejoins un quiz en direct', emoji: '🧠' },
   { to: '/gambling', label: 'Gambling', description: 'Ouvre des caisses, tente ta chance', emoji: '🎰' },
   { to: '/cosmetiques', label: 'Cosmétiques', description: 'Cadres, fonds, titres, polices…', emoji: '✨' },
+  { to: '/encheres', label: 'Enchères', description: 'Enchéris sur des cosmétiques exclusifs', emoji: '🔨' },
 ];
 
 export default function Home() {

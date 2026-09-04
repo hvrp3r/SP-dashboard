@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import type { GamblingCrateReward, GamblingCrateRewardView } from '../types.js';
+import type { Cosmetic, GamblingCrateReward, GamblingCrateRewardView } from '../types.js';
 import { RARITY_RING_CLASSES, rarityFromWeightPercent, rewardFallbackEmoji } from '../lib/gamblingLabels.js';
+import { cosmeticRewardVisual } from '../lib/cosmeticsLabels.js';
 import { playReveal, playTick } from '../lib/sound.js';
 
 const ITEM_WIDTH = 128;
@@ -56,13 +57,20 @@ interface GamblingReelProps {
   /** Incrémenter pour déclencher un nouveau tirage animé. */
   spinToken: number;
   onLanded: () => void;
+  cosmeticCatalog: Cosmetic[];
 }
 
 function offsetForIndex(index: number): number {
   return index * ITEM_WIDTH + ITEM_WIDTH / 2;
 }
 
-export default function GamblingReel({ pool, winner, spinToken, onLanded }: GamblingReelProps) {
+export default function GamblingReel({
+  pool,
+  winner,
+  spinToken,
+  onLanded,
+  cosmeticCatalog,
+}: GamblingReelProps) {
   const [items, setItems] = useState<GamblingCrateRewardView[]>([]);
   const [landed, setLanded] = useState(false);
   const trackRef = useRef<HTMLDivElement>(null);
@@ -148,6 +156,17 @@ export default function GamblingReel({ pool, winner, spinToken, onLanded }: Gamb
               >
                 {item.image_url ? (
                   <img src={item.image_url} alt="" className="w-full h-full object-cover" />
+                ) : item.type === 'cosmetic' ? (
+                  (() => {
+                    const exact = item.cosmetic_id
+                      ? cosmeticCatalog.find((c) => c.id === item.cosmetic_id)
+                      : null;
+                    const visual = cosmeticRewardVisual(
+                      exact?.slot ?? item.cosmetic_slot_filter,
+                      exact?.rarity ?? item.cosmetic_rarity_filter
+                    );
+                    return <span className={visual.textClass}>{visual.icon}</span>;
+                  })()
                 ) : (
                   rewardFallbackEmoji(item.type)
                 )}

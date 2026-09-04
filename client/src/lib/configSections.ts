@@ -27,6 +27,10 @@ export const CONFIG_SECTIONS: ConfigSection[] = [
     ],
   },
   {
+    title: 'Enchères',
+    keys: ['auction_min_duration_minutes', 'auction_max_duration_minutes', 'auction_min_bid_increment'],
+  },
+  {
     title: 'Intégrations',
     keys: ['discord_notifications_enabled'],
   },

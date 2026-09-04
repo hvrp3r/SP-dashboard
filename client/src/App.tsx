@@ -10,6 +10,8 @@ import Minigames from './pages/Minigames.jsx';
 import MinigameDetail from './pages/MinigameDetail.jsx';
 import GamblingHome from './pages/GamblingHome.jsx';
 import Cosmetics from './pages/Cosmetics.jsx';
+import Auctions from './pages/Auctions.jsx';
+import AuctionDetail from './pages/AuctionDetail.jsx';
 import Gambling from './pages/Gambling.jsx';
 import GamblingCrateDetail from './pages/GamblingCrateDetail.jsx';
 import BlackjackTable from './pages/BlackjackTable.jsx';
@@ -106,6 +108,22 @@ export default function App() {
           element={
             <PrivateRoute>
               <Cosmetics />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/encheres"
+          element={
+            <PrivateRoute>
+              <Auctions />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/encheres/:id"
+          element={
+            <PrivateRoute>
+              <AuctionDetail />
             </PrivateRoute>
           }
         />
