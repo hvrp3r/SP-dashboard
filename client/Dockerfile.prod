@@ -18,6 +18,9 @@ WORKDIR /app/client
 # server container, so no CORS is involved in production.
 ARG VITE_API_URL=""
 ENV VITE_API_URL=$VITE_API_URL
+# URL de la page Ko-fi du MSP, affichée sur le profil des joueurs (voir CLAUDE.md section 8).
+ARG VITE_KOFI_URL=""
+ENV VITE_KOFI_URL=$VITE_KOFI_URL
 RUN pnpm build
 
 FROM caddy:2-alpine

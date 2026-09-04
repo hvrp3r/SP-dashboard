@@ -4,12 +4,18 @@ import { useAuth } from '../hooks/useAuth.jsx';
 import * as transactionsApi from '../api/transactions.js';
 import * as usersApi from '../api/users.js';
 import * as gamblingApi from '../api/gambling.js';
+import * as subscriptionsApi from '../api/subscriptions.js';
 import { TRANSACTION_TYPE_LABELS } from '../lib/transactionLabels.js';
 import Avatar from '../components/Avatar.jsx';
 import RankBadge from '../components/RankBadge.jsx';
-import type { GamblingInventoryEntry, SpTransaction } from '../types.js';
+import type { GamblingInventoryEntry, SpTransaction, Subscription } from '../types.js';
 
 const TRANSACTIONS_POLL_INTERVAL_MS = 10000;
+const KOFI_URL = import.meta.env.VITE_KOFI_URL as string | undefined;
+
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+}
 
 function todayLocal(): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris' }).format(new Date());
@@ -21,6 +27,8 @@ export default function Profile() {
   const [transactions, setTransactions] = useState<SpTransaction[]>([]);
   const [loadingTransactions, setLoadingTransactions] = useState(true);
   const [inventory, setInventory] = useState<GamblingInventoryEntry[]>([]);
+  const [subscription, setSubscription] = useState<Subscription | null>(null);
+  const [codeCopied, setCodeCopied] = useState(false);
   const [rank, setRank] = useState<number | null | undefined>(undefined);
   const [uploading, setUploading] = useState(false);
   const [avatarError, setAvatarError] = useState<string | null>(null);
@@ -49,6 +57,21 @@ export default function Profile() {
   useEffect(() => {
     gamblingApi.getMyInventory().then(setInventory).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    subscriptionsApi.getMine().then(setSubscription).catch(() => {});
+  }, []);
+
+  async function handleCopyCode() {
+    if (!subscription) return;
+    try {
+      await navigator.clipboard.writeText(subscription.link_code);
+      setCodeCopied(true);
+      setTimeout(() => setCodeCopied(false), 2000);
+    } catch {
+      // Presse-papiers indisponible (permissions navigateur) : le code reste affichable à la main.
+    }
+  }
 
   useEffect(() => {
     if (!user) return;
@@ -236,6 +259,59 @@ export default function Profile() {
           </div>
         )}
         {visibilityError && <p className="mb-4 text-sm text-red-400">{visibilityError}</p>}
+
+        {subscription && (
+          <div className="bg-zinc-800 rounded-lg p-4 mb-4">
+            <p className="text-sm font-medium text-zinc-100 mb-1">Abonnement</p>
+            {subscription.isActive ? (
+              <>
+                <p className="text-xs text-emerald-400">
+                  Actif jusqu'au {formatDate(subscription.current_period_end as string)}
+                </p>
+                <p className="text-xs text-zinc-500 mt-1">
+                  Sert uniquement à financer les serveurs — merci ! Un don ponctuel ou récurrent
+                  prolonge ton accès à chaque paiement reçu.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-xs text-zinc-500 mb-2">
+                  Débloque des avantages (caisse dédiée) et finance les serveurs. Don ponctuel ou
+                  récurrent, au choix sur Ko-fi.{' '}
+                  {KOFI_URL ? (
+                    <a
+                      href={KOFI_URL}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-emerald-400 font-medium hover:underline"
+                    >
+                      Soutenir sur Ko-fi →
+                    </a>
+                  ) : (
+                    'Demande le lien Ko-fi au MSP.'
+                  )}
+                </p>
+                <p className="text-xs text-zinc-500 mb-2">
+                  Colle ce code (et rien d'autre) dans le champ message de ton paiement Ko-fi pour
+                  relier ton compte — obligatoire la <strong>première fois</strong> ; pour un
+                  abonnement récurrent, les renouvellements suivants sont reconnus automatiquement.
+                </p>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 text-center tracking-widest bg-zinc-950 border border-zinc-700 rounded-md px-3 py-2 text-emerald-400 font-mono font-bold">
+                    {subscription.link_code}
+                  </code>
+                  <button
+                    type="button"
+                    onClick={handleCopyCode}
+                    className="text-xs bg-zinc-700 hover:bg-zinc-600 text-zinc-200 font-medium px-3 py-2 rounded-md transition"
+                  >
+                    {codeCopied ? 'Copié ✓' : 'Copier'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
 
         <button
           onClick={handleLogout}

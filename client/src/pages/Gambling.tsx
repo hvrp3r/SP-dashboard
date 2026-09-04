@@ -25,6 +25,7 @@ export default function Gambling() {
   const [costSp, setCostSp] = useState('');
   const [maxOpensPerPlayer, setMaxOpensPerPlayer] = useState('');
   const [resetIntervalDays, setResetIntervalDays] = useState('');
+  const [requiresSubscription, setRequiresSubscription] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   async function load() {
@@ -66,6 +67,7 @@ export default function Gambling() {
         maxOpensPerPlayer: maxOpensPerPlayer.trim() ? Number(maxOpensPerPlayer) : null,
         resetIntervalDays:
           maxOpensPerPlayer.trim() && resetIntervalDays.trim() ? Number(resetIntervalDays) : null,
+        requiresSubscription,
       });
       setName('');
       setDescription('');
@@ -73,6 +75,7 @@ export default function Gambling() {
       setCostSp('');
       setMaxOpensPerPlayer('');
       setResetIntervalDays('');
+      setRequiresSubscription(false);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur inconnue');
@@ -149,6 +152,15 @@ export default function Gambling() {
               {maxOpensPerPlayer.trim() && (
                 <ResetIntervalField value={resetIntervalDays} onChange={setResetIntervalDays} />
               )}
+              <label className="flex items-center gap-2 text-sm text-zinc-300">
+                <input
+                  type="checkbox"
+                  checked={requiresSubscription}
+                  onChange={(e) => setRequiresSubscription(e.target.checked)}
+                  className="rounded border-zinc-700 bg-zinc-950 text-emerald-500 focus:ring-emerald-500"
+                />
+                Réservée aux abonnés (Ko-fi)
+              </label>
               {freeWithoutLimit && (
                 <p className="text-xs text-red-400">
                   Une caisse gratuite doit avoir une limite d'ouvertures par joueur.
@@ -227,6 +239,11 @@ function CrateCard({ crate: c, isAdmin }: { crate: GamblingCrateEntry; isAdmin: 
           {isAdmin && !c.is_active && (
             <span className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500 font-medium uppercase tracking-wide">
               Archivée
+            </span>
+          )}
+          {c.requires_subscription && (
+            <span className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-400 font-medium uppercase tracking-wide">
+              Abonnés
             </span>
           )}
         </div>

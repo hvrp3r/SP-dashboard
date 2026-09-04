@@ -252,6 +252,7 @@ export interface GamblingCrate {
   is_active: boolean;
   created_by: number | null;
   created_at: string;
+  requires_subscription: boolean;
 }
 
 export interface GamblingCrateReward {
@@ -288,6 +289,56 @@ export interface GamblingStatus {
   enabled: boolean;
   maxWagerPerDay: number;
   spentToday: number;
+  subscriptionActive: boolean;
+}
+
+export type SubscriptionStatus = 'inactive' | 'active';
+
+export interface Subscription {
+  id: number;
+  user_id: number;
+  status: SubscriptionStatus;
+  link_code: string;
+  kofi_email: string | null;
+  current_period_end: string | null;
+  last_payment_at: string | null;
+  activated_by: number | null;
+  created_at: string;
+  updated_at: string;
+  isActive: boolean;
+}
+
+export interface SubscriptionAdminEntry {
+  id: number;
+  user_id: number;
+  status: SubscriptionStatus;
+  link_code: string;
+  kofi_email: string | null;
+  current_period_end: string | null;
+  last_payment_at: string | null;
+  activated_by: number | null;
+  created_at: string;
+  updated_at: string;
+  username: string;
+  avatar_url: string | null;
+}
+
+export interface KofiEvent {
+  id: number;
+  kofi_transaction_id: string;
+  message_id: string;
+  type: string;
+  is_subscription_payment: boolean;
+  is_first_subscription_payment: boolean;
+  from_name: string | null;
+  email: string | null;
+  amount: string | null;
+  currency: string | null;
+  message: string | null;
+  tier_name: string | null;
+  kofi_timestamp: string;
+  matched_user_id: number | null;
+  received_at: string;
 }
 
 export interface GamblingInventoryEntry {

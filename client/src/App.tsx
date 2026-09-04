@@ -17,6 +17,7 @@ import AdminConfig from './pages/admin/Config.jsx';
 import AdminTransactions from './pages/admin/Transactions.jsx';
 import AdminChallenges from './pages/admin/Challenges.jsx';
 import AdminPlayers from './pages/admin/Players.jsx';
+import AdminSubscriptions from './pages/admin/Subscriptions.jsx';
 import NavBar from './components/NavBar.jsx';
 import { useAuth } from './hooks/useAuth.jsx';
 
@@ -158,6 +159,14 @@ export default function App() {
           element={
             <AdminRoute>
               <AdminPlayers />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="/admin/abonnements"
+          element={
+            <AdminRoute>
+              <AdminSubscriptions />
             </AdminRoute>
           }
         />

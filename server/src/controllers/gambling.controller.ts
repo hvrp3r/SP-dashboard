@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import * as gamblingService from '../services/gambling.service.js';
 import * as configService from '../services/config.service.js';
 import * as seasonService from '../services/season.service.js';
+import * as subscriptionService from '../services/subscription.service.js';
 import { BLACKJACK_RTP_PERCENT } from '../services/blackjack.service.js';
 import type {
   GamblingCrateRewardRow,
@@ -53,6 +54,7 @@ interface CreateCrateBody {
   costSp?: number;
   maxOpensPerPlayer?: number | null;
   resetIntervalDays?: number | null;
+  requiresSubscription?: boolean;
 }
 
 export async function createCrate(
@@ -104,6 +106,7 @@ export async function createCrate(
       costSp: costSp as number,
       maxOpensPerPlayer: maxOpensPerPlayer ?? null,
       resetIntervalDays: resetIntervalDays ?? null,
+      requiresSubscription: req.body?.requiresSubscription === true,
       createdBy: req.user!.id,
     });
   } catch (err) {
@@ -121,6 +124,7 @@ interface UpdateCrateBody {
   costSp?: number;
   maxOpensPerPlayer?: number | null;
   resetIntervalDays?: number | null;
+  requiresSubscription?: boolean;
   isActive?: boolean;
 }
 
@@ -168,6 +172,7 @@ export async function updateCrate(
       costSp: body.costSp,
       maxOpensPerPlayer: body.maxOpensPerPlayer,
       resetIntervalDays: body.resetIntervalDays,
+      requiresSubscription: body.requiresSubscription,
       isActive: body.isActive,
     });
   } catch (err) {
@@ -398,12 +403,18 @@ export async function listGames(req: Request, res: Response): Promise<void> {
 }
 
 export async function getStatus(req: Request, res: Response): Promise<void> {
-  const [enabled, maxWagerPerDay, spentToday] = await Promise.all([
+  const [enabled, maxWagerPerDay, spentToday, subscription] = await Promise.all([
     configService.getConfigBool('gambling_enabled', true),
     configService.getConfigNumber('gambling_max_wager_per_day', 50),
     gamblingService.getTodaySpend(req.user!.id),
+    subscriptionService.getOrCreateForUser(req.user!.id),
   ]);
-  res.json({ enabled, maxWagerPerDay, spentToday });
+  res.json({
+    enabled,
+    maxWagerPerDay,
+    spentToday,
+    subscriptionActive: subscriptionService.isActive(subscription),
+  });
 }
 
 export async function listMyInventory(req: Request, res: Response): Promise<void> {

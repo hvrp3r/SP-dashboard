@@ -273,6 +273,8 @@ export interface GamblingCrateRow {
   is_active: boolean;
   created_by: number | null;
   created_at: string;
+  /** Ouverture conditionnée à un abonnement Ko-fi actif plutôt qu'à un coût SP (voir subscription.service.ts). */
+  requires_subscription: boolean;
 }
 
 export interface GamblingCrateRewardRow {
@@ -330,6 +332,64 @@ export interface GamblingStatusInfo {
   enabled: boolean;
   maxWagerPerDay: number;
   spentToday: number;
+  subscriptionActive: boolean;
+}
+
+export type SubscriptionStatus = 'inactive' | 'active';
+
+export interface SubscriptionRow {
+  id: number;
+  user_id: number;
+  status: SubscriptionStatus;
+  link_code: string;
+  kofi_email: string | null;
+  current_period_end: string | null;
+  last_payment_at: string | null;
+  activated_by: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SubscriptionEntry extends SubscriptionRow {
+  username: string;
+  avatar_url: string | null;
+}
+
+export interface KofiEventRow {
+  id: number;
+  kofi_transaction_id: string;
+  message_id: string;
+  type: string;
+  is_subscription_payment: boolean;
+  is_first_subscription_payment: boolean;
+  from_name: string | null;
+  email: string | null;
+  amount: string | null;
+  currency: string | null;
+  message: string | null;
+  tier_name: string | null;
+  kofi_timestamp: string;
+  matched_user_id: number | null;
+  raw_payload: unknown;
+  received_at: string;
+}
+
+export interface KofiWebhookPayload {
+  verification_token: string;
+  message_id: string;
+  timestamp: string;
+  type: string;
+  is_public: boolean;
+  from_name: string;
+  message: string | null;
+  amount: string;
+  url: string;
+  email: string;
+  currency: string;
+  is_subscription_payment: boolean;
+  is_first_subscription_payment: boolean;
+  kofi_transaction_id: string;
+  tier_name: string | null;
 }
 
 export type GamblingGameId = 'crates' | 'blackjack';
