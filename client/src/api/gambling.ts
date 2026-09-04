@@ -4,12 +4,15 @@ import type {
   GamblingCrateDetail,
   GamblingCrateEntry,
   GamblingCrateReward,
+  GamblingGameInfo,
   GamblingInventoryEntry,
   GamblingOpenEntry,
   GamblingOpenResult,
   GamblingRewardType,
   GamblingStatus,
 } from '../types.js';
+
+export const listGames = () => apiClient.get<GamblingGameInfo[]>('/api/gambling/games');
 
 export const listCrates = (includeInactive?: boolean) =>
   apiClient.get<GamblingCrateEntry[]>(

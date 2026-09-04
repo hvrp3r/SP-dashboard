@@ -1,6 +1,7 @@
 import { pool } from '../db/pool.js';
 import * as spService from './sp.service.js';
 import * as configService from './config.service.js';
+import { startOfDayLocalAsUTC } from '../utils/localDate.js';
 import type {
   GamblingCrateEntry,
   GamblingCrateRewardRow,
@@ -10,10 +11,6 @@ import type {
   GamblingOpenRow,
   GamblingRewardType,
 } from '../types.js';
-
-function todayStartUTC(): string {
-  return `${new Date().toISOString().slice(0, 10)}T00:00:00.000Z`;
-}
 
 export async function listCrates(
   includeInactive: boolean,
@@ -263,7 +260,7 @@ export async function getTodaySpend(userId: number): Promise<number> {
   const { rows } = await pool.query<{ spent: string | null }>(
     `SELECT SUM(-amount) AS spent FROM sp_transactions
      WHERE user_id = $1 AND type = 'gambling_spend' AND created_at >= $2`,
-    [userId, todayStartUTC()]
+    [userId, startOfDayLocalAsUTC()]
   );
   return Number(rows[0]?.spent ?? 0);
 }
@@ -325,7 +322,7 @@ export async function openCrate(
     const { rows: spentRows } = await client.query<{ spent: string | null }>(
       `SELECT SUM(-amount) AS spent FROM sp_transactions
        WHERE user_id = $1 AND type = 'gambling_spend' AND created_at >= $2`,
-      [userId, todayStartUTC()]
+      [userId, startOfDayLocalAsUTC()]
     );
     const spentToday = Number(spentRows[0]?.spent ?? 0);
     if (spentToday + crate.cost_sp > maxWagerPerDay) {

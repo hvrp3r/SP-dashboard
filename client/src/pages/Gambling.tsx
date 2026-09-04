@@ -83,7 +83,11 @@ export default function Gambling() {
   return (
     <div className="min-h-screen bg-zinc-950 py-10 px-4">
       <div className="max-w-2xl mx-auto">
-        <h1 className="text-2xl font-bold text-zinc-50 mb-6">Gambling</h1>
+        <Link to="/gambling" className="text-sm text-emerald-400 font-medium">
+          ← Jeux
+        </Link>
+
+        <h1 className="text-2xl font-bold text-zinc-50 mt-4 mb-6">Caisses</h1>
 
         {error && <p className="mb-4 text-sm text-red-400">{error}</p>}
 
@@ -201,7 +205,7 @@ export default function Gambling() {
 function CrateCard({ crate: c, isAdmin }: { crate: GamblingCrateEntry; isAdmin: boolean }) {
   return (
     <Link
-      to={`/gambling/${c.id}`}
+      to={`/gambling/crates/${c.id}`}
       className="flex items-center gap-3 bg-zinc-900 border border-zinc-800 rounded-xl shadow-md p-4 hover:border-emerald-500/50 transition"
     >
       <CrateIcon imageUrl={c.image_url} size={48} />

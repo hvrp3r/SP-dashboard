@@ -14,6 +14,10 @@ export const CONFIG_SECTIONS: ConfigSection[] = [
   },
   {
     title: 'Gambling',
-    keys: ['gambling_enabled', 'gambling_max_wager_per_day'],
+    keys: ['gambling_enabled', 'blackjack_enabled', 'gambling_max_wager_per_day'],
+  },
+  {
+    title: 'Intégrations',
+    keys: ['discord_notifications_enabled'],
   },
 ];

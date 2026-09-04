@@ -4,6 +4,7 @@ import * as gamblingController from '../controllers/gambling.controller.js';
 
 const router = Router();
 
+router.get('/games', requireAuth, gamblingController.listGames);
 router.get('/status', requireAuth, gamblingController.getStatus);
 router.get('/inventory/me', requireAuth, gamblingController.listMyInventory);
 router.get('/opens/me', requireAuth, gamblingController.listMyOpens);

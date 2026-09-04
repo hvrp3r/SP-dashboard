@@ -2,10 +2,7 @@ import { pool } from '../db/pool.js';
 import * as spService from './sp.service.js';
 import * as configService from './config.service.js';
 import * as seasonService from './season.service.js';
-
-function todayUTC(): string {
-  return new Date().toISOString().slice(0, 10);
-}
+import { todayLocal } from '../utils/localDate.js';
 
 function toDateOnlyString(value: string | Date | null): string | null {
   if (value === null) return null;
@@ -28,8 +25,9 @@ export interface DailyBonusClaimResult {
 }
 
 /**
- * Réclame le bonus de connexion quotidienne (+ streak) pour la date UTC courante,
- * à l'appel explicite du joueur (bouton "Réclamer" sur son profil). Idempotent :
+ * Réclame le bonus de connexion quotidienne (+ streak) pour la date locale
+ * (Europe/Paris) courante, à l'appel explicite du joueur (bouton "Réclamer" sur
+ * son profil). Idempotent :
  * un second appel le même jour renvoie `alreadyClaimed: true` sans re-créditer.
  *
  * Tout se passe dans une seule transaction avec verrou de ligne (SELECT ... FOR UPDATE) :
@@ -40,7 +38,7 @@ export interface DailyBonusClaimResult {
  * commite, puis voit last_login_date déjà à jour et s'arrête sans rien créditer.
  */
 export async function claimDailyLoginBonus(userId: number): Promise<DailyBonusClaimResult> {
-  const today = todayUTC();
+  const today = todayLocal();
   const client = await pool.connect();
 
   try {

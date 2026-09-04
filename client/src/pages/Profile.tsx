@@ -11,8 +11,8 @@ import type { GamblingInventoryEntry, SpTransaction } from '../types.js';
 
 const TRANSACTIONS_POLL_INTERVAL_MS = 10000;
 
-function todayUTC(): string {
-  return new Date().toISOString().slice(0, 10);
+function todayLocal(): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris' }).format(new Date());
 }
 
 export default function Profile() {
@@ -114,7 +114,7 @@ export default function Profile() {
 
   if (!user) return null;
 
-  const bonusClaimedToday = user.last_login_date === todayUTC();
+  const bonusClaimedToday = user.last_login_date === todayLocal();
 
   return (
     <div className="min-h-screen bg-zinc-950 flex items-center justify-center py-10 px-4">

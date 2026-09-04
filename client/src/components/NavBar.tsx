@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth.jsx';
 import NotificationBell from './NotificationBell.jsx';
+import * as gamblingApi from '../api/gambling.js';
+import type { GamblingGameInfo } from '../types.js';
 
 const linkClass = ({ isActive }: { isActive: boolean }) =>
   `relative px-3 py-2 text-sm font-medium rounded-md whitespace-nowrap transition-all duration-200 ease-out transform hover:scale-105 active:scale-95 ${
@@ -73,6 +75,69 @@ function AdminMenu() {
   );
 }
 
+function GamblingMenu() {
+  const location = useLocation();
+  const [open, setOpen] = useState(false);
+  const [games, setGames] = useState<GamblingGameInfo[]>([]);
+  const ref = useRef<HTMLDivElement>(null);
+  const isGamblingRouteActive = location.pathname.startsWith('/gambling');
+
+  useEffect(() => {
+    gamblingApi
+      .listGames()
+      .then(setGames)
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    setOpen(false);
+  }, [location.pathname]);
+
+  const activeGames = games.filter((g) => g.enabled);
+
+  return (
+    <div className="relative flex-shrink-0" ref={ref}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className={`px-3 py-2 text-sm font-medium rounded-md whitespace-nowrap transition-all duration-200 ease-out transform hover:scale-105 active:scale-95 ${
+          isGamblingRouteActive
+            ? 'bg-emerald-500 text-zinc-950 shadow-md shadow-emerald-500/30'
+            : 'text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100'
+        }`}
+      >
+        Gambling{' '}
+        <span className={`inline-block transition-transform ${open ? 'rotate-180' : ''}`}>▾</span>
+      </button>
+
+      {open && (
+        <div
+          className="absolute left-0 mt-2 w-44 bg-zinc-900 border border-zinc-800 rounded-xl shadow-lg shadow-black/30 z-50 overflow-hidden origin-top-left py-1"
+          style={{ animation: 'fadeSlideIn 0.18s ease-out' }}
+        >
+          <NavLink to="/gambling" end className={dropdownLinkClass}>
+            Tous les jeux
+          </NavLink>
+          {activeGames.map((g) => (
+            <NavLink key={g.id} to={g.path} className={dropdownLinkClass}>
+              {g.name}
+            </NavLink>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function NavBar() {
   const { user } = useAuth();
   if (!user) return null;
@@ -98,9 +163,7 @@ export default function NavBar() {
           <NavLink to="/mini-jeux" className={linkClass}>
             Mini-jeux
           </NavLink>
-          <NavLink to="/gambling" className={linkClass}>
-            Gambling
-          </NavLink>
+          <GamblingMenu />
           {isAdmin && <AdminMenu />}
         </div>
         <NotificationBell />

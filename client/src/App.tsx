@@ -7,8 +7,10 @@ import Leaderboard from './pages/Leaderboard.jsx';
 import Challenges from './pages/Challenges.jsx';
 import Minigames from './pages/Minigames.jsx';
 import MinigameDetail from './pages/MinigameDetail.jsx';
+import GamblingHome from './pages/GamblingHome.jsx';
 import Gambling from './pages/Gambling.jsx';
 import GamblingCrateDetail from './pages/GamblingCrateDetail.jsx';
+import BlackjackTable from './pages/BlackjackTable.jsx';
 import PlayerStats from './pages/PlayerStats.jsx';
 import AdminSeasons from './pages/admin/Seasons.jsx';
 import AdminConfig from './pages/admin/Config.jsx';
@@ -90,15 +92,31 @@ export default function App() {
           path="/gambling"
           element={
             <PrivateRoute>
+              <GamblingHome />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/gambling/crates"
+          element={
+            <PrivateRoute>
               <Gambling />
             </PrivateRoute>
           }
         />
         <Route
-          path="/gambling/:id"
+          path="/gambling/crates/:id"
           element={
             <PrivateRoute>
               <GamblingCrateDetail />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/gambling/blackjack"
+          element={
+            <PrivateRoute>
+              <BlackjackTable />
             </PrivateRoute>
           }
         />

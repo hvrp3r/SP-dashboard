@@ -312,6 +312,82 @@ export interface GamblingStatusInfo {
   spentToday: number;
 }
 
+export type GamblingGameId = 'crates' | 'blackjack';
+
+export interface GamblingGameInfo {
+  id: GamblingGameId;
+  name: string;
+  description: string;
+  path: string;
+  enabled: boolean;
+  /** Taux de redistribution en %, annoncé aux joueurs. Null si non calculable (ex: aucune caisse payante configurée). */
+  rtp: number | null;
+}
+
+export type BlackjackSessionStatus = 'waiting' | 'active' | 'finished';
+export type BlackjackHandStatus = 'playing' | 'stood' | 'busted';
+export type BlackjackOutcome = 'win' | 'blackjack' | 'push' | 'lose';
+
+export interface BlackjackCard {
+  rank: 'A' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | '10' | 'J' | 'Q' | 'K';
+  suit: 'S' | 'H' | 'D' | 'C';
+}
+
+export interface BlackjackSessionRow {
+  id: number;
+  season_id: number | null;
+  status: BlackjackSessionStatus;
+  starts_at: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  dealer_cards: BlackjackCard[];
+  dealer_hole_revealed: boolean;
+  current_hand_id: number | null;
+  created_at: string;
+}
+
+export interface BlackjackHandRow {
+  id: number;
+  session_id: number;
+  user_id: number;
+  bet_amount: number;
+  cards: BlackjackCard[];
+  status: BlackjackHandStatus;
+  outcome: BlackjackOutcome | null;
+  bet_transaction_id: number | null;
+  payout_transaction_id: number | null;
+  action_deadline: string | null;
+  joined_at: string;
+  resolved_at: string | null;
+}
+
+export interface BlackjackHandEntry extends BlackjackHandRow {
+  username: string;
+  avatar_url: string | null;
+}
+
+export interface BlackjackSessionPublicView extends Omit<BlackjackSessionRow, 'dealer_cards'> {
+  dealer_cards: (BlackjackCard | null)[];
+  hands: BlackjackHandEntry[];
+}
+
+export interface BlackjackActionResult {
+  session: BlackjackSessionPublicView;
+  balance: number;
+  enabled: boolean;
+}
+
+export interface BlackjackHistoryEntry {
+  id: number;
+  session_id: number;
+  bet_amount: number;
+  cards: BlackjackCard[];
+  status: BlackjackHandStatus;
+  outcome: BlackjackOutcome;
+  resolved_at: string;
+  dealer_cards: BlackjackCard[];
+}
+
 export interface NotificationRow {
   id: number;
   user_id: number;

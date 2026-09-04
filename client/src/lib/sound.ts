@@ -80,3 +80,62 @@ export function playReveal(rarity: RewardRarity): void {
     tone(660, now, 0.18, 'sine', 0.09);
   }
 }
+
+/** Petit "clic" sec joué pour une carte distribuée — `delaySeconds` permet de
+ * synchroniser plusieurs tics avec l'animation visuelle en cascade (dealCard). */
+export function playCardDeal(delaySeconds = 0): void {
+  const audio = getContext();
+  if (!audio) return;
+  tone(1100, audio.currentTime + delaySeconds, 0.05, 'square', 0.045);
+}
+
+/** Cliquetis de jeton, à l'inscription d'un joueur (soi-même ou un autre) à la table. */
+export function playChip(): void {
+  const audio = getContext();
+  if (!audio) return;
+  const now = audio.currentTime;
+  tone(420, now, 0.06, 'triangle', 0.08);
+  tone(620, now + 0.04, 0.08, 'triangle', 0.07);
+}
+
+/** Petit carillon discret quand c'est (enfin) le tour du joueur local. */
+export function playYourTurn(): void {
+  const audio = getContext();
+  if (!audio) return;
+  const now = audio.currentTime;
+  tone(740, now, 0.1, 'sine', 0.08);
+  tone(988, now + 0.08, 0.16, 'sine', 0.09);
+}
+
+export function playWin(): void {
+  const audio = getContext();
+  if (!audio) return;
+  const now = audio.currentTime;
+  tone(659.25, now, 0.14, 'triangle', 0.11);
+  tone(880, now + 0.09, 0.22, 'triangle', 0.13);
+}
+
+/** Fanfare plus riche pour un blackjack naturel. */
+export function playBlackjackWin(): void {
+  const audio = getContext();
+  if (!audio) return;
+  const now = audio.currentTime;
+  tone(523.25, now, 0.15, 'triangle', 0.12);
+  tone(659.25, now + 0.09, 0.15, 'triangle', 0.12);
+  tone(783.99, now + 0.18, 0.15, 'triangle', 0.13);
+  tone(1046.5, now + 0.27, 0.32, 'triangle', 0.15);
+}
+
+export function playLose(): void {
+  const audio = getContext();
+  if (!audio) return;
+  const now = audio.currentTime;
+  tone(311, now, 0.16, 'sawtooth', 0.06);
+  tone(233, now + 0.12, 0.28, 'sawtooth', 0.07);
+}
+
+export function playPush(): void {
+  const audio = getContext();
+  if (!audio) return;
+  tone(440, audio.currentTime, 0.16, 'sine', 0.07);
+}
