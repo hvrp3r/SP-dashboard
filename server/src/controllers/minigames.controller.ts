@@ -3,6 +3,7 @@ import * as minigameService from '../services/minigame.service.js';
 import * as seasonService from '../services/season.service.js';
 import * as userService from '../services/user.service.js';
 import * as notificationService from '../services/notification.service.js';
+import * as discordService from '../services/discord.service.js';
 import {
   MINIGAME_GAME_TYPES,
   type AuthenticatedUser,
@@ -112,6 +113,12 @@ export async function createSession(
     `Nouveau mini-jeu : ${title}`,
     `/mini-jeux/${session.id}`
   );
+  await discordService.sendMinigameLaunchedAlert({
+    id: session.id,
+    title,
+    gameType,
+    entryFee,
+  });
 
   res.status(201).json(session);
 }
