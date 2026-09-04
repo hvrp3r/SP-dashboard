@@ -38,7 +38,11 @@ export async function getCrate(req: Request<{ id: string }>, res: Response): Pro
     return;
   }
   const rewards = await gamblingService.listRewards(crateId);
-  const myOpenCount = await gamblingService.getUserOpenCount(req.user!.id, crateId);
+  const myOpenCount = await gamblingService.getUserOpenCount(
+    req.user!.id,
+    crateId,
+    crate.reset_interval_days
+  );
   res.json({ ...crate, rewards: withPercent(rewards), myOpenCount });
 }
 
@@ -48,6 +52,7 @@ interface CreateCrateBody {
   imageUrl?: string;
   costSp?: number;
   maxOpensPerPlayer?: number | null;
+  resetIntervalDays?: number | null;
 }
 
 export async function createCrate(
@@ -59,6 +64,7 @@ export async function createCrate(
   const imageUrl = req.body?.imageUrl?.trim();
   const costSp = req.body?.costSp;
   const maxOpensPerPlayer = req.body?.maxOpensPerPlayer;
+  const resetIntervalDays = req.body?.resetIntervalDays;
 
   if (!name) {
     res.status(400).json({ error: 'Le nom est requis' });
@@ -78,6 +84,16 @@ export async function createCrate(
       .json({ error: "La limite d'ouvertures par joueur doit être un entier positif" });
     return;
   }
+  if (
+    resetIntervalDays !== undefined &&
+    resetIntervalDays !== null &&
+    (!Number.isInteger(resetIntervalDays) || resetIntervalDays <= 0)
+  ) {
+    res
+      .status(400)
+      .json({ error: "L'intervalle de réinitialisation doit être un entier positif (en jours)" });
+    return;
+  }
 
   let crate;
   try {
@@ -87,6 +103,7 @@ export async function createCrate(
       imageUrl: imageUrl || null,
       costSp: costSp as number,
       maxOpensPerPlayer: maxOpensPerPlayer ?? null,
+      resetIntervalDays: resetIntervalDays ?? null,
       createdBy: req.user!.id,
     });
   } catch (err) {
@@ -103,6 +120,7 @@ interface UpdateCrateBody {
   imageUrl?: string | null;
   costSp?: number;
   maxOpensPerPlayer?: number | null;
+  resetIntervalDays?: number | null;
   isActive?: boolean;
 }
 
@@ -130,6 +148,16 @@ export async function updateCrate(
       .json({ error: "La limite d'ouvertures par joueur doit être un entier positif" });
     return;
   }
+  if (
+    body.resetIntervalDays !== undefined &&
+    body.resetIntervalDays !== null &&
+    (!Number.isInteger(body.resetIntervalDays) || body.resetIntervalDays <= 0)
+  ) {
+    res
+      .status(400)
+      .json({ error: "L'intervalle de réinitialisation doit être un entier positif (en jours)" });
+    return;
+  }
 
   let updated;
   try {
@@ -139,6 +167,7 @@ export async function updateCrate(
       imageUrl: body.imageUrl !== undefined ? body.imageUrl?.trim() || null : undefined,
       costSp: body.costSp,
       maxOpensPerPlayer: body.maxOpensPerPlayer,
+      resetIntervalDays: body.resetIntervalDays,
       isActive: body.isActive,
     });
   } catch (err) {

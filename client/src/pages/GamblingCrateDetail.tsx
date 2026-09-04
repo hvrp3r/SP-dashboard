@@ -7,12 +7,15 @@ import {
   RARITY_TEXT_CLASSES,
   REWARD_TYPE_LABELS,
   rarityFromWeightPercent,
+  resetIntervalRecurrencePhrase,
+  resetIntervalShortLabel,
   rewardFallbackEmoji,
 } from '../lib/gamblingLabels.js';
 import GamblingBudgetBar from '../components/GamblingBudgetBar.jsx';
 import GamblingReel from '../components/GamblingReel.jsx';
 import VolumeSlider from '../components/VolumeSlider.jsx';
 import CrateIcon from '../components/CrateIcon.jsx';
+import ResetIntervalField from '../components/ResetIntervalField.jsx';
 import { unlockAudio } from '../lib/sound.js';
 import type {
   GamblingCrateDetail as CrateDetail,
@@ -94,6 +97,7 @@ export default function GamblingCrateDetail() {
   const [editImageUrl, setEditImageUrl] = useState('');
   const [editCostSp, setEditCostSp] = useState('');
   const [editMaxOpensPerPlayer, setEditMaxOpensPerPlayer] = useState('');
+  const [editResetIntervalDays, setEditResetIntervalDays] = useState('');
   const [savingCrate, setSavingCrate] = useState(false);
   const [deletingCrate, setDeletingCrate] = useState(false);
 
@@ -118,6 +122,9 @@ export default function GamblingCrateDetail() {
       setEditCostSp(String(data.cost_sp));
       setEditMaxOpensPerPlayer(
         data.max_opens_per_player !== null ? String(data.max_opens_per_player) : ''
+      );
+      setEditResetIntervalDays(
+        data.reset_interval_days !== null ? String(data.reset_interval_days) : ''
       );
       setRewardDrafts(Object.fromEntries(data.rewards.map((r) => [r.id, draftFromReward(r)])));
       setError(null);
@@ -176,6 +183,10 @@ export default function GamblingCrateDetail() {
         imageUrl: editImageUrl.trim() || null,
         costSp: Number(editCostSp),
         maxOpensPerPlayer: editMaxOpensPerPlayer.trim() ? Number(editMaxOpensPerPlayer) : null,
+        resetIntervalDays:
+          editMaxOpensPerPlayer.trim() && editResetIntervalDays.trim()
+            ? Number(editResetIntervalDays)
+            : null,
       });
       setCrate((prev) => (prev ? { ...prev, ...updated } : prev));
     } catch (err) {
@@ -370,11 +381,15 @@ export default function GamblingCrateDetail() {
           {crate.max_opens_per_player !== null && (
             <p className="text-xs text-zinc-500 mt-2">
               {crate.myOpenCount}/{crate.max_opens_per_player} ouvertures utilisées
+              {crate.reset_interval_days !== null &&
+                ` · ${resetIntervalShortLabel(crate.reset_interval_days)}`}
             </p>
           )}
           {reachedOpenLimit && (
             <p className="text-xs text-red-400 mt-2">
               Tu as atteint la limite d'ouvertures pour cette caisse.
+              {crate.reset_interval_days !== null &&
+                ` Elle se réinitialise ${resetIntervalRecurrencePhrase(crate.reset_interval_days)}.`}
             </p>
           )}
           {!reachedOpenLimit && !canAfford && (
@@ -513,10 +528,19 @@ export default function GamblingCrateDetail() {
                   type="number"
                   min={1}
                   value={editMaxOpensPerPlayer}
-                  onChange={(e) => setEditMaxOpensPerPlayer(e.target.value)}
+                  onChange={(e) => {
+                    setEditMaxOpensPerPlayer(e.target.value);
+                    if (!e.target.value.trim()) setEditResetIntervalDays('');
+                  }}
                   placeholder="Limite d'ouvertures par joueur (optionnel, illimité par défaut)"
                   className="w-full rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 />
+                {editMaxOpensPerPlayer.trim() && (
+                  <ResetIntervalField
+                    value={editResetIntervalDays}
+                    onChange={setEditResetIntervalDays}
+                  />
+                )}
                 {editFreeWithoutLimit && (
                   <p className="text-xs text-red-400">
                     Une caisse gratuite doit avoir une limite d'ouvertures par joueur.
