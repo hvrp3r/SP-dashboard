@@ -194,7 +194,8 @@ name VARCHAR(100) NOT NULL,
 description TEXT,
 image_url TEXT,
 cost_sp INT NOT NULL,                  -- mise fixe pour ouvrir cette caisse ; 0 = gratuite, exige max_opens_per_player
-max_opens_per_player INT,              -- NULL = illimité ; sinon nb max d'ouvertures par joueur, à vie
+max_opens_per_player INT,              -- NULL = illimité ; sinon nb max d'ouvertures par joueur
+reset_interval_days INT,               -- NULL = max_opens_per_player est une limite à vie (défaut) ; sinon nb de jours entre deux resets (1 = quotidien, 7 = hebdo…), exige max_opens_per_player (migration 022)
 is_active BOOLEAN NOT NULL DEFAULT TRUE,
 created_by INT REFERENCES users(id),
 created_at TIMESTAMPTZ DEFAULT NOW()
@@ -387,7 +388,8 @@ Un défi peut réunir **plusieurs adversaires au sein d'un même défi** (un seu
 Section fusionnée dans une page joueur (`/gambling`, contrôles MSP visibles seulement si `user.role === 'admin'`) — même pattern que les Mini-Jeux, pas de page `/admin/gambling` séparée.
 
 #### Principe :
-- Le MSP configure une ou plusieurs **caisses** (`gambling_crates`) : nom, description, image, coût fixe (`cost_sp`) pour l'ouvrir, et optionnellement un nombre max d'ouvertures par joueur (`max_opens_per_player`, NULL = illimité — ex : caisse événement limitée à 3 ouvertures/joueur, comptées à vie sur `gambling_opens`, pas remises à zéro par saison). Une fois la limite atteinte, le bouton d'ouverture est désactivé côté client et le serveur refuse quand même la requête (mêmes verrous que le plafond quotidien).
+- Le MSP configure une ou plusieurs **caisses** (`gambling_crates`) : nom, description, image, coût fixe (`cost_sp`) pour l'ouvrir, et optionnellement un nombre max d'ouvertures par joueur (`max_opens_per_player`, NULL = illimité — ex : caisse événement limitée à 3 ouvertures/joueur). Une fois la limite atteinte, le bouton d'ouverture est désactivé côté client et le serveur refuse quand même la requête (mêmes verrous que le plafond quotidien).
+- Cette limite d'ouvertures est **à vie par défaut** (comptée sur tout l'historique `gambling_opens`, jamais remise à zéro par saison), mais le MSP peut optionnellement lui associer un `reset_interval_days` (ex : 1 = quotidien, 3 = tous les 3 jours, 7 = hebdomadaire — un intervalle en jours arbitraire, pas seulement ces presets) — la limite se réinitialise alors automatiquement à intervalle régulier plutôt que de rester acquise pour toujours (ex : caisse "1 ouverture gratuite par jour"). `reset_interval_days` exige `max_opens_per_player` (contrainte `gambling_crates_reset_requires_limit`, migration 022) — pas de sens à réinitialiser une limite qui n'existe pas. Les périodes de reset sont calculées côté SQL par la fonction `gambling_period_start(interval_days)` (migration 022), ancrées sur l'epoch Unix en heure locale Europe/Paris (même exception délibérée que le bonus quotidien et le budget gambling — voir plus bas) : avec un intervalle de 1 jour ça reproduit exactement un reset à minuit local, et pour des intervalles plus longs ça donne des périodes fixes et déterministes, identiques pour tous les joueurs, sans avoir à stocker de date d'ancrage par caisse.
 - **Caisse gratuite** (`cost_sp = 0`) : autorisée **uniquement** si `max_opens_per_player` est défini (contrainte BDD `gambling_crates_free_requires_limit`) — sans limite, une caisse gratuite serait une fuite de SP infinie. Une ouverture gratuite ne débite rien (aucune transaction `gambling_spend`) et n'entame pas le budget gambling quotidien du joueur.
 - Chaque caisse a un pool de récompenses (`gambling_crate_rewards`) configuré librement par le MSP :
   - **Gain SP classique** (`type='sp'`) : montant SP fixe.

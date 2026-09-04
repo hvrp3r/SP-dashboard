@@ -36,6 +36,7 @@ export const createCrate = (input: {
   imageUrl?: string;
   costSp: number;
   maxOpensPerPlayer?: number | null;
+  resetIntervalDays?: number | null;
 }) => apiClient.post<GamblingCrate>('/api/gambling/crates', input);
 
 export const updateCrate = (
@@ -46,6 +47,7 @@ export const updateCrate = (
     imageUrl: string | null;
     costSp: number;
     maxOpensPerPlayer: number | null;
+    resetIntervalDays: number | null;
     isActive: boolean;
   }>
 ) => apiClient.put<GamblingCrate>(`/api/gambling/crates/${id}`, patch);

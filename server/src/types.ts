@@ -268,6 +268,8 @@ export interface GamblingCrateRow {
   image_url: string | null;
   cost_sp: number;
   max_opens_per_player: number | null;
+  /** NULL = limite à vie (comportement historique) ; sinon nb de jours entre deux resets de max_opens_per_player. */
+  reset_interval_days: number | null;
   is_active: boolean;
   created_by: number | null;
   created_at: string;

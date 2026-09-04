@@ -1,3 +1,4 @@
+import type { Pool, PoolClient } from 'pg';
 import { pool } from '../db/pool.js';
 import * as spService from './sp.service.js';
 import * as configService from './config.service.js';
@@ -18,7 +19,9 @@ export async function listCrates(
 ): Promise<GamblingCrateEntry[]> {
   const { rows } = await pool.query<GamblingCrateRow & { my_open_count: string }>(
     `SELECT c.*,
-       (SELECT COUNT(*) FROM gambling_opens o WHERE o.crate_id = c.id AND o.user_id = $1) AS my_open_count
+       (SELECT COUNT(*) FROM gambling_opens o WHERE o.crate_id = c.id AND o.user_id = $1
+        AND (c.reset_interval_days IS NULL OR o.opened_at >= gambling_period_start(c.reset_interval_days))
+       ) AS my_open_count
      FROM gambling_crates c
      ${includeInactive ? '' : 'WHERE c.is_active = true'}
      ORDER BY c.created_at DESC`,
@@ -44,6 +47,7 @@ interface CreateCrateInput {
   imageUrl: string | null;
   costSp: number;
   maxOpensPerPlayer: number | null;
+  resetIntervalDays: number | null;
   createdBy: number;
 }
 
@@ -53,6 +57,7 @@ export async function createCrate({
   imageUrl,
   costSp,
   maxOpensPerPlayer,
+  resetIntervalDays,
   createdBy,
 }: CreateCrateInput): Promise<GamblingCrateRow> {
   if (costSp === 0 && maxOpensPerPlayer === null) {
@@ -61,12 +66,18 @@ export async function createCrate({
       { status: 400 }
     );
   }
+  if (resetIntervalDays !== null && maxOpensPerPlayer === null) {
+    throw Object.assign(
+      new Error("Un intervalle de réinitialisation nécessite une limite d'ouvertures par joueur"),
+      { status: 400 }
+    );
+  }
 
   const { rows } = await pool.query<GamblingCrateRow>(
-    `INSERT INTO gambling_crates (name, description, image_url, cost_sp, max_opens_per_player, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6)
+    `INSERT INTO gambling_crates (name, description, image_url, cost_sp, max_opens_per_player, reset_interval_days, created_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      RETURNING *`,
-    [name, description, imageUrl, costSp, maxOpensPerPlayer, createdBy]
+    [name, description, imageUrl, costSp, maxOpensPerPlayer, resetIntervalDays, createdBy]
   );
   return rows[0] as GamblingCrateRow;
 }
@@ -77,6 +88,7 @@ interface UpdateCrateInput {
   imageUrl?: string | null;
   costSp?: number;
   maxOpensPerPlayer?: number | null;
+  resetIntervalDays?: number | null;
   isActive?: boolean;
 }
 
@@ -94,6 +106,8 @@ export async function updateCrate(
     cost_sp: patch.costSp ?? current.cost_sp,
     max_opens_per_player:
       patch.maxOpensPerPlayer !== undefined ? patch.maxOpensPerPlayer : current.max_opens_per_player,
+    reset_interval_days:
+      patch.resetIntervalDays !== undefined ? patch.resetIntervalDays : current.reset_interval_days,
     is_active: patch.isActive ?? current.is_active,
   };
 
@@ -103,11 +117,18 @@ export async function updateCrate(
       { status: 400 }
     );
   }
+  if (next.reset_interval_days !== null && next.max_opens_per_player === null) {
+    throw Object.assign(
+      new Error("Un intervalle de réinitialisation nécessite une limite d'ouvertures par joueur"),
+      { status: 400 }
+    );
+  }
 
   const { rows } = await pool.query<GamblingCrateRow>(
     `UPDATE gambling_crates
-     SET name = $1, description = $2, image_url = $3, cost_sp = $4, max_opens_per_player = $5, is_active = $6
-     WHERE id = $7
+     SET name = $1, description = $2, image_url = $3, cost_sp = $4, max_opens_per_player = $5,
+         reset_interval_days = $6, is_active = $7
+     WHERE id = $8
      RETURNING *`,
     [
       next.name,
@@ -115,6 +136,7 @@ export async function updateCrate(
       next.image_url,
       next.cost_sp,
       next.max_opens_per_player,
+      next.reset_interval_days,
       next.is_active,
       id,
     ]
@@ -248,10 +270,25 @@ export async function removeReward(id: number): Promise<void> {
   await pool.query('DELETE FROM gambling_crate_rewards WHERE id = $1', [id]);
 }
 
-export async function getUserOpenCount(userId: number, crateId: number): Promise<number> {
-  const { rows } = await pool.query<{ count: string }>(
-    'SELECT COUNT(*) FROM gambling_opens WHERE user_id = $1 AND crate_id = $2',
-    [userId, crateId]
+/**
+ * Compte les ouvertures d'une caisse par un joueur — sur toute la période
+ * (reset_interval_days = null) ou seulement depuis le début de la période de
+ * reset en cours (voir gambling_period_start() dans la migration 022).
+ * Accepte `pool` ou un `PoolClient` d'une transaction déjà ouverte (résolution
+ * d'ouverture dans openCrate) pour lire un compte cohérent avec le verrou de
+ * ligne posé sur l'utilisateur.
+ */
+export async function getUserOpenCount(
+  userId: number,
+  crateId: number,
+  resetIntervalDays: number | null = null,
+  db: Pool | PoolClient = pool
+): Promise<number> {
+  const { rows } = await db.query<{ count: string }>(
+    `SELECT COUNT(*) FROM gambling_opens
+     WHERE user_id = $1 AND crate_id = $2
+     AND ($3::int IS NULL OR opened_at >= gambling_period_start($3::int))`,
+    [userId, crateId, resetIntervalDays]
   );
   return Number(rows[0]?.count ?? 0);
 }
@@ -335,11 +372,7 @@ export async function openCrate(
     }
 
     if (crate.max_opens_per_player !== null) {
-      const { rows: openCountRows } = await client.query<{ count: string }>(
-        'SELECT COUNT(*) FROM gambling_opens WHERE user_id = $1 AND crate_id = $2',
-        [userId, crateId]
-      );
-      const openCount = Number(openCountRows[0]?.count ?? 0);
+      const openCount = await getUserOpenCount(userId, crateId, crate.reset_interval_days, client);
       if (openCount >= crate.max_opens_per_player) {
         throw Object.assign(
           new Error(

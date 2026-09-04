@@ -248,6 +248,7 @@ export interface GamblingCrate {
   image_url: string | null;
   cost_sp: number;
   max_opens_per_player: number | null;
+  reset_interval_days: number | null;
   is_active: boolean;
   created_by: number | null;
   created_at: string;

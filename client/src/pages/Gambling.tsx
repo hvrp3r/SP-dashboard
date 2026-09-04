@@ -4,6 +4,8 @@ import { useAuth } from '../hooks/useAuth.jsx';
 import * as gamblingApi from '../api/gambling.js';
 import GamblingBudgetBar from '../components/GamblingBudgetBar.jsx';
 import CrateIcon from '../components/CrateIcon.jsx';
+import ResetIntervalField from '../components/ResetIntervalField.jsx';
+import { resetIntervalShortLabel } from '../lib/gamblingLabels.js';
 import type { GamblingCrateEntry, GamblingStatus } from '../types.js';
 
 export default function Gambling() {
@@ -22,6 +24,7 @@ export default function Gambling() {
   const [imageUrl, setImageUrl] = useState('');
   const [costSp, setCostSp] = useState('');
   const [maxOpensPerPlayer, setMaxOpensPerPlayer] = useState('');
+  const [resetIntervalDays, setResetIntervalDays] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   async function load() {
@@ -61,12 +64,15 @@ export default function Gambling() {
         imageUrl: imageUrl.trim() || undefined,
         costSp: Number(costSp),
         maxOpensPerPlayer: maxOpensPerPlayer.trim() ? Number(maxOpensPerPlayer) : null,
+        resetIntervalDays:
+          maxOpensPerPlayer.trim() && resetIntervalDays.trim() ? Number(resetIntervalDays) : null,
       });
       setName('');
       setDescription('');
       setImageUrl('');
       setCostSp('');
       setMaxOpensPerPlayer('');
+      setResetIntervalDays('');
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur inconnue');
@@ -134,9 +140,15 @@ export default function Gambling() {
                 min={1}
                 placeholder="Limite d'ouvertures par joueur (optionnel, illimité par défaut)"
                 value={maxOpensPerPlayer}
-                onChange={(e) => setMaxOpensPerPlayer(e.target.value)}
+                onChange={(e) => {
+                  setMaxOpensPerPlayer(e.target.value);
+                  if (!e.target.value.trim()) setResetIntervalDays('');
+                }}
                 className="w-full rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
               />
+              {maxOpensPerPlayer.trim() && (
+                <ResetIntervalField value={resetIntervalDays} onChange={setResetIntervalDays} />
+              )}
               {freeWithoutLimit && (
                 <p className="text-xs text-red-400">
                   Une caisse gratuite doit avoir une limite d'ouvertures par joueur.
@@ -225,6 +237,7 @@ function CrateCard({ crate: c, isAdmin }: { crate: GamblingCrateEntry; isAdmin: 
             <span className="text-zinc-500 font-normal">
               {' '}
               · {c.myOpenCount}/{c.max_opens_per_player}
+              {c.reset_interval_days !== null && ` (${resetIntervalShortLabel(c.reset_interval_days)})`}
             </span>
           )}
         </p>
