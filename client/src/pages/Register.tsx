@@ -17,7 +17,7 @@ export default function Register() {
     setSubmitting(true);
     try {
       await register(username, email, password);
-      navigate('/profil');
+      navigate('/');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur inconnue');
     } finally {

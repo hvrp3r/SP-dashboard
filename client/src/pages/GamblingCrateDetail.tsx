@@ -3,6 +3,14 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth.jsx';
 import { useConfirm } from '../hooks/useConfirm.jsx';
 import * as gamblingApi from '../api/gambling.js';
+import * as cosmeticsApi from '../api/cosmetics.js';
+import {
+  RARITIES as COSMETIC_RARITIES,
+  RARITY_LABELS,
+  RARITY_TEXT_CLASSES as COSMETIC_RARITY_TEXT_CLASSES,
+  SLOT_LABELS,
+  poolRewardLabel,
+} from '../lib/cosmeticsLabels.js';
 import {
   RARITY_TEXT_CLASSES,
   REWARD_TYPE_LABELS,
@@ -12,12 +20,16 @@ import {
   rewardFallbackEmoji,
 } from '../lib/gamblingLabels.js';
 import GamblingBudgetBar from '../components/GamblingBudgetBar.jsx';
+import CosmeticPreview from '../components/CosmeticPreview.jsx';
 import GamblingReel from '../components/GamblingReel.jsx';
 import VolumeSlider from '../components/VolumeSlider.jsx';
 import CrateIcon from '../components/CrateIcon.jsx';
 import ResetIntervalField from '../components/ResetIntervalField.jsx';
 import { unlockAudio } from '../lib/sound.js';
 import type {
+  Cosmetic,
+  CosmeticRarity,
+  CosmeticSlot,
   GamblingCrateDetail as CrateDetail,
   GamblingCrateReward,
   GamblingCrateRewardView,
@@ -26,6 +38,9 @@ import type {
   GamblingRewardType,
   GamblingStatus,
 } from '../types.js';
+
+const COSMETIC_SLOTS: CosmeticSlot[] = ['avatar_frame', 'banner', 'name_color', 'title', 'name_font'];
+type CosmeticRewardMode = 'exact' | 'pool';
 
 function RewardIcon({
   imageUrl,
@@ -60,6 +75,10 @@ interface RewardDraft {
   title: string;
   imageUrl: string;
   spAmount: string;
+  cosmeticId: string;
+  cosmeticMode: CosmeticRewardMode;
+  cosmeticSlotFilter: string;
+  cosmeticRarityFilter: string;
   weight: string;
 }
 
@@ -68,6 +87,10 @@ function draftFromReward(r: GamblingCrateReward): RewardDraft {
     title: r.title,
     imageUrl: r.image_url ?? '',
     spAmount: r.sp_amount !== null ? String(r.sp_amount) : '',
+    cosmeticId: r.cosmetic_id !== null ? String(r.cosmetic_id) : '',
+    cosmeticMode: r.cosmetic_id !== null ? 'exact' : 'pool',
+    cosmeticSlotFilter: r.cosmetic_slot_filter ?? '',
+    cosmeticRarityFilter: r.cosmetic_rarity_filter ?? '',
     weight: String(r.weight),
   };
 }
@@ -106,8 +129,13 @@ export default function GamblingCrateDetail() {
   const [newRewardTitle, setNewRewardTitle] = useState('');
   const [newRewardImageUrl, setNewRewardImageUrl] = useState('');
   const [newRewardSpAmount, setNewRewardSpAmount] = useState('');
+  const [newRewardCosmeticId, setNewRewardCosmeticId] = useState('');
+  const [newRewardCosmeticMode, setNewRewardCosmeticMode] = useState<CosmeticRewardMode>('exact');
+  const [newRewardCosmeticSlotFilter, setNewRewardCosmeticSlotFilter] = useState('');
+  const [newRewardCosmeticRarityFilter, setNewRewardCosmeticRarityFilter] = useState('');
   const [newRewardWeight, setNewRewardWeight] = useState('');
   const [addingReward, setAddingReward] = useState(false);
+  const [cosmeticCatalog, setCosmeticCatalog] = useState<Cosmetic[]>([]);
 
   const [rewardDrafts, setRewardDrafts] = useState<Record<number, RewardDraft>>({});
   const [savingRewardId, setSavingRewardId] = useState<number | null>(null);
@@ -145,6 +173,22 @@ export default function GamblingCrateDetail() {
     gamblingApi.getStatus().then(setStatus).catch(() => {});
     gamblingApi.getMyOpens(10).then(setOpens).catch(() => {});
   }, [crateId]);
+
+  useEffect(() => {
+    if (isAdmin) cosmeticsApi.getCatalog().then(setCosmeticCatalog).catch(() => {});
+  }, [isAdmin]);
+
+  // Suggère un titre à partir du filtre pool ("Titre + Épique"), sans écraser
+  // un titre déjà saisi par le MSP.
+  useEffect(() => {
+    if (newRewardType !== 'cosmetic' || newRewardCosmeticMode !== 'pool') return;
+    if (newRewardTitle.trim()) return;
+    const label = poolRewardLabel(
+      (newRewardCosmeticSlotFilter as CosmeticSlot) || null,
+      (newRewardCosmeticRarityFilter as CosmeticRarity) || null
+    );
+    if (newRewardCosmeticSlotFilter || newRewardCosmeticRarityFilter) setNewRewardTitle(label);
+  }, [newRewardType, newRewardCosmeticMode, newRewardCosmeticSlotFilter, newRewardCosmeticRarityFilter]);
 
   async function handleOpen() {
     unlockAudio();
@@ -237,6 +281,15 @@ export default function GamblingCrateDetail() {
     e.preventDefault();
     if (!newRewardTitle.trim() || !newRewardWeight) return;
     if (newRewardType === 'sp' && !newRewardSpAmount) return;
+    if (newRewardType === 'cosmetic') {
+      if (newRewardCosmeticMode === 'exact' && !newRewardCosmeticId) return;
+      if (
+        newRewardCosmeticMode === 'pool' &&
+        !newRewardCosmeticSlotFilter &&
+        !newRewardCosmeticRarityFilter
+      )
+        return;
+    }
 
     setAddingReward(true);
     setError(null);
@@ -246,11 +299,28 @@ export default function GamblingCrateDetail() {
         title: newRewardTitle.trim(),
         imageUrl: newRewardImageUrl.trim() || undefined,
         spAmount: newRewardType === 'sp' ? Number(newRewardSpAmount) : undefined,
+        cosmeticId:
+          newRewardType === 'cosmetic' && newRewardCosmeticMode === 'exact'
+            ? Number(newRewardCosmeticId)
+            : undefined,
+        cosmeticSlotFilter:
+          newRewardType === 'cosmetic' && newRewardCosmeticMode === 'pool' && newRewardCosmeticSlotFilter
+            ? (newRewardCosmeticSlotFilter as CosmeticSlot)
+            : undefined,
+        cosmeticRarityFilter:
+          newRewardType === 'cosmetic' &&
+          newRewardCosmeticMode === 'pool' &&
+          newRewardCosmeticRarityFilter
+            ? (newRewardCosmeticRarityFilter as CosmeticRarity)
+            : undefined,
         weight: Number(newRewardWeight),
       });
       setNewRewardTitle('');
       setNewRewardImageUrl('');
       setNewRewardSpAmount('');
+      setNewRewardCosmeticId('');
+      setNewRewardCosmeticSlotFilter('');
+      setNewRewardCosmeticRarityFilter('');
       setNewRewardWeight('');
       await load();
     } catch (err) {
@@ -270,6 +340,18 @@ export default function GamblingCrateDetail() {
         title: draft.title.trim(),
         imageUrl: draft.imageUrl.trim() || null,
         spAmount: reward.type === 'sp' ? Number(draft.spAmount) : null,
+        cosmeticId:
+          reward.type === 'cosmetic' && draft.cosmeticMode === 'exact'
+            ? Number(draft.cosmeticId)
+            : null,
+        cosmeticSlotFilter:
+          reward.type === 'cosmetic' && draft.cosmeticMode === 'pool' && draft.cosmeticSlotFilter
+            ? (draft.cosmeticSlotFilter as CosmeticSlot)
+            : null,
+        cosmeticRarityFilter:
+          reward.type === 'cosmetic' && draft.cosmeticMode === 'pool' && draft.cosmeticRarityFilter
+            ? (draft.cosmeticRarityFilter as CosmeticRarity)
+            : null,
         weight: Number(draft.weight),
       });
       await load();
@@ -433,20 +515,30 @@ export default function GamblingCrateDetail() {
 
           {lastResult && (
             <div
-              className="mt-4 flex flex-col items-center gap-1"
+              className="mt-4 flex flex-col items-center gap-2"
               style={{ animation: 'popIn 0.4s ease-out' }}
             >
+              {lastResult.cosmetic && (
+                <CosmeticPreview cosmetic={lastResult.cosmetic} size={72} />
+              )}
               <p
                 className={`text-lg font-bold ${
-                  RARITY_TEXT_CLASSES[
-                    rarityFromWeightPercent(
-                      crate.rewards.find((r) => r.id === lastResult.reward.id)?.weight_percent ?? 100
-                    )
-                  ]
+                  lastResult.cosmetic
+                    ? COSMETIC_RARITY_TEXT_CLASSES[lastResult.cosmetic.rarity]
+                    : RARITY_TEXT_CLASSES[
+                        rarityFromWeightPercent(
+                          crate.rewards.find((r) => r.id === lastResult.reward.id)?.weight_percent ?? 100
+                        )
+                      ]
                 }`}
               >
                 {lastResult.reward.title}
               </p>
+              {lastResult.cosmetic && (
+                <p className={`text-xs font-medium ${COSMETIC_RARITY_TEXT_CLASSES[lastResult.cosmetic.rarity]}`}>
+                  {RARITY_LABELS[lastResult.cosmetic.rarity]} · {SLOT_LABELS[lastResult.cosmetic.slot]}
+                </p>
+              )}
               {lastResult.reward.type === 'sp' && (
                 <p className="text-emerald-400 font-bold">+{lastResult.reward.sp_amount} SP</p>
               )}
@@ -670,6 +762,83 @@ export default function GamblingCrateDetail() {
                               className="w-20 rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
                             />
                           )}
+                          {r.type === 'cosmetic' && (
+                            <>
+                              <select
+                                value={draft.cosmeticMode}
+                                onChange={(e) =>
+                                  setRewardDrafts((prev) => ({
+                                    ...prev,
+                                    [r.id]: {
+                                      ...draft,
+                                      cosmeticMode: e.target.value as CosmeticRewardMode,
+                                    },
+                                  }))
+                                }
+                                className="rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                              >
+                                <option value="exact">Précis</option>
+                                <option value="pool">Pool</option>
+                              </select>
+                              {draft.cosmeticMode === 'exact' ? (
+                                <select
+                                  value={draft.cosmeticId}
+                                  onChange={(e) =>
+                                    setRewardDrafts((prev) => ({
+                                      ...prev,
+                                      [r.id]: { ...draft, cosmeticId: e.target.value },
+                                    }))
+                                  }
+                                  className="flex-1 min-w-[140px] rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                >
+                                  {cosmeticCatalog
+                                    .filter((c) => !c.is_default)
+                                    .map((c) => (
+                                      <option key={c.id} value={c.id}>
+                                        {SLOT_LABELS[c.slot]} — {c.name}
+                                      </option>
+                                    ))}
+                                </select>
+                              ) : (
+                                <>
+                                  <select
+                                    value={draft.cosmeticSlotFilter}
+                                    onChange={(e) =>
+                                      setRewardDrafts((prev) => ({
+                                        ...prev,
+                                        [r.id]: { ...draft, cosmeticSlotFilter: e.target.value },
+                                      }))
+                                    }
+                                    className="rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                  >
+                                    <option value="">Toutes catégories</option>
+                                    {COSMETIC_SLOTS.map((s) => (
+                                      <option key={s} value={s}>
+                                        {SLOT_LABELS[s]}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  <select
+                                    value={draft.cosmeticRarityFilter}
+                                    onChange={(e) =>
+                                      setRewardDrafts((prev) => ({
+                                        ...prev,
+                                        [r.id]: { ...draft, cosmeticRarityFilter: e.target.value },
+                                      }))
+                                    }
+                                    className="rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                  >
+                                    <option value="">Toutes raretés</option>
+                                    {COSMETIC_RARITIES.map((r2) => (
+                                      <option key={r2} value={r2}>
+                                        {RARITY_LABELS[r2]}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </>
+                              )}
+                            </>
+                          )}
                           <input
                             type="number"
                             min={1}
@@ -715,6 +884,7 @@ export default function GamblingCrateDetail() {
                   >
                     <option value="sp">SP classique</option>
                     <option value="custom">Personnalisé (collection)</option>
+                    <option value="cosmetic">Cosmétique</option>
                   </select>
                   <input
                     type="text"
@@ -744,6 +914,62 @@ export default function GamblingCrateDetail() {
                       className="w-28 rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
                     />
                   )}
+                  {newRewardType === 'cosmetic' && (
+                    <>
+                      <select
+                        value={newRewardCosmeticMode}
+                        onChange={(e) => setNewRewardCosmeticMode(e.target.value as CosmeticRewardMode)}
+                        className="rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      >
+                        <option value="exact">Cosmétique précis</option>
+                        <option value="pool">Pool catégorie/rareté</option>
+                      </select>
+                      {newRewardCosmeticMode === 'exact' ? (
+                        <select
+                          required
+                          value={newRewardCosmeticId}
+                          onChange={(e) => setNewRewardCosmeticId(e.target.value)}
+                          className="flex-1 min-w-[160px] rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        >
+                          <option value="">Cosmétique…</option>
+                          {cosmeticCatalog
+                            .filter((c) => !c.is_default)
+                            .map((c) => (
+                              <option key={c.id} value={c.id}>
+                                {SLOT_LABELS[c.slot]} — {c.name}
+                              </option>
+                            ))}
+                        </select>
+                      ) : (
+                        <>
+                          <select
+                            value={newRewardCosmeticSlotFilter}
+                            onChange={(e) => setNewRewardCosmeticSlotFilter(e.target.value)}
+                            className="rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                          >
+                            <option value="">Toutes catégories</option>
+                            {COSMETIC_SLOTS.map((s) => (
+                              <option key={s} value={s}>
+                                {SLOT_LABELS[s]}
+                              </option>
+                            ))}
+                          </select>
+                          <select
+                            value={newRewardCosmeticRarityFilter}
+                            onChange={(e) => setNewRewardCosmeticRarityFilter(e.target.value)}
+                            className="rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                          >
+                            <option value="">Toutes raretés</option>
+                            {COSMETIC_RARITIES.map((r) => (
+                              <option key={r} value={r}>
+                                {RARITY_LABELS[r]}
+                              </option>
+                            ))}
+                          </select>
+                        </>
+                      )}
+                    </>
+                  )}
                   <input
                     type="number"
                     min={1}
@@ -761,6 +987,12 @@ export default function GamblingCrateDetail() {
                     Ajouter
                   </button>
                 </div>
+                {newRewardType === 'cosmetic' && newRewardCosmeticMode === 'pool' && (
+                  <p className="text-xs text-zinc-500">
+                    Un cosmétique précis correspondant au filtre sera tiré au hasard à chaque
+                    ouverture, pondéré par rareté (réglable dans Config → Cosmétiques).
+                  </p>
+                )}
                 <p className="text-xs text-zinc-500">
                   Le poids détermine la probabilité relative de tirage (pas besoin que la somme
                   fasse 100 — les pourcentages sont recalculés automatiquement).

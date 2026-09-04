@@ -3,8 +3,12 @@ import { pool } from '../db/pool.js';
 import * as spService from './sp.service.js';
 import * as configService from './config.service.js';
 import * as subscriptionService from './subscription.service.js';
+import * as cosmeticsService from './cosmetics.service.js';
 import { startOfDayLocalAsUTC } from '../utils/localDate.js';
 import type {
+  CosmeticRarity,
+  CosmeticRow,
+  CosmeticSlot,
   GamblingCrateEntry,
   GamblingCrateRewardRow,
   GamblingCrateRow,
@@ -222,6 +226,9 @@ interface AddRewardInput {
   title: string;
   imageUrl: string | null;
   spAmount: number | null;
+  cosmeticId: number | null;
+  cosmeticSlotFilter: CosmeticSlot | null;
+  cosmeticRarityFilter: CosmeticRarity | null;
   weight: number;
 }
 
@@ -231,13 +238,27 @@ export async function addReward({
   title,
   imageUrl,
   spAmount,
+  cosmeticId,
+  cosmeticSlotFilter,
+  cosmeticRarityFilter,
   weight,
 }: AddRewardInput): Promise<GamblingCrateRewardRow> {
   const { rows } = await pool.query<GamblingCrateRewardRow>(
-    `INSERT INTO gambling_crate_rewards (crate_id, type, title, image_url, sp_amount, weight)
-     VALUES ($1, $2, $3, $4, $5, $6)
+    `INSERT INTO gambling_crate_rewards
+       (crate_id, type, title, image_url, sp_amount, cosmetic_id, cosmetic_slot_filter, cosmetic_rarity_filter, weight)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      RETURNING *`,
-    [crateId, type, title, imageUrl, type === 'sp' ? spAmount : null, weight]
+    [
+      crateId,
+      type,
+      title,
+      imageUrl,
+      type === 'sp' ? spAmount : null,
+      type === 'cosmetic' ? cosmeticId : null,
+      type === 'cosmetic' ? cosmeticSlotFilter : null,
+      type === 'cosmetic' ? cosmeticRarityFilter : null,
+      weight,
+    ]
   );
   return rows[0] as GamblingCrateRewardRow;
 }
@@ -246,6 +267,9 @@ interface UpdateRewardInput {
   title?: string;
   imageUrl?: string | null;
   spAmount?: number | null;
+  cosmeticId?: number | null;
+  cosmeticSlotFilter?: CosmeticSlot | null;
+  cosmeticRarityFilter?: CosmeticRarity | null;
   weight?: number;
 }
 
@@ -256,18 +280,45 @@ export async function updateReward(
   const current = await getRewardById(id);
   if (!current) return null;
 
+  const isCosmetic = current.type === 'cosmetic';
   const next = {
     title: patch.title ?? current.title,
     image_url: patch.imageUrl !== undefined ? patch.imageUrl : current.image_url,
     sp_amount: current.type === 'sp' ? (patch.spAmount ?? current.sp_amount) : null,
+    cosmetic_id: isCosmetic
+      ? patch.cosmeticId !== undefined
+        ? patch.cosmeticId
+        : current.cosmetic_id
+      : null,
+    cosmetic_slot_filter: isCosmetic
+      ? patch.cosmeticSlotFilter !== undefined
+        ? patch.cosmeticSlotFilter
+        : current.cosmetic_slot_filter
+      : null,
+    cosmetic_rarity_filter: isCosmetic
+      ? patch.cosmeticRarityFilter !== undefined
+        ? patch.cosmeticRarityFilter
+        : current.cosmetic_rarity_filter
+      : null,
     weight: patch.weight ?? current.weight,
   };
 
   const { rows } = await pool.query<GamblingCrateRewardRow>(
-    `UPDATE gambling_crate_rewards SET title = $1, image_url = $2, sp_amount = $3, weight = $4
-     WHERE id = $5
+    `UPDATE gambling_crate_rewards
+     SET title = $1, image_url = $2, sp_amount = $3, cosmetic_id = $4,
+         cosmetic_slot_filter = $5, cosmetic_rarity_filter = $6, weight = $7
+     WHERE id = $8
      RETURNING *`,
-    [next.title, next.image_url, next.sp_amount, next.weight, id]
+    [
+      next.title,
+      next.image_url,
+      next.sp_amount,
+      next.cosmetic_id,
+      next.cosmetic_slot_filter,
+      next.cosmetic_rarity_filter,
+      next.weight,
+      id,
+    ]
   );
   return rows[0] ?? null;
 }
@@ -330,6 +381,8 @@ function drawReward(rewards: GamblingCrateRewardRow[]): GamblingCrateRewardRow {
 interface OpenCrateResult {
   open: GamblingOpenRow;
   reward: GamblingCrateRewardRow;
+  /** Cosmétique réellement gagné (précis ou tiré du pool) — permet au client d'afficher un aperçu visuel fidèle. */
+  cosmetic: CosmeticRow | null;
   balance: number;
   spentToday: number;
 }
@@ -450,6 +503,29 @@ export async function openCrate(
       );
     }
 
+    let resolvedReward = reward;
+    let wonCosmetic: CosmeticRow | null = null;
+    if (reward.type === 'cosmetic') {
+      const cosmetic = reward.cosmetic_id
+        ? await cosmeticsService.getCosmeticById(reward.cosmetic_id)
+        : await cosmeticsService.pickRandomCosmeticForPool(
+            reward.cosmetic_slot_filter,
+            reward.cosmetic_rarity_filter,
+            client
+          );
+      if (!cosmetic) {
+        throw Object.assign(new Error('Cosmétique introuvable'), { status: 404 });
+      }
+      await cosmeticsService.grant(userId, cosmetic.id, 'gambling', client);
+      // Réponse HTTP uniquement (pas persisté) : le joueur voit le nom du
+      // cosmétique réellement gagné, pas juste le libellé générique du pool
+      // ("Cadre" → "Cadre Or"), même chose pour la notification. `cosmetic`
+      // (objet complet) accompagne la réponse pour que le client affiche un
+      // aperçu visuel fidèle (couleur, police, image…), pas juste un titre.
+      resolvedReward = { ...reward, title: cosmetic.name, image_url: cosmetic.image_url };
+      wonCosmetic = cosmetic;
+    }
+
     const { rows: userRows } = await client.query<{ sp_balance: number }>(
       'SELECT sp_balance FROM users WHERE id = $1',
       [userId]
@@ -459,7 +535,8 @@ export async function openCrate(
 
     return {
       open,
-      reward,
+      reward: resolvedReward,
+      cosmetic: wonCosmetic,
       balance: userRows[0]?.sp_balance ?? 0,
       spentToday: spentToday + crate.cost_sp,
     };

@@ -100,6 +100,7 @@ export interface LeaderboardEntry {
   sp_balance: number;
   sp_total_earned: number;
   login_streak: number;
+  equipped_cosmetics: EquippedCosmetic[];
 }
 
 export type SpTransactionType =
@@ -257,9 +258,54 @@ export type NotificationType =
   | 'challenge_expired'
   | 'minigame_open'
   | 'sp_gained'
-  | 'sp_lost';
+  | 'sp_lost'
+  | 'cosmetic_earned';
 
-export type GamblingRewardType = 'sp' | 'custom';
+export type CosmeticSlot = 'avatar_frame' | 'banner' | 'name_color' | 'title' | 'name_font';
+export type CosmeticRarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
+/** Comment un joueur a obtenu un cosmétique — miroir de sp_transactions.type mais scoping propre à ce système. */
+export type CosmeticObtainedSource = 'gambling' | 'admin_grant';
+
+export interface CosmeticRow {
+  id: number;
+  slot: CosmeticSlot;
+  key: string;
+  name: string;
+  description: string | null;
+  image_url: string | null;
+  color_value: string | null;
+  font_family: string | null;
+  rarity: CosmeticRarity;
+  is_default: boolean;
+  created_by: number | null;
+  created_at: string;
+}
+
+export interface UserCosmeticRow {
+  id: number;
+  user_id: number;
+  cosmetic_id: number;
+  slot: CosmeticSlot;
+  equipped: boolean;
+  obtained_source: CosmeticObtainedSource;
+  obtained_at: string;
+}
+
+export interface UserCosmeticEntry extends UserCosmeticRow {
+  cosmetic: CosmeticRow;
+}
+
+/** Vue publique légère — ce qu'un autre joueur voit affiché (Leaderboard, Profil). */
+export interface EquippedCosmetic {
+  slot: CosmeticSlot;
+  key: string;
+  name: string;
+  image_url: string | null;
+  color_value: string | null;
+  font_family: string | null;
+}
+
+export type GamblingRewardType = 'sp' | 'custom' | 'cosmetic';
 
 export interface GamblingCrateRow {
   id: number;
@@ -284,6 +330,10 @@ export interface GamblingCrateRewardRow {
   title: string;
   image_url: string | null;
   sp_amount: number | null;
+  cosmetic_id: number | null;
+  /** Filtre "pool" (cosmetic_id NULL) : catégorie et/ou rareté à tirer au hasard à l'ouverture. */
+  cosmetic_slot_filter: CosmeticSlot | null;
+  cosmetic_rarity_filter: CosmeticRarity | null;
   weight: number;
   created_at: string;
 }

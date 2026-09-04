@@ -2,12 +2,14 @@ import type { ReactNode } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import Login from './pages/Login.jsx';
 import Register from './pages/Register.jsx';
+import Home from './pages/Home.jsx';
 import Profile from './pages/Profile.jsx';
 import Leaderboard from './pages/Leaderboard.jsx';
 import Challenges from './pages/Challenges.jsx';
 import Minigames from './pages/Minigames.jsx';
 import MinigameDetail from './pages/MinigameDetail.jsx';
 import GamblingHome from './pages/GamblingHome.jsx';
+import Cosmetics from './pages/Cosmetics.jsx';
 import Gambling from './pages/Gambling.jsx';
 import GamblingCrateDetail from './pages/GamblingCrateDetail.jsx';
 import BlackjackTable from './pages/BlackjackTable.jsx';
@@ -18,6 +20,7 @@ import AdminTransactions from './pages/admin/Transactions.jsx';
 import AdminChallenges from './pages/admin/Challenges.jsx';
 import AdminPlayers from './pages/admin/Players.jsx';
 import AdminSubscriptions from './pages/admin/Subscriptions.jsx';
+import AdminCosmetics from './pages/admin/Cosmetics.jsx';
 import NavBar from './components/NavBar.jsx';
 import { useAuth } from './hooks/useAuth.jsx';
 
@@ -31,7 +34,7 @@ function AdminRoute({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
   if (loading) return null;
   if (!user) return <Navigate to="/connexion" replace />;
-  return user.role === 'admin' ? children : <Navigate to="/profil" replace />;
+  return user.role === 'admin' ? children : <Navigate to="/" replace />;
 }
 
 export default function App() {
@@ -41,6 +44,14 @@ export default function App() {
       <Routes>
         <Route path="/connexion" element={<Login />} />
         <Route path="/inscription" element={<Register />} />
+        <Route
+          path="/"
+          element={
+            <PrivateRoute>
+              <Home />
+            </PrivateRoute>
+          }
+        />
         <Route
           path="/profil"
           element={
@@ -87,6 +98,14 @@ export default function App() {
           element={
             <PrivateRoute>
               <MinigameDetail />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/cosmetiques"
+          element={
+            <PrivateRoute>
+              <Cosmetics />
             </PrivateRoute>
           }
         />
@@ -170,7 +189,15 @@ export default function App() {
             </AdminRoute>
           }
         />
-        <Route path="*" element={<Navigate to="/profil" replace />} />
+        <Route
+          path="/admin/cosmetiques"
+          element={
+            <AdminRoute>
+              <AdminCosmetics />
+            </AdminRoute>
+          }
+        />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </>
   );

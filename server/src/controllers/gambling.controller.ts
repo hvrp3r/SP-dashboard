@@ -3,15 +3,21 @@ import * as gamblingService from '../services/gambling.service.js';
 import * as configService from '../services/config.service.js';
 import * as seasonService from '../services/season.service.js';
 import * as subscriptionService from '../services/subscription.service.js';
+import * as cosmeticsService from '../services/cosmetics.service.js';
+import * as notificationService from '../services/notification.service.js';
 import { BLACKJACK_RTP_PERCENT } from '../services/blackjack.service.js';
 import type {
+  CosmeticRarity,
+  CosmeticSlot,
   GamblingCrateRewardRow,
   GamblingCrateRewardView,
   GamblingGameInfo,
   GamblingRewardType,
 } from '../types.js';
 
-const VALID_REWARD_TYPES: GamblingRewardType[] = ['sp', 'custom'];
+const VALID_REWARD_TYPES: GamblingRewardType[] = ['sp', 'custom', 'cosmetic'];
+const VALID_COSMETIC_SLOTS: CosmeticSlot[] = ['avatar_frame', 'banner', 'name_color', 'title', 'name_font'];
+const VALID_COSMETIC_RARITIES: CosmeticRarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
 
 function withPercent(rewards: GamblingCrateRewardRow[]): GamblingCrateRewardView[] {
   const totalWeight = rewards.reduce((sum, r) => sum + r.weight, 0);
@@ -210,11 +216,59 @@ export async function removeCrate(req: Request<{ id: string }>, res: Response): 
   res.status(204).end();
 }
 
+/**
+ * Une récompense 'cosmetic' est soit précise (cosmeticId, aucun filtre), soit
+ * un "pool" (pas de cosmeticId, au moins un filtre catégorie/rareté) —
+ * réutilisé par addReward et updateReward. Retourne un message d'erreur ou
+ * `null` si valide.
+ */
+async function validateCosmeticRewardTarget(
+  cosmeticId: number | null | undefined,
+  slotFilter: CosmeticSlot | null | undefined,
+  rarityFilter: CosmeticRarity | null | undefined
+): Promise<string | null> {
+  const hasCosmeticId = cosmeticId !== null && cosmeticId !== undefined;
+  const hasSlotFilter = slotFilter !== null && slotFilter !== undefined;
+  const hasRarityFilter = rarityFilter !== null && rarityFilter !== undefined;
+
+  if (hasSlotFilter && !VALID_COSMETIC_SLOTS.includes(slotFilter as CosmeticSlot)) {
+    return 'Catégorie de filtre invalide';
+  }
+  if (hasRarityFilter && !VALID_COSMETIC_RARITIES.includes(rarityFilter as CosmeticRarity)) {
+    return 'Rareté de filtre invalide';
+  }
+
+  if (hasCosmeticId) {
+    if (hasSlotFilter || hasRarityFilter) {
+      return 'Un cosmétique précis ne peut pas avoir de filtre catégorie/rareté';
+    }
+    const cosmetic = await cosmeticsService.getCosmeticById(cosmeticId as number);
+    if (!cosmetic) return 'Cosmétique introuvable';
+    return null;
+  }
+
+  if (!hasSlotFilter && !hasRarityFilter) {
+    return 'Choisis un cosmétique précis ou un filtre catégorie/rareté';
+  }
+
+  const matches = await cosmeticsService.listCosmeticsForPool(
+    hasSlotFilter ? (slotFilter as CosmeticSlot) : null,
+    hasRarityFilter ? (rarityFilter as CosmeticRarity) : null
+  );
+  if (matches.length === 0) {
+    return 'Aucun cosmétique du catalogue ne correspond à ce filtre';
+  }
+  return null;
+}
+
 interface AddRewardBody {
   type?: GamblingRewardType;
   title?: string;
   imageUrl?: string;
   spAmount?: number;
+  cosmeticId?: number;
+  cosmeticSlotFilter?: CosmeticSlot;
+  cosmeticRarityFilter?: CosmeticRarity;
   weight?: number;
 }
 
@@ -237,6 +291,9 @@ export async function addReward(
   const title = req.body?.title?.trim();
   const imageUrl = req.body?.imageUrl?.trim();
   const spAmount = req.body?.spAmount;
+  const cosmeticId = req.body?.cosmeticId;
+  const cosmeticSlotFilter = req.body?.cosmeticSlotFilter;
+  const cosmeticRarityFilter = req.body?.cosmeticRarityFilter;
   const weight = req.body?.weight;
 
   if (!type || !VALID_REWARD_TYPES.includes(type)) {
@@ -255,6 +312,17 @@ export async function addReward(
     res.status(400).json({ error: 'Le montant SP doit être un entier positif' });
     return;
   }
+  if (type === 'cosmetic') {
+    const error = await validateCosmeticRewardTarget(
+      cosmeticId,
+      cosmeticSlotFilter,
+      cosmeticRarityFilter
+    );
+    if (error) {
+      res.status(400).json({ error });
+      return;
+    }
+  }
 
   const reward = await gamblingService.addReward({
     crateId,
@@ -262,6 +330,9 @@ export async function addReward(
     title,
     imageUrl: imageUrl || null,
     spAmount: type === 'sp' ? (spAmount as number) : null,
+    cosmeticId: type === 'cosmetic' ? (cosmeticId ?? null) : null,
+    cosmeticSlotFilter: type === 'cosmetic' ? (cosmeticSlotFilter ?? null) : null,
+    cosmeticRarityFilter: type === 'cosmetic' ? (cosmeticRarityFilter ?? null) : null,
     weight: weight as number,
   });
   res.status(201).json(reward);
@@ -271,6 +342,9 @@ interface UpdateRewardBody {
   title?: string;
   imageUrl?: string | null;
   spAmount?: number | null;
+  cosmeticId?: number | null;
+  cosmeticSlotFilter?: CosmeticSlot | null;
+  cosmeticRarityFilter?: CosmeticRarity | null;
   weight?: number;
 }
 
@@ -305,11 +379,33 @@ export async function updateReward(
     res.status(400).json({ error: 'Le montant SP doit être un entier positif' });
     return;
   }
+  if (
+    existing.type === 'cosmetic' &&
+    (body.cosmeticId !== undefined ||
+      body.cosmeticSlotFilter !== undefined ||
+      body.cosmeticRarityFilter !== undefined)
+  ) {
+    const nextCosmeticId = body.cosmeticId !== undefined ? body.cosmeticId : existing.cosmetic_id;
+    const nextSlotFilter =
+      body.cosmeticSlotFilter !== undefined ? body.cosmeticSlotFilter : existing.cosmetic_slot_filter;
+    const nextRarityFilter =
+      body.cosmeticRarityFilter !== undefined
+        ? body.cosmeticRarityFilter
+        : existing.cosmetic_rarity_filter;
+    const error = await validateCosmeticRewardTarget(nextCosmeticId, nextSlotFilter, nextRarityFilter);
+    if (error) {
+      res.status(400).json({ error });
+      return;
+    }
+  }
 
   const updated = await gamblingService.updateReward(rewardId, {
     title: body.title?.trim(),
     imageUrl: body.imageUrl !== undefined ? body.imageUrl?.trim() || null : undefined,
     spAmount: body.spAmount ?? undefined,
+    cosmeticId: body.cosmeticId,
+    cosmeticSlotFilter: body.cosmeticSlotFilter,
+    cosmeticRarityFilter: body.cosmeticRarityFilter,
     weight: body.weight,
   });
   res.json(updated);
@@ -360,9 +456,19 @@ export async function openCrate(req: Request<{ id: string }>, res: Response): Pr
     return;
   }
 
+  if (result.reward.type === 'cosmetic') {
+    await notificationService.createNotification({
+      userId: req.user!.id,
+      type: 'cosmetic_earned',
+      message: `Tu as gagné le cosmétique « ${result.reward.title} » !`,
+      link: '/cosmetiques',
+    });
+  }
+
   const maxWagerPerDay = await configService.getConfigNumber('gambling_max_wager_per_day', 50);
   res.status(201).json({
     reward: result.reward,
+    cosmetic: result.cosmetic,
     balance: result.balance,
     spentToday: result.spentToday,
     maxWagerPerDay,

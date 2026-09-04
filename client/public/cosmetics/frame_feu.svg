@@ -1,0 +1,28 @@
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="fireglow" cx="50%" cy="50%" r="50%">
+      <stop offset="78%" stop-color="#f97316" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#f97316" stop-opacity="0.35"/>
+    </radialGradient>
+    <linearGradient id="fire" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#fde047"/>
+      <stop offset="50%" stop-color="#f97316"/>
+      <stop offset="100%" stop-color="#dc2626"/>
+    </linearGradient>
+  </defs>
+  <circle cx="50" cy="50" r="48" fill="url(#fireglow)">
+    <animate attributeName="r" dur="1.6s" repeatCount="indefinite" values="46;50;46"/>
+    <animate attributeName="opacity" dur="1.6s" repeatCount="indefinite" values="0.7;1;0.7"/>
+  </circle>
+  <circle cx="50" cy="50" r="45" fill="none" stroke="url(#fire)" stroke-width="7"/>
+  <g fill="url(#fire)">
+    <path d="M50 -3 Q55 6 50 13 Q45 6 50 -3Z"/>
+    <path d="M50 87 Q55 96 50 103 Q45 96 50 87Z"/>
+    <path d="M-3 50 Q6 45 13 50 Q6 55 -3 50Z"/>
+    <path d="M87 50 Q96 45 103 50 Q96 55 87 50Z"/>
+    <path d="M17 17 Q25 23 20 31 Q13 25 17 17Z"/>
+    <path d="M83 17 Q75 23 80 31 Q87 25 83 17Z"/>
+    <path d="M17 83 Q25 77 20 69 Q13 75 17 83Z"/>
+    <path d="M83 83 Q75 77 80 69 Q87 75 83 83Z"/>
+  </g>
+</svg>

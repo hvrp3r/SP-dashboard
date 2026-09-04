@@ -17,6 +17,16 @@ export const CONFIG_SECTIONS: ConfigSection[] = [
     keys: ['gambling_enabled', 'blackjack_enabled', 'gambling_max_wager_per_day'],
   },
   {
+    title: 'Cosmétiques',
+    keys: [
+      'cosmetic_rarity_weight_common',
+      'cosmetic_rarity_weight_uncommon',
+      'cosmetic_rarity_weight_rare',
+      'cosmetic_rarity_weight_epic',
+      'cosmetic_rarity_weight_legendary',
+    ],
+  },
+  {
     title: 'Intégrations',
     keys: ['discord_notifications_enabled'],
   },
