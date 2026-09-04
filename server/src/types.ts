@@ -13,6 +13,8 @@ export interface UserRow {
   last_login_date: string | null;
   created_at: string;
   is_leaderboard_hidden: boolean;
+  disabled_at: string | null;
+  disabled_by: number | null;
 }
 
 export type PublicUser = Pick<
@@ -29,6 +31,21 @@ export type PublicUser = Pick<
 >;
 
 export type PrivateUser = PublicUser & Pick<UserRow, 'email' | 'last_login_date'>;
+
+export type AdminUserSummary = Pick<
+  UserRow,
+  | 'id'
+  | 'username'
+  | 'email'
+  | 'avatar_url'
+  | 'role'
+  | 'sp_balance'
+  | 'sp_total_earned'
+  | 'login_streak'
+  | 'created_at'
+  | 'is_leaderboard_hidden'
+  | 'disabled_at'
+>;
 
 export interface AccessTokenPayload {
   sub: number;
@@ -105,6 +122,7 @@ export interface SpTransactionRow {
   related_id: number | null;
   note: string | null;
   created_at: string;
+  affects_total_earned: boolean;
   revoked_at: string | null;
   revoked_by: number | null;
 }

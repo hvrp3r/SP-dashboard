@@ -11,14 +11,15 @@ export async function getPlayerStats(userId: number): Promise<PlayerStats> {
   const { rows: userRows } = await pool.query<{
     sp_balance: number;
     is_leaderboard_hidden: boolean;
-  }>('SELECT sp_balance, is_leaderboard_hidden FROM users WHERE id = $1', [userId]);
+    disabled_at: string | null;
+  }>('SELECT sp_balance, is_leaderboard_hidden, disabled_at FROM users WHERE id = $1', [userId]);
   const user = userRows[0];
 
   const [rankResult, challengeResult, transactionRows] = await Promise.all([
-    user && !user.is_leaderboard_hidden
+    user && !user.is_leaderboard_hidden && !user.disabled_at
       ? pool.query<{ rank: string }>(
           `SELECT COUNT(*) + 1 AS rank FROM users u2
-           WHERE u2.sp_balance > $1 AND u2.is_leaderboard_hidden = false`,
+           WHERE u2.sp_balance > $1 AND u2.is_leaderboard_hidden = false AND u2.disabled_at IS NULL`,
           [user.sp_balance]
         )
       : Promise.resolve(null),

@@ -1,5 +1,5 @@
 import { pool } from '../db/pool.js';
-import type { PrivateUser, PublicUser, UserRow } from '../types.js';
+import type { AdminUserSummary, PrivateUser, PublicUser, UserRow } from '../types.js';
 
 const PUBLIC_FIELDS = `
   id, username, avatar_url, role, sp_balance, sp_total_earned,
@@ -7,6 +7,11 @@ const PUBLIC_FIELDS = `
 `;
 
 const PRIVATE_FIELDS = `${PUBLIC_FIELDS}, email, last_login_date`;
+
+const ADMIN_LIST_FIELDS = `
+  id, username, email, avatar_url, role, sp_balance, sp_total_earned,
+  login_streak, created_at, is_leaderboard_hidden, disabled_at
+`;
 
 export async function findByEmail(email: string): Promise<UserRow | null> {
   const { rows } = await pool.query<UserRow>('SELECT * FROM users WHERE email = $1', [email]);
@@ -36,6 +41,26 @@ export async function setLeaderboardHidden(
   const { rows } = await pool.query<PrivateUser>(
     `UPDATE users SET is_leaderboard_hidden = $1 WHERE id = $2 RETURNING ${PRIVATE_FIELDS}`,
     [hidden, id]
+  );
+  return rows[0] ?? null;
+}
+
+export async function listAllForAdmin(): Promise<AdminUserSummary[]> {
+  const { rows } = await pool.query<AdminUserSummary>(
+    `SELECT ${ADMIN_LIST_FIELDS} FROM users ORDER BY username ASC`
+  );
+  return rows;
+}
+
+export async function setDisabled(
+  id: number,
+  disabled: boolean,
+  disabledBy: number | null
+): Promise<AdminUserSummary | null> {
+  const { rows } = await pool.query<AdminUserSummary>(
+    `UPDATE users SET disabled_at = $1, disabled_by = $2 WHERE id = $3
+     RETURNING ${ADMIN_LIST_FIELDS}`,
+    [disabled ? new Date() : null, disabled ? disabledBy : null, id]
   );
   return rows[0] ?? null;
 }

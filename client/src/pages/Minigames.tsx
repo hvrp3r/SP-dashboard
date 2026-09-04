@@ -12,6 +12,7 @@ export default function Minigames() {
   const [sessions, setSessions] = useState<MinigameSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showClosed, setShowClosed] = useState(false);
 
   const [gameType, setGameType] = useState<MinigameGameType>(MINIGAME_GAME_TYPES[0]);
   const [title, setTitle] = useState('');
@@ -36,6 +37,9 @@ export default function Minigames() {
   useEffect(() => {
     load();
   }, []);
+
+  const openSessions = sessions.filter((s) => s.status === 'open');
+  const closedSessions = sessions.filter((s) => s.status !== 'open');
 
   const showPaidOption = gameType === 'quiz';
   const paidFeeValue = showPaidOption && isPaid ? Number(entryFee) : NaN;
@@ -149,46 +153,74 @@ export default function Minigames() {
           </div>
         )}
 
-        <div className="space-y-3">
-          {loading ? (
-            <p className="text-zinc-500">Chargement…</p>
-          ) : sessions.length === 0 ? (
-            <p className="text-zinc-500">Aucun mini-jeu pour le moment.</p>
-          ) : (
-            sessions.map((s) => (
-              <Link
-                key={s.id}
-                to={`/mini-jeux/${s.id}`}
-                className="block bg-zinc-900 border border-zinc-800 rounded-xl shadow-md p-4 hover:border-emerald-500/50 transition"
-              >
-                <div className="flex items-center justify-between mb-1 gap-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <p className="font-medium text-zinc-100 truncate">{s.title}</p>
-                    <span className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-400 font-medium uppercase tracking-wide">
-                      {gameTypeLabel(s.game_type)}
-                    </span>
-                    {s.entry_fee && (
-                      <span className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 font-medium uppercase tracking-wide">
-                        {s.entry_fee} SP
-                      </span>
-                    )}
+        {loading ? (
+          <p className="text-zinc-500">Chargement…</p>
+        ) : (
+          <>
+            <div className="space-y-3">
+              {openSessions.length === 0 ? (
+                <p className="text-zinc-500">Aucun mini-jeu ouvert pour le moment.</p>
+              ) : (
+                openSessions.map((s) => <MinigameCard key={s.id} session={s} />)
+              )}
+            </div>
+
+            {closedSessions.length > 0 && (
+              <div className="mt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowClosed((prev) => !prev)}
+                  className="mb-3 text-sm text-zinc-400 hover:text-zinc-200 font-medium transition"
+                >
+                  {showClosed
+                    ? 'Masquer les mini-jeux clôturés'
+                    : `Voir les mini-jeux clôturés (${closedSessions.length})`}
+                </button>
+                {showClosed && (
+                  <div className="space-y-3">
+                    {closedSessions.map((s) => (
+                      <MinigameCard key={s.id} session={s} />
+                    ))}
                   </div>
-                  <span
-                    className={`flex-shrink-0 text-xs px-2 py-1 rounded-full ${
-                      s.status === 'open'
-                        ? 'bg-emerald-500/15 text-emerald-400'
-                        : 'bg-zinc-800 text-zinc-400'
-                    }`}
-                  >
-                    {s.status === 'open' ? 'Ouvert' : 'Clôturé'}
-                  </span>
-                </div>
-                {s.description && <p className="text-sm text-zinc-500">{s.description}</p>}
-              </Link>
-            ))
-          )}
-        </div>
+                )}
+              </div>
+            )}
+          </>
+        )}
       </div>
     </div>
+  );
+}
+
+function MinigameCard({ session: s }: { session: MinigameSession }) {
+  return (
+    <Link
+      to={`/mini-jeux/${s.id}`}
+      className="block bg-zinc-900 border border-zinc-800 rounded-xl shadow-md p-4 hover:border-emerald-500/50 transition"
+    >
+      <div className="flex items-center justify-between mb-1 gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <p className="font-medium text-zinc-100 truncate">{s.title}</p>
+          <span className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-400 font-medium uppercase tracking-wide">
+            {gameTypeLabel(s.game_type)}
+          </span>
+          {s.entry_fee && (
+            <span className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 font-medium uppercase tracking-wide">
+              {s.entry_fee} SP
+            </span>
+          )}
+        </div>
+        <span
+          className={`flex-shrink-0 text-xs px-2 py-1 rounded-full ${
+            s.status === 'open'
+              ? 'bg-emerald-500/15 text-emerald-400'
+              : 'bg-zinc-800 text-zinc-400'
+          }`}
+        >
+          {s.status === 'open' ? 'Ouvert' : 'Clôturé'}
+        </span>
+      </div>
+      {s.description && <p className="text-sm text-zinc-500">{s.description}</p>}
+    </Link>
   );
 }

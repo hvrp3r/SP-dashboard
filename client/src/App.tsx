@@ -16,6 +16,7 @@ import AdminSeasons from './pages/admin/Seasons.jsx';
 import AdminConfig from './pages/admin/Config.jsx';
 import AdminTransactions from './pages/admin/Transactions.jsx';
 import AdminChallenges from './pages/admin/Challenges.jsx';
+import AdminPlayers from './pages/admin/Players.jsx';
 import NavBar from './components/NavBar.jsx';
 import { useAuth } from './hooks/useAuth.jsx';
 
@@ -149,6 +150,14 @@ export default function App() {
           element={
             <AdminRoute>
               <AdminChallenges />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="/admin/joueurs"
+          element={
+            <AdminRoute>
+              <AdminPlayers />
             </AdminRoute>
           }
         />

@@ -6,13 +6,20 @@ export const getMyTransactions = (limit = 20, offset = 0) =>
 
 interface AllTransactionsFilter {
   type?: SpTransactionType;
+  userId?: number;
   limit?: number;
   offset?: number;
 }
 
-export const getAllTransactions = ({ type, limit = 20, offset = 0 }: AllTransactionsFilter = {}) => {
+export const getAllTransactions = ({
+  type,
+  userId,
+  limit = 20,
+  offset = 0,
+}: AllTransactionsFilter = {}) => {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
   if (type) params.set('type', type);
+  if (userId) params.set('userId', String(userId));
   return apiClient.get<SpTransactionEntry[]>(`/api/transactions?${params.toString()}`);
 };
 
@@ -24,6 +31,7 @@ interface CreateTransactionInput {
   type: 'admin_grant' | 'admin_deduct';
   amount: number;
   note?: string;
+  affectsTotalEarned: boolean;
 }
 
 export const createTransaction = (input: CreateTransactionInput) =>

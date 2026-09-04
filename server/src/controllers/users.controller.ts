@@ -77,6 +77,44 @@ export async function setLeaderboardVisibility(
   res.json(profile);
 }
 
+export async function listAllUsers(_req: Request, res: Response): Promise<void> {
+  const users = await userService.listAllForAdmin();
+  res.json(users);
+}
+
+interface SetDisabledBody {
+  disabled?: boolean;
+}
+
+export async function setDisabled(
+  req: Request<{ id: string }, {}, SetDisabledBody>,
+  res: Response
+): Promise<void> {
+  const targetId = Number(req.params.id);
+  if (!Number.isInteger(targetId)) {
+    res.status(400).json({ error: 'Identifiant invalide' });
+    return;
+  }
+  const disabled = req.body?.disabled;
+  if (typeof disabled !== 'boolean') {
+    res.status(400).json({ error: 'Le champ disabled (booléen) est requis' });
+    return;
+  }
+  if (targetId === req.user!.id) {
+    res.status(400).json({ error: 'Impossible de désactiver son propre compte' });
+    return;
+  }
+
+  const target = await userService.findById(targetId);
+  if (!target) {
+    res.status(404).json({ error: 'Joueur introuvable' });
+    return;
+  }
+
+  const updated = await userService.setDisabled(targetId, disabled, req.user!.id);
+  res.json(updated);
+}
+
 export async function uploadAvatar(req: Request, res: Response): Promise<void> {
   if (!req.file) {
     res.status(400).json({ error: 'Aucun fichier reçu' });

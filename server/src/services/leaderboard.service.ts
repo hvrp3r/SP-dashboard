@@ -11,7 +11,7 @@ export async function getLeaderboard(sort: LeaderboardSort): Promise<Leaderboard
   const { rows } = await pool.query<LeaderboardEntry>(
     `SELECT id, username, avatar_url, role, sp_balance, sp_total_earned, login_streak
      FROM users
-     WHERE is_leaderboard_hidden = false
+     WHERE is_leaderboard_hidden = false AND disabled_at IS NULL
      ORDER BY ${column} DESC, sp_total_earned DESC, username ASC`
   );
   return rows;

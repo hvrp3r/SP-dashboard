@@ -9,23 +9,27 @@ interface SpMutationInput {
   seasonId: number | null;
   relatedId?: number | null;
   note?: string | null;
+  /** Si false, la mutation n'impacte que sp_balance, pas sp_total_earned (défaut: true). */
+  affectsTotalEarned?: boolean;
   /** Connexion d'une transaction déjà ouverte par l'appelant (pour composer avec un autre verrou de ligne). */
   client?: PoolClient;
 }
 
 async function insertCredit(client: PoolClient, input: SpMutationInput): Promise<SpTransactionRow> {
-  const { userId, amount, type, seasonId, relatedId = null, note = null } = input;
+  const { userId, amount, type, seasonId, relatedId = null, note = null, affectsTotalEarned = true } = input;
 
   await client.query(
-    'UPDATE users SET sp_balance = sp_balance + $1, sp_total_earned = sp_total_earned + $1 WHERE id = $2',
+    affectsTotalEarned
+      ? 'UPDATE users SET sp_balance = sp_balance + $1, sp_total_earned = sp_total_earned + $1 WHERE id = $2'
+      : 'UPDATE users SET sp_balance = sp_balance + $1 WHERE id = $2',
     [amount, userId]
   );
 
   const { rows } = await client.query<SpTransactionRow>(
-    `INSERT INTO sp_transactions (user_id, season_id, amount, type, related_id, note)
-     VALUES ($1, $2, $3, $4, $5, $6)
+    `INSERT INTO sp_transactions (user_id, season_id, amount, type, related_id, note, affects_total_earned)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      RETURNING *`,
-    [userId, seasonId, amount, type, relatedId, note]
+    [userId, seasonId, amount, type, relatedId, note, affectsTotalEarned]
   );
   return rows[0] as SpTransactionRow;
 }
@@ -54,7 +58,7 @@ export async function creditSP(input: SpMutationInput): Promise<SpTransactionRow
 }
 
 async function performDebit(client: PoolClient, input: SpMutationInput): Promise<SpTransactionRow> {
-  const { userId, amount, type, seasonId, relatedId = null, note = null } = input;
+  const { userId, amount, type, seasonId, relatedId = null, note = null, affectsTotalEarned = false } = input;
 
   const { rows: userRows } = await client.query<{ sp_balance: number }>(
     'SELECT sp_balance FROM users WHERE id = $1 FOR UPDATE',
@@ -68,16 +72,18 @@ async function performDebit(client: PoolClient, input: SpMutationInput): Promise
     throw Object.assign(new Error('Solde SP insuffisant'), { status: 400 });
   }
 
-  await client.query('UPDATE users SET sp_balance = sp_balance - $1 WHERE id = $2', [
-    amount,
-    userId,
-  ]);
+  await client.query(
+    affectsTotalEarned
+      ? 'UPDATE users SET sp_balance = sp_balance - $1, sp_total_earned = GREATEST(0, sp_total_earned - $1) WHERE id = $2'
+      : 'UPDATE users SET sp_balance = sp_balance - $1 WHERE id = $2',
+    [amount, userId]
+  );
 
   const { rows } = await client.query<SpTransactionRow>(
-    `INSERT INTO sp_transactions (user_id, season_id, amount, type, related_id, note)
-     VALUES ($1, $2, $3, $4, $5, $6)
+    `INSERT INTO sp_transactions (user_id, season_id, amount, type, related_id, note, affects_total_earned)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      RETURNING *`,
-    [userId, seasonId, -amount, type, relatedId, note]
+    [userId, seasonId, -amount, type, relatedId, note, affectsTotalEarned]
   );
   return rows[0] as SpTransactionRow;
 }
