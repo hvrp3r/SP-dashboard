@@ -168,7 +168,7 @@ export default function AdminCosmetics() {
   async function handleDelete(cosmetic: Cosmetic) {
     const ok = await confirm({
       title: 'Supprimer ce cosmétique',
-      message: `« ${cosmetic.name} » sera définitivement supprimé du catalogue.`,
+      message: `« ${cosmetic.name} » sera définitivement supprimé du catalogue. Les joueurs qui le possèdent le perdront ; celui ou ceux qui l'avaient équipé retomberont sur le défaut de l'emplacement.`,
       confirmLabel: 'Supprimer',
       danger: true,
     });

@@ -210,6 +210,9 @@ export default function NavBar() {
           <NavLink to="/mini-jeux" className={linkClass}>
             Mini-jeux
           </NavLink>
+          <NavLink to="/encheres" className={linkClass}>
+            Enchères
+          </NavLink>
           <GamblingMenu />
         </div>
         <ProfileMenu />

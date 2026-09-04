@@ -73,7 +73,7 @@ export type LeaderboardSort = 'sp_balance' | 'sp_total_earned';
 
 export type CosmeticSlot = 'avatar_frame' | 'banner' | 'name_color' | 'title' | 'name_font';
 export type CosmeticRarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
-export type CosmeticObtainedSource = 'gambling' | 'admin_grant';
+export type CosmeticObtainedSource = 'gambling' | 'admin_grant' | 'auction';
 
 export interface Cosmetic {
   id: number;
@@ -96,6 +96,7 @@ export interface UserCosmeticEntry {
   cosmetic_id: number;
   slot: CosmeticSlot;
   equipped: boolean;
+  quantity: number;
   obtained_source: CosmeticObtainedSource;
   obtained_at: string;
   cosmetic: Cosmetic;
@@ -333,6 +334,47 @@ export interface GamblingOpenResult {
   balance: number;
   spentToday: number;
   maxWagerPerDay: number;
+}
+
+export type AuctionStatus = 'active' | 'sold' | 'expired' | 'cancelled';
+export type AuctionBidStatus = 'active' | 'refunded' | 'won';
+
+export interface Auction {
+  id: number;
+  seller_id: number;
+  cosmetic_id: number;
+  starting_price: number;
+  current_bid: number | null;
+  current_bidder_id: number | null;
+  status: AuctionStatus;
+  created_at: string;
+  ends_at: string;
+  resolved_at: string | null;
+  cancelled_by: number | null;
+  cancelled_at: string | null;
+}
+
+export interface AuctionEntry extends Auction {
+  cosmetic: Cosmetic;
+  seller_username: string;
+  current_bidder_username: string | null;
+  bid_count: number;
+}
+
+export interface AuctionBid {
+  id: number;
+  auction_id: number;
+  bidder_id: number;
+  amount: number;
+  status: AuctionBidStatus;
+  created_at: string;
+  hold_transaction_id: number | null;
+  refund_transaction_id: number | null;
+  bidder_username: string;
+}
+
+export interface AuctionDetail extends AuctionEntry {
+  bids: AuctionBid[];
 }
 
 export interface GamblingStatus {
