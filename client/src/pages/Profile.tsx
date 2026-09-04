@@ -5,20 +5,19 @@ import * as transactionsApi from '../api/transactions.js';
 import * as usersApi from '../api/users.js';
 import * as gamblingApi from '../api/gambling.js';
 import * as subscriptionsApi from '../api/subscriptions.js';
+import * as cosmeticsApi from '../api/cosmetics.js';
 import { TRANSACTION_TYPE_LABELS } from '../lib/transactionLabels.js';
 import Avatar from '../components/Avatar.jsx';
 import RankBadge from '../components/RankBadge.jsx';
-import type { GamblingInventoryEntry, SpTransaction, Subscription } from '../types.js';
+import UserNameTag from '../components/UserNameTag.jsx';
+import ProfileBackdrop from '../components/ProfileBackdrop.jsx';
+import type { EquippedCosmetic, GamblingInventoryEntry, SpTransaction, Subscription } from '../types.js';
 
 const TRANSACTIONS_POLL_INTERVAL_MS = 10000;
 const KOFI_URL = import.meta.env.VITE_KOFI_URL as string | undefined;
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
-}
-
-function todayLocal(): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris' }).format(new Date());
 }
 
 export default function Profile() {
@@ -28,15 +27,13 @@ export default function Profile() {
   const [loadingTransactions, setLoadingTransactions] = useState(true);
   const [inventory, setInventory] = useState<GamblingInventoryEntry[]>([]);
   const [subscription, setSubscription] = useState<Subscription | null>(null);
+  const [equipped, setEquipped] = useState<EquippedCosmetic[]>([]);
   const [codeCopied, setCodeCopied] = useState(false);
   const [rank, setRank] = useState<number | null | undefined>(undefined);
   const [uploading, setUploading] = useState(false);
   const [avatarError, setAvatarError] = useState<string | null>(null);
   const [togglingVisibility, setTogglingVisibility] = useState(false);
   const [visibilityError, setVisibilityError] = useState<string | null>(null);
-  const [claimingBonus, setClaimingBonus] = useState(false);
-  const [bonusError, setBonusError] = useState<string | null>(null);
-  const [bonusAmount, setBonusAmount] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -56,6 +53,13 @@ export default function Profile() {
 
   useEffect(() => {
     gamblingApi.getMyInventory().then(setInventory).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    cosmeticsApi
+      .getMine()
+      .then((data) => setEquipped(data.equipped))
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -117,31 +121,16 @@ export default function Profile() {
     }
   }
 
-  async function handleClaimBonus() {
-    setBonusError(null);
-    setClaimingBonus(true);
-    try {
-      const result = await usersApi.claimDailyBonus();
-      setUser(result.profile);
-      if (result.alreadyClaimed) {
-        setBonusError('Bonus déjà réclamé aujourd\'hui.');
-      } else {
-        setBonusAmount(result.amount);
-      }
-    } catch (err) {
-      setBonusError(err instanceof Error ? err.message : 'Erreur inconnue');
-    } finally {
-      setClaimingBonus(false);
-    }
-  }
-
   if (!user) return null;
 
-  const bonusClaimedToday = user.last_login_date === todayLocal();
+  const bannerUrl = equipped.find((c) => c.slot === 'banner')?.image_url ?? null;
+  const frameUrl = equipped.find((c) => c.slot === 'avatar_frame')?.image_url ?? null;
 
   return (
-    <div className="min-h-screen bg-zinc-950 flex items-center justify-center py-10 px-4">
-      <div className="bg-zinc-900 border border-zinc-800 p-8 rounded-xl shadow-md w-full max-w-md">
+    <ProfileBackdrop bannerUrl={bannerUrl}>
+      <div className="flex items-center justify-center">
+      <div className="bg-zinc-900/90 backdrop-blur-sm border border-zinc-800 rounded-xl shadow-md w-full max-w-md overflow-hidden">
+        <div className="p-8">
         <div className="flex items-center gap-4 mb-6">
           <button
             type="button"
@@ -155,6 +144,7 @@ export default function Profile() {
               avatarUrl={user.avatar_url}
               size={64}
               crown={rank === 1}
+              frameUrl={frameUrl}
             />
             <span className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-xs text-white">
               {uploading ? '…' : 'Modifier'}
@@ -169,46 +159,28 @@ export default function Profile() {
           />
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-xl font-bold text-zinc-50">{user.username}</h1>
+              <UserNameTag username={user.username} equipped={equipped} className="text-xl text-zinc-50" />
               {rank !== undefined && <RankBadge rank={rank} size="sm" />}
             </div>
             <p className="text-sm text-zinc-400">{user.email}</p>
-            <Link
-              to={`/joueurs/${user.username}`}
-              className="text-xs text-emerald-400 font-medium hover:underline"
-            >
-              Voir mes stats détaillées →
-            </Link>
+            <div className="flex items-center gap-3">
+              <Link
+                to={`/joueurs/${user.username}`}
+                className="text-xs text-emerald-400 font-medium hover:underline"
+              >
+                Voir mes stats détaillées →
+              </Link>
+              <Link
+                to="/cosmetiques"
+                className="text-xs text-emerald-400 font-medium hover:underline"
+              >
+                Mes cosmétiques →
+              </Link>
+            </div>
           </div>
         </div>
 
         {avatarError && <p className="mb-4 text-sm text-red-400">{avatarError}</p>}
-
-        <div className="flex items-center justify-between gap-4 bg-zinc-800 rounded-lg p-4 mb-4">
-          <div>
-            <p className="text-sm font-medium text-zinc-100">
-              {bonusClaimedToday ? 'Bonus quotidien réclamé ✓' : 'Bonus quotidien disponible'}
-            </p>
-            <p className="text-xs text-zinc-500">
-              {bonusClaimedToday
-                ? 'Reviens demain pour continuer ta série.'
-                : 'Réclame-le pour garder ta série en vie.'}
-            </p>
-            {bonusAmount !== null && (
-              <p className="text-xs text-emerald-400 font-medium mt-1">+{bonusAmount} SP reçus</p>
-            )}
-          </div>
-          {!bonusClaimedToday && (
-            <button
-              onClick={handleClaimBonus}
-              disabled={claimingBonus}
-              className="flex-shrink-0 bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-semibold px-4 py-2 rounded-md transition disabled:opacity-50"
-            >
-              {claimingBonus ? '…' : 'Réclamer'}
-            </button>
-          )}
-        </div>
-        {bonusError && <p className="mb-4 text-sm text-red-400">{bonusError}</p>}
 
         <dl className="grid grid-cols-2 gap-4 mb-6">
           <div className="bg-emerald-500/10 rounded-lg p-4">
@@ -380,7 +352,9 @@ export default function Profile() {
             </div>
           </div>
         )}
+        </div>
       </div>
-    </div>
+      </div>
+    </ProfileBackdrop>
   );
 }

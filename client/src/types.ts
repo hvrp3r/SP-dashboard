@@ -71,6 +71,50 @@ export interface SeasonSnapshotResponse {
 
 export type LeaderboardSort = 'sp_balance' | 'sp_total_earned';
 
+export type CosmeticSlot = 'avatar_frame' | 'banner' | 'name_color' | 'title' | 'name_font';
+export type CosmeticRarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
+export type CosmeticObtainedSource = 'gambling' | 'admin_grant';
+
+export interface Cosmetic {
+  id: number;
+  slot: CosmeticSlot;
+  key: string;
+  name: string;
+  description: string | null;
+  image_url: string | null;
+  color_value: string | null;
+  font_family: string | null;
+  rarity: CosmeticRarity;
+  is_default: boolean;
+  created_by: number | null;
+  created_at: string;
+}
+
+export interface UserCosmeticEntry {
+  id: number;
+  user_id: number;
+  cosmetic_id: number;
+  slot: CosmeticSlot;
+  equipped: boolean;
+  obtained_source: CosmeticObtainedSource;
+  obtained_at: string;
+  cosmetic: Cosmetic;
+}
+
+export interface EquippedCosmetic {
+  slot: CosmeticSlot;
+  key: string;
+  name: string;
+  image_url: string | null;
+  color_value: string | null;
+  font_family: string | null;
+}
+
+export interface MyCosmetics {
+  owned: UserCosmeticEntry[];
+  equipped: EquippedCosmetic[];
+}
+
 export interface LeaderboardEntry {
   id: number;
   username: string;
@@ -79,6 +123,7 @@ export interface LeaderboardEntry {
   sp_balance: number;
   sp_total_earned: number;
   login_streak: number;
+  equipped_cosmetics: EquippedCosmetic[];
 }
 
 export type SpTransactionType =
@@ -226,6 +271,7 @@ export type NotificationType =
   | 'challenge_cancelled'
   | 'challenge_expired'
   | 'minigame_open'
+  | 'cosmetic_earned'
   | 'sp_gained'
   | 'sp_lost';
 
@@ -239,7 +285,7 @@ export interface AppNotification {
   created_at: string;
 }
 
-export type GamblingRewardType = 'sp' | 'custom';
+export type GamblingRewardType = 'sp' | 'custom' | 'cosmetic';
 
 export interface GamblingCrate {
   id: number;
@@ -262,6 +308,9 @@ export interface GamblingCrateReward {
   title: string;
   image_url: string | null;
   sp_amount: number | null;
+  cosmetic_id: number | null;
+  cosmetic_slot_filter: CosmeticSlot | null;
+  cosmetic_rarity_filter: CosmeticRarity | null;
   weight: number;
   created_at: string;
 }
@@ -280,6 +329,7 @@ export interface GamblingCrateDetail extends GamblingCrateEntry {
 
 export interface GamblingOpenResult {
   reward: GamblingCrateReward;
+  cosmetic: Cosmetic | null;
   balance: number;
   spentToday: number;
   maxWagerPerDay: number;

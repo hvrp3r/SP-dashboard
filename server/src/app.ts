@@ -13,6 +13,7 @@ import gamblingRoutes from './routes/gambling.routes.js';
 import blackjackRoutes from './routes/blackjack.routes.js';
 import notificationsRoutes from './routes/notifications.routes.js';
 import subscriptionsRoutes from './routes/subscriptions.routes.js';
+import cosmeticsRoutes from './routes/cosmetics.routes.js';
 import { UPLOADS_DIR } from './middleware/upload.js';
 import { notFoundHandler, errorHandler } from './middleware/errorHandler.js';
 
@@ -43,6 +44,7 @@ export function createApp(): Express {
   app.use('/api/blackjack', blackjackRoutes);
   app.use('/api/notifications', notificationsRoutes);
   app.use('/api/subscriptions', subscriptionsRoutes);
+  app.use('/api/cosmetics', cosmeticsRoutes);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

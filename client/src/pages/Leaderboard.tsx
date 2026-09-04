@@ -4,6 +4,7 @@ import * as leaderboardApi from '../api/leaderboard.js';
 import * as seasonsApi from '../api/seasons.js';
 import Avatar from '../components/Avatar.jsx';
 import RankBadge from '../components/RankBadge.jsx';
+import UserNameTag from '../components/UserNameTag.jsx';
 import type { LeaderboardEntry, LeaderboardSort, Season, SeasonSnapshotEntry } from '../types.js';
 
 const POLL_INTERVAL_MS = 60_000;
@@ -185,10 +186,16 @@ export default function Leaderboard() {
                                 avatarUrl={entry.avatar_url}
                                 size={32}
                                 crown={i + 1 === 1}
+                                frameUrl={
+                                  entry.equipped_cosmetics.find((c) => c.slot === 'avatar_frame')
+                                    ?.image_url ?? null
+                                }
                               />
-                              <span className="font-medium text-zinc-100 whitespace-nowrap">
-                                {entry.username}
-                              </span>
+                              <UserNameTag
+                                username={entry.username}
+                                equipped={entry.equipped_cosmetics}
+                                className="text-zinc-100"
+                              />
                               {entry.role === 'admin' && (
                                 <span className="text-[10px] bg-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded">
                                   MSP

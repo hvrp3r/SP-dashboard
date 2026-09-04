@@ -7,6 +7,8 @@ interface AvatarProps {
   className?: string;
   /** Affiche une petite couronne au-dessus de la photo (réservé au rang #1). */
   crown?: boolean;
+  /** Image du cadre cosmétique équipé, affichée en surimpression autour de l'avatar. */
+  frameUrl?: string | null;
 }
 
 export default function Avatar({
@@ -15,10 +17,11 @@ export default function Avatar({
   size = 40,
   className = '',
   crown = false,
+  frameUrl = null,
 }: AvatarProps) {
   const resolved = resolveAvatarUrl(avatarUrl);
 
-  const inner = resolved ? (
+  const photo = resolved ? (
     <img
       src={resolved}
       alt={username}
@@ -32,6 +35,27 @@ export default function Avatar({
     >
       {username[0]?.toUpperCase()}
     </div>
+  );
+
+  const inner = frameUrl ? (
+    <span className="relative inline-block flex-shrink-0" style={{ width: size, height: size }}>
+      {photo}
+      <img
+        src={frameUrl}
+        alt=""
+        aria-hidden="true"
+        className="absolute pointer-events-none select-none"
+        style={{
+          width: size * 1.3,
+          height: size * 1.3,
+          maxWidth: 'none',
+          top: -size * 0.15,
+          left: -size * 0.15,
+        }}
+      />
+    </span>
+  ) : (
+    photo
   );
 
   if (!crown) return inner;

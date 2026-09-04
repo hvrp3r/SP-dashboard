@@ -1,15 +1,19 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import * as usersApi from '../api/users.js';
+import * as cosmeticsApi from '../api/cosmetics.js';
 import Avatar from '../components/Avatar.jsx';
 import RankBadge from '../components/RankBadge.jsx';
+import UserNameTag from '../components/UserNameTag.jsx';
+import ProfileBackdrop from '../components/ProfileBackdrop.jsx';
 import { TRANSACTION_TYPE_LABELS } from '../lib/transactionLabels.js';
-import type { PlayerStats as PlayerStatsType, SpTransactionType, User } from '../types.js';
+import type { EquippedCosmetic, PlayerStats as PlayerStatsType, SpTransactionType, User } from '../types.js';
 
 export default function PlayerStats() {
   const { username } = useParams<{ username: string }>();
   const [profile, setProfile] = useState<User | null>(null);
   const [stats, setStats] = useState<PlayerStatsType | null>(null);
+  const [equipped, setEquipped] = useState<EquippedCosmetic[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -21,13 +25,20 @@ export default function PlayerStats() {
         setProfile(p);
         setStats(s);
         setError(null);
+        cosmeticsApi
+          .getForUser(p.id)
+          .then(setEquipped)
+          .catch(() => {});
       })
       .catch((err) => setError(err instanceof Error ? err.message : 'Erreur inconnue'))
       .finally(() => setLoading(false));
   }, [username]);
 
+  const bannerUrl = equipped.find((c) => c.slot === 'banner')?.image_url ?? null;
+  const frameUrl = equipped.find((c) => c.slot === 'avatar_frame')?.image_url ?? null;
+
   return (
-    <div className="min-h-screen bg-zinc-950 py-10 px-4">
+    <ProfileBackdrop bannerUrl={bannerUrl}>
       <div className="max-w-2xl mx-auto">
         <Link to="/classement" className="text-sm text-emerald-400 font-medium">
           ← Classement
@@ -47,9 +58,10 @@ export default function PlayerStats() {
                 avatarUrl={profile.avatar_url}
                 size={64}
                 crown={stats.rank === 1}
+                frameUrl={frameUrl}
               />
               <div>
-                <h1 className="text-2xl font-bold text-zinc-50">{profile.username}</h1>
+                <UserNameTag username={profile.username} equipped={equipped} className="text-2xl text-zinc-50" />
                 <div className="flex items-center gap-2 mt-1">
                   <p className="text-sm text-zinc-400">
                     {profile.role === 'admin' ? 'MSP' : 'Joueur'}
@@ -121,6 +133,6 @@ export default function PlayerStats() {
           </>
         )}
       </div>
-    </div>
+    </ProfileBackdrop>
   );
 }

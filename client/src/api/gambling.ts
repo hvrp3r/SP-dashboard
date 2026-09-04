@@ -1,5 +1,7 @@
 import { apiClient } from './client.js';
 import type {
+  CosmeticRarity,
+  CosmeticSlot,
   GamblingCrate,
   GamblingCrateDetail,
   GamblingCrateEntry,
@@ -66,6 +68,9 @@ export const addReward = (
     title: string;
     imageUrl?: string;
     spAmount?: number;
+    cosmeticId?: number;
+    cosmeticSlotFilter?: CosmeticSlot;
+    cosmeticRarityFilter?: CosmeticRarity;
     weight: number;
   }
 ) => apiClient.post<GamblingCrateReward>(`/api/gambling/crates/${crateId}/rewards`, input);
@@ -73,7 +78,15 @@ export const addReward = (
 export const updateReward = (
   crateId: number,
   rewardId: number,
-  patch: Partial<{ title: string; imageUrl: string | null; spAmount: number | null; weight: number }>
+  patch: Partial<{
+    title: string;
+    imageUrl: string | null;
+    spAmount: number | null;
+    cosmeticId: number | null;
+    cosmeticSlotFilter: CosmeticSlot | null;
+    cosmeticRarityFilter: CosmeticRarity | null;
+    weight: number;
+  }>
 ) =>
   apiClient.put<GamblingCrateReward>(
     `/api/gambling/crates/${crateId}/rewards/${rewardId}`,

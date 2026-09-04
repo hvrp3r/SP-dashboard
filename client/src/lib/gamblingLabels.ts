@@ -3,10 +3,13 @@ import type { GamblingRewardType } from '../types.js';
 export const REWARD_TYPE_LABELS: Record<GamblingRewardType, string> = {
   sp: 'SP',
   custom: 'Collection',
+  cosmetic: 'Cosmétique',
 };
 
 export function rewardFallbackEmoji(type: GamblingRewardType): string {
-  return type === 'sp' ? '🪙' : '🎁';
+  if (type === 'sp') return '🪙';
+  if (type === 'cosmetic') return '✨';
+  return '🎁';
 }
 
 export type RewardRarity = 'legendary' | 'rare' | 'common';
