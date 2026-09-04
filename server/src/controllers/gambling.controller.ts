@@ -2,7 +2,13 @@ import type { Request, Response } from 'express';
 import * as gamblingService from '../services/gambling.service.js';
 import * as configService from '../services/config.service.js';
 import * as seasonService from '../services/season.service.js';
-import type { GamblingCrateRewardRow, GamblingCrateRewardView, GamblingRewardType } from '../types.js';
+import { BLACKJACK_RTP_PERCENT } from '../services/blackjack.service.js';
+import type {
+  GamblingCrateRewardRow,
+  GamblingCrateRewardView,
+  GamblingGameInfo,
+  GamblingRewardType,
+} from '../types.js';
 
 const VALID_REWARD_TYPES: GamblingRewardType[] = ['sp', 'custom'];
 
@@ -327,6 +333,39 @@ export async function openCrate(req: Request<{ id: string }>, res: Response): Pr
     spentToday: result.spentToday,
     maxWagerPerDay,
   });
+}
+
+/**
+ * Registre des jeux de la section gambling — sert à la fois le menu déroulant
+ * de la navbar et la page /gambling (liste des jeux). Un jeu désactivé par le
+ * MSP (`admin_config`) n'y apparaît pas ; il reste néanmoins accessible par son
+ * URL directe (même logique que les caisses archivées : masqué de la liste,
+ * pas bloqué en accès direct).
+ */
+export async function listGames(req: Request, res: Response): Promise<void> {
+  const [cratesEnabled, blackjackEnabled] = await Promise.all([
+    configService.getConfigBool('gambling_enabled', true),
+    configService.getConfigBool('blackjack_enabled', false),
+  ]);
+  const games: GamblingGameInfo[] = [
+    {
+      id: 'crates',
+      name: 'Caisses',
+      description: 'Ouvre des caisses configurées par le MSP pour tenter ta chance.',
+      path: '/gambling/crates',
+      enabled: cratesEnabled,
+      rtp: null,
+    },
+    {
+      id: 'blackjack',
+      name: 'Blackjack',
+      description: 'Affronte le croupier en multijoueur, mise ce que tu veux.',
+      path: '/gambling/blackjack',
+      enabled: blackjackEnabled,
+      rtp: BLACKJACK_RTP_PERCENT,
+    },
+  ];
+  res.json(games);
 }
 
 export async function getStatus(req: Request, res: Response): Promise<void> {

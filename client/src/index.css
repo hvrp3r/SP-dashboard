@@ -79,3 +79,14 @@ body {
     opacity: 0.55;
   }
 }
+
+@keyframes dealCard {
+  0% {
+    transform: translate(var(--deal-dx, 0px), var(--deal-dy, 0px)) scale(0.5) rotate(8deg);
+    opacity: 0;
+  }
+  100% {
+    transform: translate(0, 0) scale(1) rotate(0deg);
+    opacity: 1;
+  }
+}

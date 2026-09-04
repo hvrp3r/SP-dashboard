@@ -299,6 +299,74 @@ export interface GamblingOpenEntry {
   sp_amount: number | null;
 }
 
+export type BlackjackSessionStatus = 'waiting' | 'active' | 'finished';
+export type BlackjackHandStatus = 'playing' | 'stood' | 'busted';
+export type BlackjackOutcome = 'win' | 'blackjack' | 'push' | 'lose';
+
+export interface BlackjackCard {
+  rank: 'A' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | '10' | 'J' | 'Q' | 'K';
+  suit: 'S' | 'H' | 'D' | 'C';
+}
+
+export interface BlackjackHand {
+  id: number;
+  session_id: number;
+  user_id: number;
+  bet_amount: number;
+  cards: BlackjackCard[];
+  status: BlackjackHandStatus;
+  outcome: BlackjackOutcome | null;
+  bet_transaction_id: number | null;
+  payout_transaction_id: number | null;
+  action_deadline: string | null;
+  joined_at: string;
+  resolved_at: string | null;
+  username: string;
+  avatar_url: string | null;
+}
+
+export interface BlackjackSession {
+  id: number;
+  season_id: number | null;
+  status: BlackjackSessionStatus;
+  starts_at: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  dealer_cards: (BlackjackCard | null)[];
+  dealer_hole_revealed: boolean;
+  current_hand_id: number | null;
+  created_at: string;
+  hands: BlackjackHand[];
+}
+
+export interface BlackjackActionResult {
+  session: BlackjackSession;
+  balance: number;
+  enabled: boolean;
+}
+
+export interface BlackjackHistoryEntry {
+  id: number;
+  session_id: number;
+  bet_amount: number;
+  cards: BlackjackCard[];
+  status: BlackjackHandStatus;
+  outcome: BlackjackOutcome;
+  resolved_at: string;
+  dealer_cards: BlackjackCard[];
+}
+
+export type GamblingGameId = 'crates' | 'blackjack';
+
+export interface GamblingGameInfo {
+  id: GamblingGameId;
+  name: string;
+  description: string;
+  path: string;
+  enabled: boolean;
+  rtp: number | null;
+}
+
 export interface PlayerStats {
   rank: number | null;
   challenges: { wins: number; losses: number };

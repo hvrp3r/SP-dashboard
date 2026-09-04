@@ -212,7 +212,7 @@ export default function GamblingCrateDetail() {
     setError(null);
     try {
       await gamblingApi.removeCrate(crateId);
-      navigate('/gambling');
+      navigate('/gambling/crates');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur inconnue');
       setDeletingCrate(false);
@@ -300,8 +300,8 @@ export default function GamblingCrateDetail() {
     return (
       <div className="min-h-screen bg-zinc-950 py-10 px-4">
         <div className="max-w-2xl mx-auto">
-          <Link to="/gambling" className="text-sm text-emerald-400 font-medium">
-            ← Gambling
+          <Link to="/gambling/crates" className="text-sm text-emerald-400 font-medium">
+            ← Caisses
           </Link>
           <p className="mt-4 text-zinc-500">Caisse introuvable.</p>
         </div>
@@ -334,8 +334,8 @@ export default function GamblingCrateDetail() {
   return (
     <div className="min-h-screen bg-zinc-950 py-10 px-4">
       <div className="max-w-2xl mx-auto">
-        <Link to="/gambling" className="text-sm text-emerald-400 font-medium">
-          ← Gambling
+        <Link to="/gambling/crates" className="text-sm text-emerald-400 font-medium">
+          ← Caisses
         </Link>
 
         {error && <p className="mt-4 text-sm text-red-400">{error}</p>}

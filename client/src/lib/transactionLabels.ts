@@ -8,6 +8,6 @@ export const TRANSACTION_TYPE_LABELS: Record<SpTransactionType, string> = {
   minigame_entry: 'Entrée mini-jeu',
   admin_grant: 'Ajustement MSP',
   admin_deduct: 'Ajustement MSP',
-  gambling_spend: 'Ouverture de caisse',
-  gambling_win: 'Gain de caisse',
+  gambling_spend: 'Mise gambling',
+  gambling_win: 'Gain gambling',
 };

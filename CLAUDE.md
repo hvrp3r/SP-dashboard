@@ -299,7 +299,8 @@ updated_at TIMESTAMPTZ DEFAULT NOW()
 
 ### 3. Bonus de connexion quotidienne + Streak
 
-- **Réclamé manuellement par le joueur** via un bouton "Réclamer" sur son profil (`POST /api/users/me/claim-daily-bonus`) — plus d'auto-crédit silencieux à la première requête authentifiée de la journée (comportement initial abandonné à la demande explicite de l'utilisateur). Idempotent par date UTC : un second appel le même jour renvoie `alreadyClaimed: true` sans re-créditer ; le bouton disparaît côté client dès que `last_login_date` correspond à aujourd'hui (UTC).
+- **Réclamé manuellement par le joueur** via un bouton "Réclamer" sur son profil (`POST /api/users/me/claim-daily-bonus`) — plus d'auto-crédit silencieux à la première requête authentifiée de la journée (comportement initial abandonné à la demande explicite de l'utilisateur). Idempotent par date **locale (Europe/Paris)**, pas UTC : un second appel le même jour renvoie `alreadyClaimed: true` sans re-créditer ; le bouton disparaît côté client dès que `last_login_date` correspond à aujourd'hui (Europe/Paris).
+- **Reset à minuit heure de Paris, pas 24h glissantes après la dernière réclamation** (décision explicite de l'utilisateur — auparavant en UTC, ce qui décalait le reset à 1h/2h du matin heure française selon l'heure d'été/hiver). Côté serveur, `todayLocal()` dans `server/src/utils/localDate.ts` (utilitaire partagé, réutilisé aussi par le budget gambling journalier — voir section 7) utilise `Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris' })`, qui gère nativement le passage CET/CEST — pas de calcul d'offset manuel. Le client (`Profile.tsx`) a sa propre copie de la même logique (`Intl.DateTimeFormat` côté navigateur) pour décider quand cacher le bouton "Réclamer" sans appel serveur. C'est une **exception délibérée** à la règle "tout en UTC" ci-dessous, limitée aux frontières de journée qui doivent coller au ressenti des joueurs (bonus quotidien avec streak, budget gambling) — tout le reste de l'app (transactions, sessions, etc.) reste en UTC.
 - Montant de base : `login_bonus_base` SP (configurable par le MSP)
 - **Système de streak** :
   - Si l'utilisateur s'est connecté la veille, le streak augmente de 1
@@ -401,7 +402,7 @@ Section fusionnée dans une page joueur (`/gambling`, contrôles MSP visibles se
 5. Enregistrer l'ouverture dans `gambling_opens` (traçabilité/anti-triche).
 
 #### Garde-fou économique :
-- Le seul plafond dur est `gambling_max_wager_per_day` : la somme des `gambling_spend` du jour (date UTC) d'un joueur, tous crates confondus, ne peut pas dépasser cette valeur. Pas de plafond séparé sur le nombre d'ouvertures/jour — un joueur peut ouvrir autant de petites caisses qu'il veut tant qu'il reste sous son budget SP du jour (décision explicite : garder ce système simple, un seul levier).
+- Le seul plafond dur est `gambling_max_wager_per_day` : la somme des `gambling_spend` du jour (frontière de journée en **heure locale Europe/Paris**, même exception délibérée que le bonus quotidien — voir section 3) d'un joueur, tous crates confondus, ne peut pas dépasser cette valeur. Pas de plafond séparé sur le nombre d'ouvertures/jour — un joueur peut ouvrir autant de petites caisses qu'il veut tant qu'il reste sous son budget SP du jour (décision explicite : garder ce système simple, un seul levier).
 - Le MSP reste entièrement libre de configurer les probabilités et montants de chaque caisse (pas de validation automatique d'espérance de gain) — l'UI d'édition de caisse affiche cependant l'**espérance de gain calculée en direct** (ex : "coûte 10 SP, rapporte en moyenne 8.5 SP") à titre d'aide à la décision, pour que le MSP voie si une caisse est structurellement gagnante pour les joueurs avant de la publier.
 
 #### Collection (`gambling_inventory`) :
@@ -529,8 +530,8 @@ Ajoutées en cours de projet, à la demande de l'utilisateur, non prévues dans 
   ALTER TABLE users ADD CONSTRAINT sp_balance_non_negative CHECK (sp_balance >= 0);
   ```
 - Les valeurs `admin_config` sont relues depuis la BDD à chaque requête sensible (pas de cache)
-- Tous les timestamps en **UTC**
-- Les dates de connexion comparées en UTC date (pas datetime) pour le bonus quotidien
+- Tous les timestamps en **UTC**, sauf les frontières de journée du bonus quotidien (section 3) et du budget gambling journalier (section 7), qui utilisent l'heure locale Europe/Paris (`server/src/utils/localDate.ts`) — exception délibérée, pas un oubli
+- Les dates de connexion comparées en date locale Europe/Paris (pas datetime) pour le bonus quotidien
 - ⚠️ Le SQL brut (pas d'ORM) n'est pas vérifié par `tsc` : après tout changement de schéma (colonne renommée/supprimée), grep le nom de colonne dans `server/src/` pour rattraper les requêtes qui le référencent encore ailleurs que dans le service concerné — `tsc --noEmit` propre ne garantit rien ici.
 
 ---
