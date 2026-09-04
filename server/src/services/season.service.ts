@@ -53,7 +53,7 @@ export async function closeSeason(seasonId: number): Promise<SeasonRow> {
        SELECT $1, id, sp_balance, sp_total_earned,
               RANK() OVER (ORDER BY sp_balance DESC, sp_total_earned DESC)
        FROM users
-       WHERE is_leaderboard_hidden = false`,
+       WHERE is_leaderboard_hidden = false AND disabled_at IS NULL`,
       [seasonId]
     );
 

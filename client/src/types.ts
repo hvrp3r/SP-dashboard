@@ -19,6 +19,20 @@ export interface AuthResponse {
   accessToken: string;
 }
 
+export interface AdminUserSummary {
+  id: number;
+  username: string;
+  email: string;
+  avatar_url: string | null;
+  role: UserRole;
+  sp_balance: number;
+  sp_total_earned: number;
+  login_streak: number;
+  created_at: string;
+  is_leaderboard_hidden: boolean;
+  disabled_at: string | null;
+}
+
 export interface DailyBonusClaimResult {
   profile: User;
   alreadyClaimed: boolean;
@@ -87,6 +101,7 @@ export interface SpTransaction {
   related_id: number | null;
   note: string | null;
   created_at: string;
+  affects_total_earned: boolean;
   revoked_at: string | null;
   revoked_by: number | null;
 }

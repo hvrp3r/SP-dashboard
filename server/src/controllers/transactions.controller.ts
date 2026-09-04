@@ -58,13 +58,14 @@ interface CreateTransactionBody {
   type?: 'admin_grant' | 'admin_deduct';
   amount?: number;
   note?: string;
+  affectsTotalEarned?: boolean;
 }
 
 export async function createTransaction(
   req: Request<{}, {}, CreateTransactionBody>,
   res: Response
 ): Promise<void> {
-  const { userId, type, amount, note } = req.body ?? {};
+  const { userId, type, amount, note, affectsTotalEarned } = req.body ?? {};
 
   if (!Number.isInteger(userId)) {
     res.status(400).json({ error: 'Le joueur est requis' });
@@ -76,6 +77,10 @@ export async function createTransaction(
   }
   if (!Number.isInteger(amount) || (amount as number) <= 0) {
     res.status(400).json({ error: 'Le montant doit être un entier positif' });
+    return;
+  }
+  if (affectsTotalEarned !== undefined && typeof affectsTotalEarned !== 'boolean') {
+    res.status(400).json({ error: 'affectsTotalEarned doit être un booléen' });
     return;
   }
 
@@ -92,6 +97,7 @@ export async function createTransaction(
       type,
       amount: amount as number,
       note: note?.trim() || null,
+      affectsTotalEarned: affectsTotalEarned ?? (type === 'admin_grant'),
     });
   } catch (err) {
     const status = (err as { status?: number }).status ?? 500;

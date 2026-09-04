@@ -58,8 +58,11 @@ sp_total_earned INT NOT NULL DEFAULT 0,      -- cumulatif all-time
 login_streak INT NOT NULL DEFAULT 0,
 last_login_date DATE,                         -- date UTC de dernière connexion (pour bonus)
 created_at TIMESTAMPTZ DEFAULT NOW(),
-is_leaderboard_hidden BOOLEAN NOT NULL DEFAULT FALSE  -- MSP invisible du classement (migration 008)
+is_leaderboard_hidden BOOLEAN NOT NULL DEFAULT FALSE,  -- MSP invisible du classement (migration 008)
+disabled_at TIMESTAMPTZ,                              -- non NULL si le MSP a désactivé ce compte (migration 021)
+disabled_by INT REFERENCES users(id)
 ```
+- Le MSP ne supprime jamais un compte joueur : il le **désactive** (`disabled_at`/`disabled_by`), sur le même principe que `is_leaderboard_hidden` — même raison que pour les transactions/caisses, préserver l'historique (transactions, défis, season_snapshots continuent d'afficher son pseudo). Un compte désactivé ne peut plus se connecter (`login` et `refresh` le rejettent) et disparaît du leaderboard, des archives de saison, et de la sélection d'adversaire de défi (tous filtrés via le même endpoint leaderboard). Réversible par le MSP à tout moment. Un MSP ne peut pas désactiver son propre compte.
 
 ### `seasons`
 ```sql
@@ -434,6 +437,7 @@ Section fusionnée dans une page joueur (`/gambling`, contrôles MSP visibles se
 | Révoquer une transaction SP          | ❌ | ✅ |
 | Annuler/invalider un défi            | ❌ | ✅ |
 | Se rendre invisible du leaderboard   | ❌ | ✅ |
+| Désactiver/réactiver un compte joueur | ❌ | ✅ |
 | Promouvoir un joueur admin           | ❌ | ✅ |
 | Voir tous les logs de transactions   | ❌ | ✅ |
 
@@ -448,7 +452,7 @@ Section fusionnée dans une page joueur (`/gambling`, contrôles MSP visibles se
 Sections dans des pages `/admin/...` dédiées :
 - **Config** : formulaire pour modifier toutes les clés `admin_config`
 - **Saisons** : créer, clôturer, consulter les archives
-- **Joueurs** : liste, modifier le solde SP, promouvoir/rétrograder, reset streak, se rendre invisible du leaderboard
+- **Joueurs** (`/admin/joueurs`) : liste de tous les comptes (rôle, solde, statut), désactiver/réactiver un compte (jamais de suppression — voir la note sur `disabled_at` dans le schéma `users` plus haut). Le MSP ne peut pas désactiver son propre compte.
 - **Défis** (`/admin/defis`) : liste filtrée (en cours, en attente, contestés), arbitrage (force un gagnant parmi les participants `accepted`), annulation
 - **Transactions** : log global avec filtres (joueur, type, saison, date), révocation, création manuelle de transaction
 
@@ -570,6 +574,7 @@ VITE_API_URL=http://localhost:3001
 | Synchronisation temps réel ? | Polling à intervalles courts par écran (pas de WebSocket) — voir section 6 |
 | Le MSP peut-il être caché du classement ? | Oui — `is_leaderboard_hidden`, n'affecte que les classements, pas le profil/les transactions |
 | Le MSP peut-il révoquer une transaction ? | Oui, sauf si sa saison est archivée (`closed`) — jamais de suppression, toujours un ajustement inverse tracé |
+| Le MSP peut-il supprimer un compte joueur ? | Non, seulement le **désactiver** (`disabled_at`) — décision explicite de l'utilisateur pour préserver l'historique (transactions, défis, season_snapshots), même principe que `is_leaderboard_hidden`. Bloque login/refresh, masque du leaderboard et de la sélection d'adversaire. Réversible, et un MSP ne peut pas se désactiver lui-même |
 | Architecture des pages admin ? | Mixte : pages `/admin/...` dédiées pour Config/Saisons/Joueurs/Défis/Transactions, mais Mini-Jeux et Gambling sont fusionnés dans la page joueur (contrôles visibles si MSP) — décision explicite de l'utilisateur, ne pas re-séparer |
 | Type de gambling au lancement ? | **Case opening uniquement** — caisses configurables par le MSP (coût, pool de récompenses), autres formats de jeu non prévus pour l'instant |
 | Les gains "custom" (image+titre) ont-ils une valeur SP ? | **Non** — purement cosmétiques, aucun effet sur l'économie SP, juste une collection affichée sur le profil (`gambling_inventory`) |

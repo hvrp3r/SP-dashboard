@@ -281,7 +281,7 @@ export async function resolveChallenge(
     }
     await spService.creditSP({
       userId: winnerId,
-      amount: challenge.wager_amount * participants.length,
+      amount: challenge.wager_amount * losers.length,
       type: 'challenge_win',
       seasonId: challenge.season_id,
       relatedId: challenge.id,

@@ -57,6 +57,9 @@ function AdminMenu() {
           className="absolute left-0 mt-2 w-44 bg-zinc-900 border border-zinc-800 rounded-xl shadow-lg shadow-black/30 z-50 overflow-hidden origin-top-left py-1"
           style={{ animation: 'fadeSlideIn 0.18s ease-out' }}
         >
+          <NavLink to="/admin/joueurs" className={dropdownLinkClass}>
+            Joueurs
+          </NavLink>
           <NavLink to="/admin/saisons" className={dropdownLinkClass}>
             Saisons
           </NavLink>

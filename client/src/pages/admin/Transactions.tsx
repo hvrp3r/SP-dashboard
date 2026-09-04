@@ -1,10 +1,10 @@
 import { Fragment, useEffect, useState, type FormEvent } from 'react';
 import * as transactionsApi from '../../api/transactions.js';
 import * as seasonsApi from '../../api/seasons.js';
-import * as leaderboardApi from '../../api/leaderboard.js';
+import * as usersApi from '../../api/users.js';
 import { useConfirm } from '../../hooks/useConfirm.jsx';
 import { TRANSACTION_TYPE_LABELS } from '../../lib/transactionLabels.js';
-import type { LeaderboardEntry, Season, SpTransactionEntry, SpTransactionType } from '../../types.js';
+import type { AdminUserSummary, Season, SpTransactionEntry, SpTransactionType } from '../../types.js';
 
 type ManualType = 'admin_grant' | 'admin_deduct';
 
@@ -39,6 +39,7 @@ function groupBySeason(entries: SpTransactionEntry[]): SeasonGroup[] {
 export default function AdminTransactions() {
   const confirm = useConfirm();
   const [type, setType] = useState<SpTransactionType | ''>('');
+  const [filterPlayerId, setFilterPlayerId] = useState('');
   const [entries, setEntries] = useState<SpTransactionEntry[]>([]);
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [offset, setOffset] = useState(0);
@@ -47,19 +48,26 @@ export default function AdminTransactions() {
   const [error, setError] = useState<string | null>(null);
   const [revokingId, setRevokingId] = useState<number | null>(null);
 
-  const [players, setPlayers] = useState<LeaderboardEntry[]>([]);
+  const [players, setPlayers] = useState<AdminUserSummary[]>([]);
   const [formPlayerId, setFormPlayerId] = useState('');
   const [formType, setFormType] = useState<ManualType>('admin_grant');
   const [formAmount, setFormAmount] = useState('');
   const [formNote, setFormNote] = useState('');
+  const [formAffectsTotalEarned, setFormAffectsTotalEarned] = useState(true);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
-  async function load(currentType: SpTransactionType | '', currentOffset: number, replace: boolean) {
+  async function load(
+    currentType: SpTransactionType | '',
+    currentPlayerId: string,
+    currentOffset: number,
+    replace: boolean
+  ) {
     setLoading(true);
     try {
       const data = await transactionsApi.getAllTransactions({
         type: currentType || undefined,
+        userId: currentPlayerId ? Number(currentPlayerId) : undefined,
         limit: PAGE_SIZE,
         offset: currentOffset,
       });
@@ -78,21 +86,21 @@ export default function AdminTransactions() {
       .listSeasons()
       .then(setSeasons)
       .catch(() => setSeasons([]));
-    leaderboardApi
-      .getLeaderboard('sp_balance')
+    usersApi
+      .listAllUsers()
       .then(setPlayers)
       .catch(() => setPlayers([]));
   }, []);
 
   useEffect(() => {
     setOffset(0);
-    load(type, 0, true);
-  }, [type]);
+    load(type, filterPlayerId, 0, true);
+  }, [type, filterPlayerId]);
 
   function handleLoadMore() {
     const nextOffset = offset + PAGE_SIZE;
     setOffset(nextOffset);
-    load(type, nextOffset, false);
+    load(type, filterPlayerId, nextOffset, false);
   }
 
   async function handleRevoke(tx: SpTransactionEntry) {
@@ -126,11 +134,12 @@ export default function AdminTransactions() {
         type: formType,
         amount: Number(formAmount),
         note: formNote.trim() || undefined,
+        affectsTotalEarned: formAffectsTotalEarned,
       });
       setFormAmount('');
       setFormNote('');
       setOffset(0);
-      await load(type, 0, true);
+      await load(type, filterPlayerId, 0, true);
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : 'Erreur inconnue');
     } finally {
@@ -165,7 +174,11 @@ export default function AdminTransactions() {
               </select>
               <select
                 value={formType}
-                onChange={(e) => setFormType(e.target.value as ManualType)}
+                onChange={(e) => {
+                  const nextType = e.target.value as ManualType;
+                  setFormType(nextType);
+                  setFormAffectsTotalEarned(nextType === 'admin_grant');
+                }}
                 className="rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
               >
                 <option value="admin_grant">Créditer</option>
@@ -188,6 +201,17 @@ export default function AdminTransactions() {
               onChange={(e) => setFormNote(e.target.value)}
               className="w-full rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
             />
+            <label className="flex items-center gap-2 text-sm text-zinc-300">
+              <input
+                type="checkbox"
+                checked={formAffectsTotalEarned}
+                onChange={(e) => setFormAffectsTotalEarned(e.target.checked)}
+                className="h-4 w-4 rounded border-zinc-700 bg-zinc-950 text-emerald-500 focus:ring-emerald-500"
+              />
+              {formType === 'admin_grant'
+                ? 'Compte dans le total gagné (classement)'
+                : 'Réduit aussi le total gagné (classement)'}
+            </label>
             {createError && <p className="text-sm text-red-400">{createError}</p>}
             <button
               type="submit"
@@ -199,20 +223,38 @@ export default function AdminTransactions() {
           </form>
         </div>
 
-        <label className="block mb-4">
-          <span className="text-sm text-zinc-400">Type</span>
-          <select
-            value={type}
-            onChange={(e) => setType(e.target.value as SpTransactionType | '')}
-            className="mt-1 w-full rounded-md border border-zinc-700 bg-zinc-900 text-zinc-100 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-          >
-            {TYPE_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="flex flex-wrap gap-3 mb-4">
+          <label className="flex-1 min-w-[160px]">
+            <span className="text-sm text-zinc-400">Type</span>
+            <select
+              value={type}
+              onChange={(e) => setType(e.target.value as SpTransactionType | '')}
+              className="mt-1 w-full rounded-md border border-zinc-700 bg-zinc-900 text-zinc-100 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            >
+              {TYPE_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex-1 min-w-[160px]">
+            <span className="text-sm text-zinc-400">Joueur</span>
+            <select
+              value={filterPlayerId}
+              onChange={(e) => setFilterPlayerId(e.target.value)}
+              className="mt-1 w-full rounded-md border border-zinc-700 bg-zinc-900 text-zinc-100 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            >
+              <option value="">Tous les joueurs</option>
+              {players.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.username}
+                  {p.disabled_at ? ' (désactivé)' : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
 
         {error && <p className="mb-4 text-sm text-red-400">{error}</p>}
 
@@ -273,6 +315,11 @@ export default function AdminTransactions() {
                               {TRANSACTION_TYPE_LABELS[tx.type]}
                               {tx.note && (
                                 <span className="block text-xs text-zinc-500">{tx.note}</span>
+                              )}
+                              {!tx.affects_total_earned && (
+                                <span className="inline-block mt-1 mr-1 text-[10px] px-1.5 py-0.5 rounded bg-zinc-700 text-zinc-400">
+                                  Hors total gagné
+                                </span>
                               )}
                               {tx.revoked_at && (
                                 <span className="inline-block mt-1 text-[10px] px-1.5 py-0.5 rounded bg-red-500/15 text-red-400">

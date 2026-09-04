@@ -87,6 +87,10 @@ export async function login(req: Request<{}, {}, LoginBody>, res: Response): Pro
     res.status(401).json({ error: 'Identifiants invalides' });
     return;
   }
+  if (user.disabled_at) {
+    res.status(403).json({ error: 'Ce compte a été désactivé par le MSP' });
+    return;
+  }
 
   const accessToken = signAccessToken(user);
   const refreshToken = signRefreshToken(user);
@@ -114,6 +118,10 @@ export async function refresh(req: Request, res: Response): Promise<void> {
   const user = await userService.findById(payload.sub);
   if (!user) {
     res.status(401).json({ error: 'Utilisateur introuvable' });
+    return;
+  }
+  if (user.disabled_at) {
+    res.status(401).json({ error: 'Ce compte a été désactivé' });
     return;
   }
 

@@ -75,26 +75,29 @@ interface CreateManualTransactionInput {
   type: 'admin_grant' | 'admin_deduct';
   amount: number;
   note: string | null;
+  affectsTotalEarned: boolean;
 }
 
 /**
  * Crée manuellement un crédit ou un débit SP pour un joueur (passe par les
  * fonctions centrales creditSP/debitSP, donc journalisé et sujet aux mêmes
- * garanties : jamais de solde négatif).
+ * garanties : jamais de solde négatif). Le MSP choisit si cette transaction
+ * impacte sp_total_earned (classement "total gagné") ou seulement sp_balance.
  */
 export async function createManualTransaction({
   userId,
   type,
   amount,
   note,
+  affectsTotalEarned,
 }: CreateManualTransactionInput): Promise<SpTransactionRow> {
   const activeSeason = await seasonService.getActiveSeason();
   const seasonId = activeSeason?.id ?? null;
 
   if (type === 'admin_grant') {
-    return spService.creditSP({ userId, amount, type, seasonId, note });
+    return spService.creditSP({ userId, amount, type, seasonId, note, affectsTotalEarned });
   }
-  return spService.debitSP({ userId, amount, type, seasonId, note });
+  return spService.debitSP({ userId, amount, type, seasonId, note, affectsTotalEarned });
 }
 
 export async function getTransactionEntryById(id: number): Promise<SpTransactionEntry | null> {
@@ -154,6 +157,7 @@ export async function revokeTransaction(
           seasonId: tx.season_id,
           relatedId: tx.id,
           note: `Révocation de la transaction #${tx.id}`,
+          affectsTotalEarned: tx.affects_total_earned,
           client,
         });
       } else {
@@ -164,6 +168,7 @@ export async function revokeTransaction(
           seasonId: tx.season_id,
           relatedId: tx.id,
           note: `Révocation de la transaction #${tx.id}`,
+          affectsTotalEarned: tx.affects_total_earned,
           client,
         });
       }

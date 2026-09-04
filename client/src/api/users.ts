@@ -1,5 +1,5 @@
 import { apiClient } from './client.js';
-import type { DailyBonusClaimResult, PlayerStats, User } from '../types.js';
+import type { AdminUserSummary, DailyBonusClaimResult, PlayerStats, User } from '../types.js';
 
 export const getPublicProfile = (username: string) =>
   apiClient.get<User>(`/api/users/${username}`);
@@ -18,3 +18,8 @@ export const uploadAvatar = (file: File) => {
 
 export const setLeaderboardVisibility = (hidden: boolean) =>
   apiClient.post<User>('/api/users/me/leaderboard-visibility', { hidden });
+
+export const listAllUsers = () => apiClient.get<AdminUserSummary[]>('/api/users');
+
+export const setUserDisabled = (id: number, disabled: boolean) =>
+  apiClient.post<AdminUserSummary>(`/api/users/${id}/disable`, { disabled });
