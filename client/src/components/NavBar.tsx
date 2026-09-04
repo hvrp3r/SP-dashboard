@@ -6,6 +6,14 @@ import Avatar from './Avatar.jsx';
 import * as gamblingApi from '../api/gambling.js';
 import type { GamblingGameInfo } from '../types.js';
 
+const NAV_LINKS = [
+  { to: '/', end: true, label: 'Accueil' },
+  { to: '/classement', end: false, label: 'Classement' },
+  { to: '/defis', end: false, label: 'Défis' },
+  { to: '/mini-jeux', end: false, label: 'Mini-jeux' },
+  { to: '/encheres', end: false, label: 'Enchères' },
+];
+
 const linkClass = ({ isActive }: { isActive: boolean }) =>
   `relative px-3 py-2 text-sm font-medium rounded-md whitespace-nowrap transition-all duration-200 ease-out transform hover:scale-105 active:scale-95 ${
     isActive
@@ -17,6 +25,13 @@ const dropdownLinkClass = ({ isActive }: { isActive: boolean }) =>
   `block px-4 py-2.5 text-sm transition-colors duration-150 ${
     isActive
       ? 'bg-emerald-500/15 text-emerald-400 font-medium'
+      : 'text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100'
+  }`;
+
+const mobileLinkClass = ({ isActive }: { isActive: boolean }) =>
+  `block px-3 py-2.5 rounded-md text-sm font-medium transition-colors duration-150 ${
+    isActive
+      ? 'bg-emerald-500 text-zinc-950'
       : 'text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100'
   }`;
 
@@ -50,7 +65,7 @@ function ProfileMenu() {
     <div className="relative flex-shrink-0" ref={ref}>
       <button
         onClick={() => setOpen((v) => !v)}
-        className={`flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium rounded-md whitespace-nowrap transition-all duration-200 ease-out transform hover:scale-105 active:scale-95 ${
+        className={`flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 text-sm font-medium rounded-md whitespace-nowrap transition-all duration-200 ease-out transform hover:scale-105 active:scale-95 ${
           isProfileRouteActive
             ? 'bg-emerald-500 text-zinc-950 shadow-md shadow-emerald-500/30'
             : 'text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100'
@@ -62,8 +77,8 @@ function ProfileMenu() {
           size={22}
           className="border-2 border-zinc-950"
         />
-        {user.username}
-        <span className="text-xs font-semibold bg-zinc-950/50 text-emerald-300 px-1.5 py-0.5 rounded-full">
+        <span className="hidden sm:inline">{user.username}</span>
+        <span className="hidden sm:inline text-xs font-semibold bg-zinc-950/50 text-emerald-300 px-1.5 py-0.5 rounded-full">
           {user.sp_balance} SP
         </span>
         <span className={`inline-block transition-transform ${open ? 'rotate-180' : ''}`}>▾</span>
@@ -124,19 +139,11 @@ function ProfileMenu() {
   );
 }
 
-function GamblingMenu() {
+function GamblingMenu({ games }: { games: GamblingGameInfo[] }) {
   const location = useLocation();
   const [open, setOpen] = useState(false);
-  const [games, setGames] = useState<GamblingGameInfo[]>([]);
   const ref = useRef<HTMLDivElement>(null);
   const isGamblingRouteActive = location.pathname.startsWith('/gambling');
-
-  useEffect(() => {
-    gamblingApi
-      .listGames()
-      .then(setGames)
-      .catch(() => {});
-  }, []);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -189,35 +196,100 @@ function GamblingMenu() {
 
 export default function NavBar() {
   const { user } = useAuth();
+  const location = useLocation();
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [games, setGames] = useState<GamblingGameInfo[]>([]);
+  const mobileRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!user) return;
+    gamblingApi
+      .listGames()
+      .then(setGames)
+      .catch(() => {});
+  }, [user]);
+
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (mobileRef.current && !mobileRef.current.contains(e.target as Node)) {
+        setMobileOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   if (!user) return null;
+
+  const activeGames = games.filter((g) => g.enabled);
 
   return (
     <nav
-      className="sticky top-0 z-40 bg-zinc-900/85 backdrop-blur-md border-b border-zinc-800 px-4 py-2 shadow-lg shadow-black/20"
+      className="sticky top-0 z-40 bg-zinc-900/85 backdrop-blur-md border-b border-zinc-800 shadow-lg shadow-black/20"
       style={{ animation: 'fadeSlideDown 0.3s ease-out' }}
+      ref={mobileRef}
     >
-      <div className="max-w-2xl mx-auto flex items-center gap-2">
-        <div className="flex flex-1 items-center gap-1 justify-center flex-wrap">
-          <NavLink to="/" end className={linkClass}>
-            Accueil
+      <div className="max-w-4xl mx-auto px-3 sm:px-4 py-2 flex items-center gap-2">
+        <button
+          onClick={() => setMobileOpen((v) => !v)}
+          aria-label="Menu"
+          aria-expanded={mobileOpen}
+          className="sm:hidden flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-md text-zinc-300 hover:bg-zinc-800 transition"
+        >
+          {mobileOpen ? '✕' : '☰'}
+        </button>
+
+        <div className="flex-1 min-w-0 flex items-center gap-1">
+          <div className="hidden sm:flex items-center gap-1">
+            {NAV_LINKS.map((link) => (
+              <NavLink key={link.to} to={link.to} end={link.end} className={linkClass}>
+                {link.label}
+              </NavLink>
+            ))}
+            <GamblingMenu games={games} />
+          </div>
+          <NavLink
+            to="/"
+            end
+            className="sm:hidden block truncate text-base font-bold text-zinc-100 hover:text-emerald-400 transition-colors"
+          >
+            😊 Points Sourires
           </NavLink>
-          <NavLink to="/classement" className={linkClass}>
-            Classement
-          </NavLink>
-          <NavLink to="/defis" className={linkClass}>
-            Défis
-          </NavLink>
-          <NavLink to="/mini-jeux" className={linkClass}>
-            Mini-jeux
-          </NavLink>
-          <NavLink to="/encheres" className={linkClass}>
-            Enchères
-          </NavLink>
-          <GamblingMenu />
         </div>
-        <ProfileMenu />
-        <NotificationBell />
+
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          <ProfileMenu />
+          <NotificationBell />
+        </div>
       </div>
+
+      {mobileOpen && (
+        <div
+          className="sm:hidden border-t border-zinc-800 px-3 py-2 flex flex-col gap-0.5 max-h-[70vh] overflow-y-auto"
+          style={{ animation: 'fadeSlideIn 0.15s ease-out' }}
+        >
+          {NAV_LINKS.map((link) => (
+            <NavLink key={link.to} to={link.to} end={link.end} className={mobileLinkClass}>
+              {link.label}
+            </NavLink>
+          ))}
+          <p className="px-3 pt-3 pb-1 text-[10px] font-semibold text-zinc-500 uppercase tracking-wide">
+            Gambling
+          </p>
+          <NavLink to="/gambling" end className={mobileLinkClass}>
+            Tous les jeux
+          </NavLink>
+          {activeGames.map((g) => (
+            <NavLink key={g.id} to={g.path} className={mobileLinkClass}>
+              {g.name}
+            </NavLink>
+          ))}
+        </div>
+      )}
     </nav>
   );
 }
