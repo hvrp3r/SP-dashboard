@@ -98,6 +98,7 @@ export default function GamblingCrateDetail() {
   const [editCostSp, setEditCostSp] = useState('');
   const [editMaxOpensPerPlayer, setEditMaxOpensPerPlayer] = useState('');
   const [editResetIntervalDays, setEditResetIntervalDays] = useState('');
+  const [editRequiresSubscription, setEditRequiresSubscription] = useState(false);
   const [savingCrate, setSavingCrate] = useState(false);
   const [deletingCrate, setDeletingCrate] = useState(false);
 
@@ -126,6 +127,7 @@ export default function GamblingCrateDetail() {
       setEditResetIntervalDays(
         data.reset_interval_days !== null ? String(data.reset_interval_days) : ''
       );
+      setEditRequiresSubscription(data.requires_subscription);
       setRewardDrafts(Object.fromEntries(data.rewards.map((r) => [r.id, draftFromReward(r)])));
       setError(null);
     } catch (err) {
@@ -187,6 +189,7 @@ export default function GamblingCrateDetail() {
           editMaxOpensPerPlayer.trim() && editResetIntervalDays.trim()
             ? Number(editResetIntervalDays)
             : null,
+        requiresSubscription: editRequiresSubscription,
       });
       setCrate((prev) => (prev ? { ...prev, ...updated } : prev));
     } catch (err) {
@@ -333,12 +336,14 @@ export default function GamblingCrateDetail() {
   const withinBudget = spentToday + crate.cost_sp <= maxWagerPerDay;
   const reachedOpenLimit =
     crate.max_opens_per_player !== null && crate.myOpenCount >= crate.max_opens_per_player;
+  const subscriptionRequired = crate.requires_subscription && !(status?.subscriptionActive ?? false);
   const canOpen =
     crate.is_active &&
     (status?.enabled ?? true) &&
     canAfford &&
     withinBudget &&
     !reachedOpenLimit &&
+    !subscriptionRequired &&
     !opening;
   const editFreeWithoutLimit = editCostSp.trim() === '0' && !editMaxOpensPerPlayer.trim();
 
@@ -357,6 +362,11 @@ export default function GamblingCrateDetail() {
             <h1 className="text-2xl font-bold text-zinc-50">{crate.name}</h1>
             {crate.description && <p className="text-sm text-zinc-400">{crate.description}</p>}
           </div>
+          {crate.requires_subscription && (
+            <span className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-400 font-medium uppercase tracking-wide">
+              Abonnés
+            </span>
+          )}
           {isAdmin && !crate.is_active && (
             <span className="ml-auto flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500 font-medium uppercase tracking-wide">
               Archivée
@@ -392,10 +402,19 @@ export default function GamblingCrateDetail() {
                 ` Elle se réinitialise ${resetIntervalRecurrencePhrase(crate.reset_interval_days)}.`}
             </p>
           )}
-          {!reachedOpenLimit && !canAfford && (
+          {!reachedOpenLimit && subscriptionRequired && (
+            <p className="text-xs text-red-400 mt-2">
+              Réservée aux abonnés —{' '}
+              <Link to="/profil" className="underline">
+                voir comment s'abonner
+              </Link>
+              .
+            </p>
+          )}
+          {!reachedOpenLimit && !subscriptionRequired && !canAfford && (
             <p className="text-xs text-red-400 mt-2">Solde SP insuffisant.</p>
           )}
-          {!reachedOpenLimit && canAfford && !withinBudget && (
+          {!reachedOpenLimit && !subscriptionRequired && canAfford && !withinBudget && (
             <p className="text-xs text-red-400 mt-2">
               Budget quotidien atteint — il te reste {budgetLeft} SP à miser aujourd'hui.
             </p>
@@ -541,6 +560,15 @@ export default function GamblingCrateDetail() {
                     onChange={setEditResetIntervalDays}
                   />
                 )}
+                <label className="flex items-center gap-2 text-sm text-zinc-300">
+                  <input
+                    type="checkbox"
+                    checked={editRequiresSubscription}
+                    onChange={(e) => setEditRequiresSubscription(e.target.checked)}
+                    className="rounded border-zinc-700 bg-zinc-950 text-emerald-500 focus:ring-emerald-500"
+                  />
+                  Réservée aux abonnés (Ko-fi)
+                </label>
                 {editFreeWithoutLimit && (
                   <p className="text-xs text-red-400">
                     Une caisse gratuite doit avoir une limite d'ouvertures par joueur.

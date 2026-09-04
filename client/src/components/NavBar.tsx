@@ -72,6 +72,9 @@ function AdminMenu() {
           <NavLink to="/admin/defis" className={dropdownLinkClass}>
             Arbitrage
           </NavLink>
+          <NavLink to="/admin/abonnements" className={dropdownLinkClass}>
+            Abonnements
+          </NavLink>
         </div>
       )}
     </div>

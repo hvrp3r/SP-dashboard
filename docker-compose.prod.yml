@@ -28,6 +28,7 @@ services:
       CLIENT_ORIGIN: https://${DOMAIN}
       DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
       DISCORD_ALERT_ROLE_ID: ${DISCORD_ALERT_ROLE_ID:-}
+      KOFI_VERIFICATION_TOKEN: ${KOFI_VERIFICATION_TOKEN:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -40,6 +41,7 @@ services:
       dockerfile: client/Dockerfile.prod
       args:
         VITE_API_URL: ""
+        VITE_KOFI_URL: ${VITE_KOFI_URL:-}
     restart: unless-stopped
     environment:
       DOMAIN: ${DOMAIN}

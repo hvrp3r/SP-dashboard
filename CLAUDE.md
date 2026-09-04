@@ -198,7 +198,8 @@ max_opens_per_player INT,              -- NULL = illimité ; sinon nb max d'ouve
 reset_interval_days INT,               -- NULL = max_opens_per_player est une limite à vie (défaut) ; sinon nb de jours entre deux resets (1 = quotidien, 7 = hebdo…), exige max_opens_per_player (migration 022)
 is_active BOOLEAN NOT NULL DEFAULT TRUE,
 created_by INT REFERENCES users(id),
-created_at TIMESTAMPTZ DEFAULT NOW()
+created_at TIMESTAMPTZ DEFAULT NOW(),
+requires_subscription BOOLEAN NOT NULL DEFAULT FALSE  -- ouverture réservée aux abonnés Ko-fi actifs (migration 023, section 8)
 ```
 
 ### `gambling_crate_rewards`
@@ -236,6 +237,44 @@ gambling_open_id INT REFERENCES gambling_opens(id),
 obtained_at TIMESTAMPTZ DEFAULT NOW()
 ```
 
+### `subscriptions`
+-- Abonnement (financement des serveurs) encaissé hors-plateforme via Ko-fi, don ponctuel ou récurrent, prix fixé sur la page Ko-fi elle-même — voir section 8.
+```sql
+id SERIAL PRIMARY KEY,
+user_id INT NOT NULL UNIQUE REFERENCES users(id),
+status VARCHAR(20) NOT NULL DEFAULT 'inactive',  -- 'inactive' | 'active'
+link_code VARCHAR(12) NOT NULL UNIQUE,  -- collé dans le message du 1er paiement Ko-fi pour relier le compte
+kofi_email TEXT,                        -- capturé au 1er paiement matché, réutilisé pour les renouvellements
+current_period_end TIMESTAMPTZ,         -- accès actif tant que non dépassé
+last_payment_at TIMESTAMPTZ,
+activated_by INT REFERENCES users(id),  -- MSP si activé/prolongé manuellement, NULL si via webhook Ko-fi
+created_at TIMESTAMPTZ DEFAULT NOW(),
+updated_at TIMESTAMPTZ DEFAULT NOW()
+```
+- Une ligne n'existe que pour les joueurs ayant consulté la section Abonnement de leur profil au moins une fois (création paresseuse, pas de hook à l'inscription).
+- Pas de statut "annulé" actif : Ko-fi ne notifie que les paiements réussis, jamais les résiliations — l'accès expire donc de lui-même à `current_period_end` faute de renouvellement, plutôt que d'être révoqué en réaction à un événement.
+
+### `kofi_events`
+-- Historique brut de chaque paiement Ko-fi reçu (idempotence sur les retries de webhook + file d'attente de rattachement manuel MSP).
+```sql
+id SERIAL PRIMARY KEY,
+kofi_transaction_id TEXT NOT NULL UNIQUE,
+message_id TEXT NOT NULL,
+type VARCHAR(30) NOT NULL,              -- 'Subscription' | 'Donation' | 'Shop Order' | 'Commission'…
+is_subscription_payment BOOLEAN NOT NULL,
+is_first_subscription_payment BOOLEAN NOT NULL,  -- seul paiement où Ko-fi fournit le champ message
+from_name TEXT,
+email TEXT,
+amount NUMERIC(10, 2),
+currency VARCHAR(10),
+message TEXT,
+tier_name TEXT,
+kofi_timestamp TIMESTAMPTZ NOT NULL,
+matched_user_id INT REFERENCES users(id),  -- NULL si non rattaché (code de liaison absent/invalide)
+raw_payload JSONB NOT NULL,
+received_at TIMESTAMPTZ DEFAULT NOW()
+```
+
 ### `notifications`
 ```sql
 id SERIAL PRIMARY KEY,
@@ -265,6 +304,7 @@ updated_at TIMESTAMPTZ DEFAULT NOW()
 --   streak_required_days      (nb jours consécutifs par palier, défaut: 3)
 --   gambling_enabled          (active/désactive globalement la section gambling, défaut: true)
 --   gambling_max_wager_per_day (SP total misé/jour sur le gambling, tous crates confondus, défaut: 50)
+--   kofi_subscription_period_days (durée en jours de validité d'un abonnement après paiement, défaut: 35)
 -- Note : minigame_reward_1st/2nd/3rd ont existé puis ont été supprimées (migration 005) —
 -- l'attribution des SP en mini-jeu est un montant libre par joueur, plus des récompenses fixes par rang.
 ```
@@ -418,6 +458,44 @@ Section fusionnée dans une page joueur (`/gambling`, contrôles MSP visibles se
 - `gambling_enabled` : coupe-circuit global de la section
 - `gambling_max_wager_per_day` : plafond de mise SP/jour, tous crates confondus, par joueur
 
+### 8. Abonnements (Ko-fi) — financement des serveurs
+
+L'utilisateur voulait un abonnement donnant accès à une caisse gambling, **sans créer de micro-entreprise** (l'argent sert uniquement à payer les serveurs). Deux plateformes de paiement ont été évaluées et écartées avant Ko-fi :
+- **Liberapay** (1er choix) : association à but non lucratif dédiée aux dons récurrents, pas de statut pro requis — mais **pas de webhook** (demande ouverte sur `liberapay/liberapay.com#688` depuis 2017, jamais implémentée) et son seul endpoint public (`/<user>/public.json`) n'expose qu'un compteur agrégé de patrons, pas l'identité d'un paiement individuel. Techniquement impossible à intégrer.
+- **Stripe en compte perso** : écarté, exige en principe une activité déclarée pour un usage récurrent (risque de suspension de compte sans statut pro).
+
+**Ko-fi** a été retenu : dons/memberships sans statut pro exigé, et un vrai webhook HTTP (payload JSON, retry automatique tant qu'il ne reçoit pas un 200).
+
+#### Don ponctuel ("one time") vs abonnement récurrent ("monthly") :
+- Le widget Ko-fi propose deux modes, tous deux **activent le même statut abonné** pour la même durée (`kofi_subscription_period_days`) — décision explicite de l'utilisateur : un supporter ponctuel n'est pas moins légitime qu'un abonné récurrent. Seule différence : un don ponctuel ne se renouvelle pas tout seul, l'accès expirera à la fin de la période sauf nouveau paiement (ponctuel ou récurrent).
+- **Pas de montant minimum vérifié côté app** — décision explicite de l'utilisateur : le prix plancher est configuré directement sur la page Ko-fi (réglages du widget), une seule source de vérité sur le prix plutôt qu'une valeur dupliquée et potentiellement désynchronisée dans l'app. N'importe quel montant sur un type éligible déclenche l'activation.
+- Seuls les types `Donation` (don ponctuel) et `Subscription` (abonnement) sont éligibles — `Shop Order`/`Commission` ne comptent jamais, ce n'est pas le même geste de soutien.
+
+#### Lien entre un paiement Ko-fi et un compte SP :
+- Chaque joueur a un `link_code` (8 caractères, généré à la première consultation de la section Abonnement de son profil) à coller dans le champ message de son paiement Ko-fi.
+- **Piège Ko-fi** : le champ `message` n'est fourni par Ko-fi que sur le tout premier paiement d'un **abonnement récurrent** (`is_first_subscription_payment = true`) — les renouvellements suivants arrivent avec un message vide. Un **don ponctuel**, en revanche, porte toujours son message, qu'il soit le premier ou le centième — pas de restriction "premier paiement" à appliquer dans ce cas. Les renouvellements d'abonnement (message vide) sont donc rattachés automatiquement via l'**email Ko-fi** capturé lors du premier paiement matché (`kofi_email`), pas via le code.
+- **Aucun événement d'annulation** n'existe côté Ko-fi (confirmé dans leur doc officielle) : `current_period_end` avance de `kofi_subscription_period_days` (défaut 35, une marge sur le cycle mensuel de 30 jours) à chaque paiement éligible reçu, et l'accès expire de lui-même faute de renouvellement — pas de révocation active en réaction à un événement.
+- Si le code collé ne correspond à personne (faute de frappe, code absent) sur un paiement de type éligible → le paiement reste dans `kofi_events` avec `matched_user_id = NULL`, visible dans une file d'attente sur `/admin/abonnements` pour rattachement manuel par le MSP (recherche par nom/email/montant/date). Un `Shop Order`/`Commission` non rattaché n'y apparaît jamais — ce n'est pas une erreur à corriger, ce type n'est simplement jamais éligible.
+
+#### Webhook (`POST /api/subscriptions/kofi-webhook`) :
+- Ko-fi POSTe en `application/x-www-form-urlencoded`, un unique champ `data` contenant le JSON de l'événement — parsing dédié (`express.urlencoded`) sur cette seule route, pas globalement.
+- Non authentifié par JWT (ce n'est pas un utilisateur de l'app qui appelle) : vérifié via `verification_token` comparé à `KOFI_VERIFICATION_TOKEN` (secret d'infra, `server/.env`, jamais en BDD ni exposé via `admin_config` — même principe que `DISCORD_WEBHOOK_URL`, voir section 6/Conventions). Tant que cette variable est vide, le webhook refuse tout (503).
+- Idempotent sur `kofi_transaction_id` (retry Ko-fi = même transaction id) : un événement déjà vu répond 200 sans retraiter.
+- Toujours répondre 200 une fois traité, même si non rattaché — Ko-fi retenterait sinon indéfiniment un paiement qui ne changera pas de statut.
+
+#### Caisse "abonnés" :
+- Réutilise entièrement le système de caisses existant (section 7) plutôt qu'un système séparé : `gambling_crates.requires_subscription` conditionne l'ouverture à un abonnement actif au lieu d'un coût SP. Une caisse peut cumuler les deux (coût SP **et** réservée aux abonnés), ou être gratuite pour les abonnés (`cost_sp = 0`, ce qui exige toujours `max_opens_per_player` comme n'importe quelle caisse gratuite — pas d'exception pour les caisses abonnés).
+- Une caisse réservée reste **visible** dans la liste (pas masquée comme les caisses archivées) avec un badge « Abonnés » — le bouton d'ouverture est désactivé avec un message renvoyant vers le profil plutôt que la caisse disparaître, pour donner envie de s'abonner.
+- Vérification de l'abonnement toujours refaite côté serveur dans `openCrate` (jamais une confiance dans le `subscriptionActive` renvoyé au client).
+
+#### Contraintes MSP (via admin_config) :
+- `kofi_subscription_period_days` : durée de validité d'un abonnement après un paiement reçu
+- Pas de montant minimum configurable côté app — le prix est entièrement géré sur la page Ko-fi elle-même (voir plus haut)
+
+#### Panel MSP (`/admin/abonnements`, page dédiée — pas fusionnée dans une page joueur) :
+- Liste de tous les abonnements consultés au moins une fois (statut, date de fin, email Ko-fi, dernier paiement), avec activation/prolongation manuelle (ex : paiement vérifié à l'œil sur le dashboard Ko-fi) et révocation
+- File d'attente des paiements Ko-fi non rattachés, avec rattachement manuel à un compte
+
 ---
 
 ## Rôles & Permissions
@@ -442,6 +520,8 @@ Section fusionnée dans une page joueur (`/gambling`, contrôles MSP visibles se
 | Désactiver/réactiver un compte joueur | ❌ | ✅ |
 | Promouvoir un joueur admin           | ❌ | ✅ |
 | Voir tous les logs de transactions   | ❌ | ✅ |
+| Activer/prolonger/révoquer un abonnement | ❌ | ✅ |
+| Rattacher manuellement un paiement Ko-fi | ❌ | ✅ |
 
 > Il n'y a **pas de limite** au nombre d'admins. N'importe quel admin peut en promouvoir un autre.
 
@@ -457,6 +537,7 @@ Sections dans des pages `/admin/...` dédiées :
 - **Joueurs** (`/admin/joueurs`) : liste de tous les comptes (rôle, solde, statut), désactiver/réactiver un compte (jamais de suppression — voir la note sur `disabled_at` dans le schéma `users` plus haut). Le MSP ne peut pas désactiver son propre compte.
 - **Défis** (`/admin/defis`) : liste filtrée (en cours, en attente, contestés), arbitrage (force un gagnant parmi les participants `accepted`), annulation
 - **Transactions** : log global avec filtres (joueur, type, saison, date), révocation, création manuelle de transaction
+- **Abonnements** (`/admin/abonnements`) : liste des abonnements, activation/prolongation/révocation manuelle, file d'attente des paiements Ko-fi non rattachés (voir section 8) — page dédiée plutôt que fusionnée dans le profil joueur, car ce sont des actions strictement MSP (contrairement aux Mini-Jeux/Gambling où le joueur et le MSP partagent la même page)
 
 Sections fusionnées dans la page joueur correspondante (visibles seulement si MSP) :
 - **Mini-Jeux** (`/mini-jeux`, `/mini-jeux/:id`) : créer une session, poser/clôturer une question, attribuer les SP librement, clôturer la session
@@ -513,6 +594,7 @@ Ajoutées en cours de projet, à la demande de l'utilisateur, non prévues dans 
 - Le MSP peut créer une transaction SP manuelle directement (pas seulement ajuster un solde)
 - Popups de confirmation custom (`useConfirm`) à la place de `window.confirm` natif
 - Tags visuels du type de mini-jeu dans la liste des mini-jeux
+- Abonnement mensuel via Ko-fi (financement des serveurs) avec caisse gambling réservée aux abonnés (voir section 8)
 
 ---
 
@@ -551,9 +633,14 @@ JWT_SECRET=
 JWT_REFRESH_SECRET=
 PORT=3001
 NODE_ENV=development
+# Requis pour activer l'abonnement Ko-fi (section 8) — "Verification Token" sur
+# https://ko-fi.com/manage/webhooks. Vide = webhook désactivé (503).
+KOFI_VERIFICATION_TOKEN=
 
 # client/.env
 VITE_API_URL=http://localhost:3001
+# URL de la page Ko-fi du MSP (ex: https://ko-fi.com/tonpseudo), affichée sur le profil.
+VITE_KOFI_URL=
 ```
 
 ---
@@ -582,3 +669,9 @@ VITE_API_URL=http://localhost:3001
 | Les gains "custom" (image+titre) ont-ils une valeur SP ? | **Non** — purement cosmétiques, aucun effet sur l'économie SP, juste une collection affichée sur le profil (`gambling_inventory`) |
 | Plafond anti-abus du gambling ? | Un seul levier : `gambling_max_wager_per_day` (SP misé/jour, tous crates confondus) — pas de plafond séparé sur le nombre d'ouvertures, décision explicite de garder un seul paramètre simple |
 | Le MSP doit-il respecter une espérance de gain négative imposée par le système ? | Non — configuration totalement libre des probabilités/montants, mais l'UI affiche l'espérance de gain calculée en direct pour l'aider à ne pas créer de caisse structurellement gagnante pour les joueurs |
+| Comment encaisser l'abonnement sans micro-entreprise ? | **Ko-fi** (dons/memberships) — Liberapay écarté faute de webhook exploitable (voir section 8), Stripe perso écarté car risqué sans statut pro déclaré |
+| Un don ponctuel Ko-fi donne-t-il les mêmes avantages qu'un abonnement récurrent ? | **Oui** — décision explicite de l'utilisateur : "one time" et "monthly" activent tous les deux le même statut abonné pour la même durée. Seule différence : un don ponctuel ne se renouvelle pas tout seul |
+| Le prix minimum est-il vérifié côté app ? | **Non** — décision explicite de l'utilisateur : le prix plancher est configuré uniquement sur la page Ko-fi elle-même, pas dupliqué en BDD/config app, pour n'avoir qu'une seule source de vérité sur le prix |
+| Comment savoir quel joueur a payé sur Ko-fi ? | Code de liaison collé dans le message du paiement. Un don ponctuel porte toujours son message ; un abonnement récurrent ne le fournit que sur le 1er paiement, les renouvellements sont donc rattachés via l'email Ko-fi capturé au 1er paiement matché. Rattachement manuel MSP en secours (`/admin/abonnements`) si le code est absent/erroné |
+| Que se passe-t-il si un abonné annule sur Ko-fi ? | Rien côté webhook — Ko-fi ne notifie pas les annulations. L'accès expire de lui-même à `current_period_end` (paiement + `kofi_subscription_period_days`) faute de renouvellement |
+| La caisse "abonnés" est-elle un système séparé du gambling existant ? | Non — un simple flag `gambling_crates.requires_subscription`, réutilise entièrement le pool de récompenses et le tirage pondéré existants (décision explicite de l'utilisateur) |

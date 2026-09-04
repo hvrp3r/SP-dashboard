@@ -20,4 +20,8 @@ export const CONFIG_SECTIONS: ConfigSection[] = [
     title: 'Intégrations',
     keys: ['discord_notifications_enabled'],
   },
+  {
+    title: 'Abonnements',
+    keys: ['kofi_subscription_period_days'],
+  },
 ];

@@ -2,6 +2,7 @@ import type { Pool, PoolClient } from 'pg';
 import { pool } from '../db/pool.js';
 import * as spService from './sp.service.js';
 import * as configService from './config.service.js';
+import * as subscriptionService from './subscription.service.js';
 import { startOfDayLocalAsUTC } from '../utils/localDate.js';
 import type {
   GamblingCrateEntry,
@@ -48,6 +49,7 @@ interface CreateCrateInput {
   costSp: number;
   maxOpensPerPlayer: number | null;
   resetIntervalDays: number | null;
+  requiresSubscription: boolean;
   createdBy: number;
 }
 
@@ -58,6 +60,7 @@ export async function createCrate({
   costSp,
   maxOpensPerPlayer,
   resetIntervalDays,
+  requiresSubscription,
   createdBy,
 }: CreateCrateInput): Promise<GamblingCrateRow> {
   if (costSp === 0 && maxOpensPerPlayer === null) {
@@ -74,10 +77,19 @@ export async function createCrate({
   }
 
   const { rows } = await pool.query<GamblingCrateRow>(
-    `INSERT INTO gambling_crates (name, description, image_url, cost_sp, max_opens_per_player, reset_interval_days, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
+    `INSERT INTO gambling_crates (name, description, image_url, cost_sp, max_opens_per_player, reset_interval_days, requires_subscription, created_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
      RETURNING *`,
-    [name, description, imageUrl, costSp, maxOpensPerPlayer, resetIntervalDays, createdBy]
+    [
+      name,
+      description,
+      imageUrl,
+      costSp,
+      maxOpensPerPlayer,
+      resetIntervalDays,
+      requiresSubscription,
+      createdBy,
+    ]
   );
   return rows[0] as GamblingCrateRow;
 }
@@ -89,6 +101,7 @@ interface UpdateCrateInput {
   costSp?: number;
   maxOpensPerPlayer?: number | null;
   resetIntervalDays?: number | null;
+  requiresSubscription?: boolean;
   isActive?: boolean;
 }
 
@@ -108,6 +121,7 @@ export async function updateCrate(
       patch.maxOpensPerPlayer !== undefined ? patch.maxOpensPerPlayer : current.max_opens_per_player,
     reset_interval_days:
       patch.resetIntervalDays !== undefined ? patch.resetIntervalDays : current.reset_interval_days,
+    requires_subscription: patch.requiresSubscription ?? current.requires_subscription,
     is_active: patch.isActive ?? current.is_active,
   };
 
@@ -127,8 +141,8 @@ export async function updateCrate(
   const { rows } = await pool.query<GamblingCrateRow>(
     `UPDATE gambling_crates
      SET name = $1, description = $2, image_url = $3, cost_sp = $4, max_opens_per_player = $5,
-         reset_interval_days = $6, is_active = $7
-     WHERE id = $8
+         reset_interval_days = $6, requires_subscription = $7, is_active = $8
+     WHERE id = $9
      RETURNING *`,
     [
       next.name,
@@ -137,6 +151,7 @@ export async function updateCrate(
       next.cost_sp,
       next.max_opens_per_player,
       next.reset_interval_days,
+      next.requires_subscription,
       next.is_active,
       id,
     ]
@@ -341,6 +356,13 @@ export async function openCrate(
   const enabled = await configService.getConfigBool('gambling_enabled', true);
   if (!enabled) {
     throw Object.assign(new Error('Le gambling est désactivé par le MSP'), { status: 403 });
+  }
+
+  if (crate.requires_subscription) {
+    const sub = await subscriptionService.getOrCreateForUser(userId);
+    if (!subscriptionService.isActive(sub)) {
+      throw Object.assign(new Error('Cette caisse est réservée aux abonnés'), { status: 403 });
+    }
   }
 
   const rewards = await listRewards(crateId);
