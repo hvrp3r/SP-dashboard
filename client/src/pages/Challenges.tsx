@@ -468,7 +468,7 @@ function ChallengeCard({
         {c.description && <p className="text-sm text-zinc-500 italic">{c.description}</p>}
       </div>
 
-      {c.type === 'coin_flip' && c.participants.some((p) => p.coin_side !== null) && (
+      {c.type === 'coin_flip' && !isFlipping && c.participants.some((p) => p.coin_side !== null) && (
         <div className="mb-3 flex flex-wrap gap-1.5">
           {c.participants.map((p) => (
             <span
