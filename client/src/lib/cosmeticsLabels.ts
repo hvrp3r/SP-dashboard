@@ -85,6 +85,18 @@ export const RARITY_TEXT_CLASSES: Record<CosmeticRarity, string> = {
   legendary: 'text-amber-400',
 };
 
+/** Halo/glow affiché à l'arrêt du rouleau gambling sur un gain cosmétique —
+ * intensité croissante avec la rareté, même logique que RARITY_RING_CLASSES
+ * dans gamblingLabels.ts mais alignée sur les 5 raretés réelles des cosmétiques
+ * plutôt que sur un palier générique dérivé du poids de tirage. */
+export const RARITY_RING_CLASSES: Record<CosmeticRarity, string> = {
+  common: 'ring-2 ring-zinc-500',
+  uncommon: 'ring-2 ring-green-400 shadow-md shadow-green-500/30',
+  rare: 'ring-2 ring-blue-400 shadow-md shadow-blue-500/30',
+  epic: 'ring-4 ring-violet-400 shadow-lg shadow-violet-500/40',
+  legendary: 'ring-4 ring-amber-400 shadow-lg shadow-amber-500/50',
+};
+
 /**
  * Visuel par défaut d'un gain cosmétique de caisse gambling sans image
  * configurée : icône selon la catégorie (précise, ou filtre de la récompense

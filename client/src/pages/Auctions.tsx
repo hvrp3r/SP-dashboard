@@ -97,6 +97,10 @@ export default function Auctions() {
     .map((o) => ({ ...o, available: o.quantity - (activeListingCounts.get(o.cosmetic_id) ?? 0) }))
     .filter((o) => o.available > 0);
 
+  const selectedSellable = sellable.find((o) => String(o.cosmetic_id) === selectedCosmeticId);
+  const sellingLastEquippedCopy =
+    selectedSellable !== undefined && selectedSellable.equipped && selectedSellable.available === 1;
+
   async function handleCreate(e: FormEvent) {
     e.preventDefault();
     if (!selectedCosmeticId || !startingPrice || !durationMinutes) return;
@@ -136,7 +140,8 @@ export default function Auctions() {
       <div className="max-w-2xl mx-auto">
         <h1 className="text-2xl font-bold text-zinc-50 mb-1">Enchères</h1>
         <p className="text-sm text-zinc-500 mb-6">
-          Mets en enchère tes cosmétiques en double, ou enchéris sur ceux des autres joueurs.
+          Mets en enchère tes cosmétiques (même un exemplaire unique), ou enchéris sur ceux des
+          autres joueurs.
         </p>
 
         {error && <p className="mb-4 text-sm text-red-400">{error}</p>}
@@ -145,8 +150,7 @@ export default function Auctions() {
           <h2 className="font-semibold text-zinc-200 mb-3">Mettre en enchère</h2>
           {sellable.length === 0 ? (
             <p className="text-sm text-zinc-500">
-              Tu n'as aucun exemplaire disponible — il te faut un cosmétique possédé en double (le
-              premier reste équipable, les suivants peuvent être vendus).
+              Tu n'as aucun cosmétique disponible à vendre pour l'instant.
             </p>
           ) : (
             <form onSubmit={handleCreate} className="flex flex-wrap gap-2">
@@ -204,6 +208,12 @@ export default function Auctions() {
                   </button>
                 ))}
               </div>
+              {sellingLastEquippedCopy && (
+                <p className="w-full text-xs text-amber-400">
+                  C'est ton dernier exemplaire, actuellement équipé — s'il est vendu, tu retomberas
+                  automatiquement sur le défaut de l'emplacement.
+                </p>
+              )}
             </form>
           )}
         </div>

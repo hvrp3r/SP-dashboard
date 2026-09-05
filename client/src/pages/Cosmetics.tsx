@@ -47,7 +47,7 @@ function CosmeticCard({
         <p className={`text-xs font-medium mt-0.5 ${RARITY_TEXT_CLASSES[cosmetic.rarity]}`}>
           {RARITY_LABELS[cosmetic.rarity]}
         </p>
-        {status === 'owned' && !cosmetic.is_default && (
+        {(status === 'owned' || status === 'equipped') && !cosmetic.is_default && (
           <Link to="/encheres" className="text-xs text-zinc-500 hover:text-zinc-300 underline">
             Mettre en enchère
           </Link>

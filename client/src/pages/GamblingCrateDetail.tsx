@@ -135,6 +135,7 @@ export default function GamblingCrateDetail() {
   const [lastResult, setLastResult] = useState<GamblingOpenResult | null>(null);
   const [spinToken, setSpinToken] = useState(0);
   const [pendingWinner, setPendingWinner] = useState<GamblingCrateReward | null>(null);
+  const [pendingWinnerCosmetic, setPendingWinnerCosmetic] = useState<Cosmetic | null>(null);
   const pendingResultRef = useRef<GamblingOpenResult | null>(null);
 
   const [editName, setEditName] = useState('');
@@ -158,6 +159,7 @@ export default function GamblingCrateDetail() {
   const [newRewardWeight, setNewRewardWeight] = useState('');
   const [addingReward, setAddingReward] = useState(false);
   const [cosmeticCatalog, setCosmeticCatalog] = useState<Cosmetic[]>([]);
+  const [rarityWeights, setRarityWeights] = useState<Record<CosmeticRarity, number> | null>(null);
 
   const [rewardDrafts, setRewardDrafts] = useState<Record<number, RewardDraft>>({});
   const [savingRewardId, setSavingRewardId] = useState<number | null>(null);
@@ -198,8 +200,12 @@ export default function GamblingCrateDetail() {
 
   useEffect(() => {
     // Chargé pour tout le monde (pas seulement le MSP) : sert aussi à afficher
-    // l'icône/couleur par défaut des gains cosmétiques dans "Gains possibles".
+    // l'icône/couleur par défaut des gains cosmétiques dans "Gains possibles",
+    // et à peupler l'animation du rouleau avec de vrais cosmétiques (voir
+    // GamblingReel.tsx) plutôt que des emplacements vierges pour les gains
+    // "pool" (catégorie/rareté sans cosmétique précis).
     cosmeticsApi.getCatalog().then(setCosmeticCatalog).catch(() => {});
+    cosmeticsApi.getRarityWeights().then(setRarityWeights).catch(() => {});
   }, []);
 
   // Suggère un titre à partir du filtre pool ("Titre + Épique"), sans écraser
@@ -223,6 +229,7 @@ export default function GamblingCrateDetail() {
       const result = await gamblingApi.openCrate(crateId);
       pendingResultRef.current = result;
       setPendingWinner(result.reward);
+      setPendingWinnerCosmetic(result.cosmetic);
       setSpinToken((t) => t + 1);
       setStatus((prev) =>
         prev ? { ...prev, spentToday: result.spentToday, maxWagerPerDay: result.maxWagerPerDay } : prev
@@ -534,6 +541,8 @@ export default function GamblingCrateDetail() {
                 spinToken={spinToken}
                 onLanded={handleReelLanded}
                 cosmeticCatalog={cosmeticCatalog}
+                winnerCosmetic={pendingWinnerCosmetic}
+                rarityWeights={rarityWeights}
               />
             </div>
           )}

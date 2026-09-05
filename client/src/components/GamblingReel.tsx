@@ -1,7 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
-import type { Cosmetic, GamblingCrateReward, GamblingCrateRewardView } from '../types.js';
+import type {
+  Cosmetic,
+  CosmeticRarity,
+  GamblingCrateReward,
+  GamblingCrateRewardView,
+} from '../types.js';
 import { RARITY_RING_CLASSES, rarityFromWeightPercent, rewardFallbackEmoji } from '../lib/gamblingLabels.js';
-import { cosmeticRewardVisual } from '../lib/cosmeticsLabels.js';
+import {
+  cosmeticRewardVisual,
+  RARITY_RING_CLASSES as COSMETIC_RARITY_RING_CLASSES,
+} from '../lib/cosmeticsLabels.js';
 import { playReveal, playTick } from '../lib/sound.js';
 
 const ITEM_WIDTH = 128;
@@ -17,7 +25,14 @@ const TOTAL_WINNING_INDEX = PREFIX_COUNT + WINNING_INDEX;
 const REST_INDEX = PREFIX_COUNT - 1;
 const SPIN_DURATION_MS = 6200;
 
-function pickWeighted(pool: GamblingCrateRewardView[]): GamblingCrateRewardView {
+interface ReelItem {
+  reward: GamblingCrateRewardView;
+  /** Cosmétique de "figuration" tiré au hasard pour peupler visuellement cet
+   * emplacement du rouleau (jamais le vrai gain — juste du décor). */
+  cosmetic: Cosmetic | null;
+}
+
+function pickRewardRow(pool: GamblingCrateRewardView[]): GamblingCrateRewardView {
   const total = pool.reduce((sum, r) => sum + r.weight, 0);
   let roll = Math.random() * total;
   for (const r of pool) {
@@ -27,20 +42,74 @@ function pickWeighted(pool: GamblingCrateRewardView[]): GamblingCrateRewardView 
   return pool[pool.length - 1] as GamblingCrateRewardView;
 }
 
-/** Remplit la bande avec des tirages aléatoires du pool (préfixe + segment de
- * tirage), sauf à l'index gagnant où le vrai résultat (déjà connu côté serveur)
- * est placé pour que l'animation s'arrête pile sur lui. */
+/** Tire un cosmétique concret pour peupler un emplacement du rouleau — exact
+ * si la récompense en pointe un, sinon pondéré par rareté dans son pool
+ * catégorie/rareté (même logique que cosmetics.service.ts#pickRandomCosmeticForPool
+ * côté serveur). Purement décoratif : jamais utilisé pour le vrai résultat. */
+function pickCosmeticForReward(
+  reward: GamblingCrateRewardView,
+  catalog: Cosmetic[],
+  weights: Record<CosmeticRarity, number>
+): Cosmetic | null {
+  if (reward.type !== 'cosmetic') return null;
+  if (reward.cosmetic_id) {
+    return catalog.find((c) => c.id === reward.cosmetic_id) ?? null;
+  }
+  const candidates = catalog.filter(
+    (c) =>
+      !c.is_default &&
+      (reward.cosmetic_slot_filter === null || c.slot === reward.cosmetic_slot_filter) &&
+      (reward.cosmetic_rarity_filter === null || c.rarity === reward.cosmetic_rarity_filter)
+  );
+  if (candidates.length === 0) return null;
+
+  const totalWeight = candidates.reduce((sum, c) => sum + (weights[c.rarity] ?? 0), 0);
+  if (totalWeight <= 0) {
+    return candidates[Math.floor(Math.random() * candidates.length)] ?? null;
+  }
+  let roll = Math.random() * totalWeight;
+  for (const c of candidates) {
+    roll -= weights[c.rarity] ?? 0;
+    if (roll < 0) return c;
+  }
+  return candidates[candidates.length - 1] ?? null;
+}
+
+function pickReelItem(
+  pool: GamblingCrateRewardView[],
+  catalog: Cosmetic[],
+  weights: Record<CosmeticRarity, number>
+): ReelItem {
+  const reward = pickRewardRow(pool);
+  return { reward, cosmetic: pickCosmeticForReward(reward, catalog, weights) };
+}
+
+/** Remplit la bande avec des tirages aléatoires du pool, sauf à l'emplacement
+ * où le rouleau va s'arrêter : le vrai gain (`winner`/`winnerCosmetic`, déjà
+ * connu côté serveur) y est placé dès la construction — ce qui s'arrête sous
+ * le marqueur EST le résultat, jamais un autre cosmétique substitué après
+ * coup. Seule sa *présentation* (icône/bordure/nom) reste masquée tant que
+ * `landed` est faux (voir le rendu plus bas), pour ne rien laisser deviner
+ * avant l'arrêt sans jamais désynchroniser l'objet affiché du vrai résultat. */
 function buildReel(
   pool: GamblingCrateRewardView[],
-  winner: GamblingCrateReward
-): GamblingCrateRewardView[] {
-  const winnerView = pool.find((r) => r.id === winner.id);
-  const items: GamblingCrateRewardView[] = [];
+  catalog: Cosmetic[],
+  weights: Record<CosmeticRarity, number>,
+  winner: GamblingCrateReward,
+  winnerCosmetic: Cosmetic | null
+): ReelItem[] {
+  const winnerWeightPercent = pool.find((r) => r.id === winner.id)?.weight_percent ?? 0;
+  const winnerItem: ReelItem = {
+    reward: { ...winner, weight_percent: winnerWeightPercent },
+    cosmetic: winnerCosmetic,
+  };
+
+  const items: ReelItem[] = [];
   for (let i = 0; i < PREFIX_COUNT; i++) {
-    items.push(pickWeighted(pool));
+    items.push(pickReelItem(pool, catalog, weights));
   }
   for (let i = 0; i < REEL_LENGTH; i++) {
-    items.push(i === WINNING_INDEX ? (winnerView ?? { ...winner, weight_percent: 0 }) : pickWeighted(pool));
+    items.push(i === WINNING_INDEX ? winnerItem : pickReelItem(pool, catalog, weights));
   }
   return items;
 }
@@ -58,6 +127,14 @@ interface GamblingReelProps {
   spinToken: number;
   onLanded: () => void;
   cosmeticCatalog: Cosmetic[];
+  /** Cosmétique réellement tiré par le serveur pour le gain gagnant — seule
+   * source fiable de sa rareté pour une récompense "pool" (dont le filtre ne
+   * fixe pas forcément une rareté précise), `null` si le gain n'est pas un
+   * cosmétique. */
+  winnerCosmetic: Cosmetic | null;
+  /** Poids de tirage par rareté, pour peupler le rouleau de figuration —
+   * `null` tant que non chargé, retombe alors sur un tirage uniforme. */
+  rarityWeights: Record<CosmeticRarity, number> | null;
 }
 
 function offsetForIndex(index: number): number {
@@ -70,15 +147,25 @@ export default function GamblingReel({
   spinToken,
   onLanded,
   cosmeticCatalog,
+  winnerCosmetic,
+  rarityWeights,
 }: GamblingReelProps) {
-  const [items, setItems] = useState<GamblingCrateRewardView[]>([]);
+  const [items, setItems] = useState<ReelItem[]>([]);
   const [landed, setLanded] = useState(false);
   const trackRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (spinToken === 0) return;
 
-    setItems(buildReel(pool, winner));
+    setItems(
+      buildReel(
+        pool,
+        cosmeticCatalog,
+        rarityWeights ?? ({} as Record<CosmeticRarity, number>),
+        winner,
+        winnerCosmetic
+      )
+    );
     setLanded(false);
 
     const startOffset = offsetForIndex(REST_INDEX);
@@ -139,9 +226,34 @@ export default function GamblingReel({
         className="absolute inset-y-0 left-1/2 flex items-center"
         style={{ transform: `translateX(${-offsetForIndex(REST_INDEX)}px)` }}
       >
-        {items.map((item, i) => {
+        {items.map(({ reward, cosmetic }, i) => {
           const isWinnerSlot = i === TOTAL_WINNING_INDEX;
-          const rarity = rarityFromWeightPercent(item.weight_percent);
+          // L'emplacement gagnant porte le vrai résultat dès la construction
+          // (voir buildReel) et l'affiche identiquement pendant tout le
+          // défilement — seul un halo supplémentaire s'ajoute une fois le
+          // rouleau arrêté dessus, pour souligner la révélation sans jamais
+          // faire apparaître un autre cosmétique que le gain final.
+          const genericRarity = rarityFromWeightPercent(reward.weight_percent);
+
+          let visual: { icon: string; textClass: string; borderClass: string } | null = null;
+          let resolvedRarity: CosmeticRarity | null = null;
+          if (reward.type === 'cosmetic') {
+            resolvedRarity = cosmetic?.rarity ?? reward.cosmetic_rarity_filter;
+            visual = cosmeticRewardVisual(cosmetic?.slot ?? reward.cosmetic_slot_filter, resolvedRarity);
+          }
+
+          const landedGlowClass =
+            isWinnerSlot && landed
+              ? reward.type === 'cosmetic'
+                ? resolvedRarity
+                  ? COSMETIC_RARITY_RING_CLASSES[resolvedRarity]
+                  : 'ring-2 ring-zinc-500'
+                : RARITY_RING_CLASSES[genericRarity]
+              : '';
+
+          const title = cosmetic?.name ?? reward.title;
+          const imageUrl = cosmetic?.image_url ?? reward.image_url;
+
           return (
             <div
               key={i}
@@ -150,28 +262,19 @@ export default function GamblingReel({
             >
               <div
                 className={`w-24 h-24 rounded-lg flex items-center justify-center text-4xl bg-zinc-800 overflow-hidden ${
-                  isWinnerSlot && landed ? RARITY_RING_CLASSES[rarity] : ''
-                }`}
+                  visual ? `border ${visual.borderClass}` : ''
+                } ${landedGlowClass}`}
                 style={isWinnerSlot && landed ? { animation: 'popIn 0.35s ease-out' } : undefined}
               >
-                {item.image_url ? (
-                  <img src={item.image_url} alt="" className="w-full h-full object-cover" />
-                ) : item.type === 'cosmetic' ? (
-                  (() => {
-                    const exact = item.cosmetic_id
-                      ? cosmeticCatalog.find((c) => c.id === item.cosmetic_id)
-                      : null;
-                    const visual = cosmeticRewardVisual(
-                      exact?.slot ?? item.cosmetic_slot_filter,
-                      exact?.rarity ?? item.cosmetic_rarity_filter
-                    );
-                    return <span className={visual.textClass}>{visual.icon}</span>;
-                  })()
+                {imageUrl ? (
+                  <img src={imageUrl} alt="" className="w-full h-full object-cover" />
+                ) : visual ? (
+                  <span className={visual.textClass}>{visual.icon}</span>
                 ) : (
-                  rewardFallbackEmoji(item.type)
+                  rewardFallbackEmoji(reward.type)
                 )}
               </div>
-              <p className="w-full text-[11px] text-zinc-400 text-center truncate">{item.title}</p>
+              <p className="w-full text-[11px] text-zinc-400 text-center truncate">{title}</p>
             </div>
           );
         })}
