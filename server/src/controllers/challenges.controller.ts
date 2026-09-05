@@ -4,7 +4,7 @@ import * as configService from '../services/config.service.js';
 import * as seasonService from '../services/season.service.js';
 import * as userService from '../services/user.service.js';
 import * as notificationService from '../services/notification.service.js';
-import type { ChallengeEntry, ChallengeStatus } from '../types.js';
+import type { ChallengeEntry, ChallengeStatus, ChallengeType, CoinSide } from '../types.js';
 
 const VALID_STATUSES: ChallengeStatus[] = [
   'pending',
@@ -14,6 +14,20 @@ const VALID_STATUSES: ChallengeStatus[] = [
   'resolved',
   'cancelled',
 ];
+
+const VALID_TYPES: ChallengeType[] = ['custom', 'coin_flip'];
+
+/**
+ * Tire un côté ('pile' ou 'face') au hasard côté serveur uniquement, et désigne
+ * gagnant le participant qui avait choisi ce côté (le joueur défié choisit à
+ * l'acceptation, le challenger hérite du côté opposé — voir respondToChallenge).
+ */
+function pickCoinFlipWinner(entry: ChallengeEntry): number {
+  const accepted = entry.participants.filter((p) => p.status === 'accepted');
+  const flip: CoinSide = Math.random() < 0.5 ? 'pile' : 'face';
+  const winner = accepted.find((p) => p.coin_side === flip);
+  return (winner ?? accepted[Math.floor(Math.random() * accepted.length)])!.user_id;
+}
 
 async function expireAndNotify(): Promise<void> {
   const expired = await challengeService.expirePendingChallenges();
@@ -81,13 +95,14 @@ interface CreateChallengeBody {
   opponentIds?: number[];
   wagerAmount?: number;
   description?: string;
+  type?: ChallengeType;
 }
 
 export async function createChallenge(
   req: Request<{}, {}, CreateChallengeBody>,
   res: Response
 ): Promise<void> {
-  const { opponentIds, wagerAmount, description } = req.body ?? {};
+  const { opponentIds, wagerAmount, description, type } = req.body ?? {};
 
   if (!Array.isArray(opponentIds) || opponentIds.length === 0) {
     res.status(400).json({ error: 'Au moins un adversaire est requis' });
@@ -112,6 +127,17 @@ export async function createChallenge(
   }
   if (description !== undefined && description.length > 500) {
     res.status(400).json({ error: 'La description ne doit pas dépasser 500 caractères' });
+    return;
+  }
+  const challengeType: ChallengeType = type ?? 'custom';
+  if (!VALID_TYPES.includes(challengeType)) {
+    res.status(400).json({ error: 'Type de défi invalide' });
+    return;
+  }
+  if (challengeType === 'coin_flip' && uniqueOpponentIds.length !== 1) {
+    res
+      .status(400)
+      .json({ error: 'Le pile ou face se joue à deux : un seul adversaire à la fois' });
     return;
   }
 
@@ -160,14 +186,19 @@ export async function createChallenge(
     opponentIds: uniqueOpponentIds,
     wagerAmount: wagerAmount as number,
     description: trimmedDescription,
+    type: challengeType,
   });
 
+  const receivedMessage =
+    challengeType === 'coin_flip'
+      ? `${challenger.username} t'a défié à pile ou face pour ${wagerAmount} SP`
+      : `${challenger.username} t'a défié pour ${wagerAmount} SP`;
   await Promise.all(
     uniqueOpponentIds.map((id) =>
       notificationService.createNotification({
         userId: id,
         type: 'challenge_received',
-        message: `${challenger.username} t'a défié pour ${wagerAmount} SP`,
+        message: receivedMessage,
         link: '/defis',
       })
     )
@@ -215,7 +246,14 @@ function parseChallengeId(req: Request<{ id: string }>, res: Response): number |
   return challengeId;
 }
 
-export async function acceptChallenge(req: Request<{ id: string }>, res: Response): Promise<void> {
+interface AcceptChallengeBody {
+  side?: CoinSide;
+}
+
+export async function acceptChallenge(
+  req: Request<{ id: string }, {}, AcceptChallengeBody>,
+  res: Response
+): Promise<void> {
   await expireAndNotify();
   const challengeId = parseChallengeId(req, res);
   if (challengeId === null) return;
@@ -231,16 +269,53 @@ export async function acceptChallenge(req: Request<{ id: string }>, res: Respons
     return;
   }
 
+  // Pile ou face : c'est le joueur défié qui choisit son côté en acceptant —
+  // jamais le challenger, qui hérite automatiquement du côté opposé.
+  let coinSide: CoinSide | undefined;
+  if (challenge.type === 'coin_flip') {
+    const { side } = req.body ?? {};
+    if (side !== 'pile' && side !== 'face') {
+      res.status(400).json({ error: 'Choisis pile ou face pour accepter ce défi' });
+      return;
+    }
+    coinSide = side;
+  }
+
+  let finalStatus: ChallengeStatus | null;
   try {
-    await challengeService.respondToChallenge(challengeId, req.user!.id, 'accepted');
+    finalStatus = await challengeService.respondToChallenge(
+      challengeId,
+      req.user!.id,
+      'accepted',
+      coinSide
+    );
   } catch (err) {
     const status = (err as { status?: number }).status ?? 500;
     res.status(status).json({ error: err instanceof Error ? err.message : 'Erreur serveur' });
     return;
   }
 
-  const entry = await challengeService.getChallengeEntryById(challengeId);
-  if (entry) {
+  let entry = await challengeService.getChallengeEntryById(challengeId);
+
+  // Pile ou face : dès que le seul adversaire a accepté (le défi passe "accepted"),
+  // le serveur tire immédiatement un gagnant et résout le défi dans la foulée —
+  // pas de déclaration manuelle pour ce type de défi (voir CreateChallengeBody).
+  if (finalStatus === 'accepted' && entry?.type === 'coin_flip') {
+    const winnerId = pickCoinFlipWinner(entry);
+    try {
+      await challengeService.resolveChallenge(challengeId, winnerId, false, 'Pile ou face');
+      entry = await challengeService.getChallengeEntryById(challengeId);
+      if (entry) await notifyChallengeResolved(entry);
+    } catch (err) {
+      entry = await challengeService.getChallengeEntryById(challengeId);
+      res.json({
+        ...entry,
+        resolutionError:
+          err instanceof Error ? err.message : 'Résolution automatique impossible, contactez le MSP',
+      });
+      return;
+    }
+  } else if (entry) {
     await notificationService.createNotification({
       userId: entry.challenger_id,
       type: 'challenge_accepted',

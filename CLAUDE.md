@@ -113,6 +113,7 @@ season_id INT REFERENCES seasons(id),
 challenger_id INT REFERENCES users(id),  -- créateur du défi (toujours "accepted" dans challenge_participants)
 wager_amount INT NOT NULL,               -- mise par joueur (identique pour tous les participants)
 description TEXT,                        -- note libre du créateur
+type VARCHAR(20) NOT NULL DEFAULT 'custom',  -- 'custom' | 'coin_flip' (migration 039), pas de CHECK — même logique que minigame_sessions.game_type
 status VARCHAR(20) NOT NULL DEFAULT 'pending',
   -- 'pending' | 'accepted' | 'declined' | 'expired' | 'resolved' | 'cancelled'
 winner_id INT REFERENCES users(id),   -- NULL jusqu'à résolution
@@ -396,6 +397,10 @@ created_at TIMESTAMPTZ DEFAULT NOW()
 
 Un défi peut réunir **plusieurs adversaires au sein d'un même défi** (un seul pot commun, un seul gagnant), pas plusieurs défis 1v1 séparés. Le cas 1 challenger + 1 adversaire est simplement le cas N=2 de ce modèle général — l'économie SP est identique à l'ancien système 1v1.
 
+#### Types de défi (`challenges.type`, migration 039)
+- **`custom`** (défaut, comportement historique décrit ci-dessous) : le résultat est déclaré manuellement par les participants (consensus) ou arbitré par le MSP.
+- **`coin_flip`** (pile ou face) : se joue exclusivement à **deux** (un seul adversaire invité, pas de N joueurs — un vrai pile ou face n'a que deux faces). Dès que l'adversaire accepte, le défi ne passe jamais visiblement par l'état `accepted` : le serveur tire immédiatement un gagnant au hasard (`Math.random()`, jamais côté client — même principe que le tirage pondéré du gambling) et résout le défi dans la même requête, en réutilisant `resolveChallenge` (agnostique du type). Aucune déclaration manuelle possible pour ce type — le contrôleur ne propose pas l'UI de report. L'expiration à 24h ne peut jamais faire basculer un `coin_flip` vers `accepted` (avec un seul adversaire, l'issue est soit une réponse explicite soit un refus/expiration vers `declined`), donc le seul point de déclenchement du tirage est `acceptChallenge`.
+
 #### Flux :
 1. Joueur A crée un défi vers un ou plusieurs adversaires, avec une mise (identique pour tout le monde) et une description libre optionnelle. Un défi = une ligne `challenges` + une ligne `challenge_participants` par personne (challenger inclus, automatiquement `accepted` — il n'a pas besoin d'accepter son propre défi).
 2. Chaque adversaire invité a **24h** pour accepter ou décliner *individuellement*. Le défi global reste `pending` tant qu'il reste au moins un participant `pending`.
@@ -649,6 +654,7 @@ Ajoutées en cours de projet, à la demande de l'utilisateur, non prévues dans 
 - Tags visuels du type de mini-jeu dans la liste des mini-jeux
 - Abonnement mensuel via Ko-fi (financement des serveurs) avec caisse gambling réservée aux abonnés (voir section 8)
 - Page Suggestions : proposition de features/bugs par les joueurs, vote façon Reddit, commentaires, clôture/suppression par le MSP (voir section 9)
+- Défis "Pile ou face" (`challenges.type = 'coin_flip'`) : variante 1v1 des défis SP Wager où le gagnant est tiré au sort par le serveur dès que l'adversaire accepte, sans déclaration manuelle ni arbitrage nécessaire (voir section 4)
 
 ---
 
@@ -731,3 +737,4 @@ VITE_KOFI_URL=
 | La caisse "abonnés" est-elle un système séparé du gambling existant ? | Non — un simple flag `gambling_crates.requires_subscription`, réutilise entièrement le pool de récompenses et le tirage pondéré existants (décision explicite de l'utilisateur) |
 | Le MSP peut-il supprimer une suggestion (contrairement aux autres ressources de l'app) ? | Oui, suppression définitive (cascade sur votes/commentaires) — décision explicite de l'utilisateur. Contrairement aux transactions/comptes/défis, aucun enjeu d'historique économique ou anti-triche à préserver ici |
 | Le vote sur une suggestion est-il façon Reddit (up/down) ? | Oui — up et down, un vote par joueur par suggestion, en bascule ; le score peut être négatif. Décision explicite de l'utilisateur (demande initiale d'upvote seul, étendue au downvote) |
+| Un défi "pile ou face" peut-il avoir plusieurs adversaires comme un défi classique ? | Non — restreint à un seul adversaire (2 participants), un pile ou face n'a que deux faces. Résolution automatique par le serveur dès acceptation, pas de déclaration manuelle ni d'étape "accepted" visible |

@@ -80,6 +80,28 @@ body {
   }
 }
 
+/* Battement "lub-dub" : un grand coup puis un plus petit, comme un vrai pouls.
+   La durée du cycle est pilotée en JS (animationDuration dynamique) pour accélérer
+   avec le multiplicateur — voir heartbeatDuration() dans Crash.tsx. */
+@keyframes heartbeat {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  14% {
+    transform: scale(1.3);
+  }
+  28% {
+    transform: scale(1);
+  }
+  42% {
+    transform: scale(1.15);
+  }
+  70% {
+    transform: scale(1);
+  }
+}
+
 @keyframes shake {
   10%,
   90% {
@@ -134,5 +156,73 @@ body {
   100% {
     transform: translate(0, 0) scale(1) rotate(0deg);
     opacity: 1;
+  }
+}
+
+/* Lancer + double rebond avant l'arrêt complet (la rotation est quasi finie dès 78%,
+   le reste du temps n'est que le rebond physique de la pièce qui retombe). */
+@keyframes coinBounceFlip {
+  0% {
+    transform: translateY(0) rotateY(var(--coin-start, 0deg)) scale(1);
+  }
+  38% {
+    transform: translateY(-90px)
+      rotateY(calc(var(--coin-start, 0deg) + (var(--coin-end, 1800deg) - var(--coin-start, 0deg)) * 0.58))
+      scale(1.05);
+  }
+  58% {
+    transform: translateY(0)
+      rotateY(calc(var(--coin-start, 0deg) + (var(--coin-end, 1800deg) - var(--coin-start, 0deg)) * 0.85))
+      scale(0.97);
+  }
+  70% {
+    transform: translateY(-26px) rotateY(var(--coin-end, 1800deg)) scale(1.02);
+  }
+  82% {
+    transform: translateY(0) rotateY(var(--coin-end, 1800deg)) scale(0.99);
+  }
+  91% {
+    transform: translateY(-9px) rotateY(var(--coin-end, 1800deg)) scale(1.01);
+  }
+  100% {
+    transform: translateY(0) rotateY(var(--coin-end, 1800deg)) scale(1);
+  }
+}
+
+@keyframes coinBounceShadow {
+  0%,
+  58%,
+  82%,
+  100% {
+    transform: scaleX(1);
+    opacity: 0.35;
+  }
+  38% {
+    transform: scaleX(0.45);
+    opacity: 0.1;
+  }
+  70% {
+    transform: scaleX(0.7);
+    opacity: 0.18;
+  }
+  91% {
+    transform: scaleX(0.85);
+    opacity: 0.24;
+  }
+}
+
+/* Reflet lumineux qui balaie la pièce à chaque passage de face pendant la rotation. */
+@keyframes coinGlint {
+  0%,
+  100% {
+    transform: translateX(-120%);
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.9;
+  }
+  38% {
+    transform: translateX(220%);
+    opacity: 0;
   }
 }

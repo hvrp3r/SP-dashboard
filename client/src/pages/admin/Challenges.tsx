@@ -137,9 +137,16 @@ export default function AdminChallenges() {
                     <p className="font-medium text-zinc-100">
                       {c.participants.map((p) => p.username).join(' vs ')}
                     </p>
-                    <span className="text-xs px-2 py-1 rounded-full bg-zinc-800 text-zinc-400 flex-shrink-0">
-                      {STATUS_LABELS[c.status]}
-                    </span>
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      {c.type === 'coin_flip' && (
+                        <span className="text-xs px-2 py-1 rounded-full bg-amber-500/15 text-amber-400">
+                          🪙 Pile ou face
+                        </span>
+                      )}
+                      <span className="text-xs px-2 py-1 rounded-full bg-zinc-800 text-zinc-400">
+                        {STATUS_LABELS[c.status]}
+                      </span>
+                    </div>
                   </div>
 
                   {c.participants.length > 2 && (

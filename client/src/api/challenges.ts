@@ -1,5 +1,5 @@
 import { apiClient } from './client.js';
-import type { Challenge, ChallengeQuota, ChallengeStatus } from '../types.js';
+import type { Challenge, ChallengeQuota, ChallengeStatus, ChallengeType, CoinSide } from '../types.js';
 
 export const getStatus = () => apiClient.get<ChallengeQuota>('/api/challenges/status');
 
@@ -11,11 +11,12 @@ export const listAllChallenges = (status?: ChallengeStatus) =>
 export const createChallenge = (
   opponentIds: number[],
   wagerAmount: number,
-  description?: string
-) => apiClient.post<Challenge>('/api/challenges', { opponentIds, wagerAmount, description });
+  description?: string,
+  type?: ChallengeType
+) => apiClient.post<Challenge>('/api/challenges', { opponentIds, wagerAmount, description, type });
 
-export const acceptChallenge = (id: number) =>
-  apiClient.post<Challenge>(`/api/challenges/${id}/accept`);
+export const acceptChallenge = (id: number, side?: CoinSide) =>
+  apiClient.post<Challenge>(`/api/challenges/${id}/accept`, side ? { side } : undefined);
 
 export const declineChallenge = (id: number) =>
   apiClient.post<Challenge>(`/api/challenges/${id}/decline`);

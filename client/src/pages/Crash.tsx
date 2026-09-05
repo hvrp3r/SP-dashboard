@@ -11,6 +11,10 @@ import * as sound from '../lib/sound.js';
 import type { CrashBet, CrashHistoryEntry, CrashRound, GamblingStatus } from '../types.js';
 
 const POLL_INTERVAL_MS = 1000;
+/** Sondage plus rapide pendant le vol, pour réduire le délai entre l'instant réel
+ * du crash côté serveur et le moment où le client l'affiche (jusqu'à POLL_INTERVAL_MS
+ * de latence dans le pire cas sinon, puisque l'état n'avance qu'à la lecture). */
+const POLL_INTERVAL_RUNNING_MS = 300;
 /** Rafraîchissement rapide, uniquement pendant le vol, pour une animation fluide du multiplicateur entre deux sondages. */
 const TICK_INTERVAL_MS = 100;
 const GRAPH_WIDTH = 500;
@@ -74,6 +78,20 @@ function multiplierColor(m: number): string {
 function multiplierGlow(m: number, alpha: number): string {
   const { r, g, b } = multiplierColorChannels(m);
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+const HEARTBEAT_MAX_MULTIPLIER = 10;
+const HEARTBEAT_START_SECONDS = 1.1; // durée d'un battement à x1 (calme)
+const HEARTBEAT_END_SECONDS = 0.32; // durée au plus rapide, dès HEARTBEAT_MAX_MULTIPLIER atteint
+
+/**
+ * Durée d'un battement (visuel ET sonore), en secondes — décroît avec le
+ * multiplicateur sur la même échelle logarithmique que `multiplierColor`, pour
+ * une accélération perçue comme régulière malgré la croissance exponentielle.
+ */
+function heartbeatDuration(m: number): number {
+  const t = Math.min(1, Math.max(0, Math.log(Math.max(m, 1)) / Math.log(HEARTBEAT_MAX_MULTIPLIER)));
+  return HEARTBEAT_START_SECONDS + (HEARTBEAT_END_SECONDS - HEARTBEAT_START_SECONDS) * t;
 }
 
 interface CurvePoint {
@@ -172,9 +190,10 @@ export default function Crash() {
   }, []);
 
   useEffect(() => {
-    const interval = setInterval(load, POLL_INTERVAL_MS);
+    const ms = round?.status === 'running' ? POLL_INTERVAL_RUNNING_MS : POLL_INTERVAL_MS;
+    const interval = setInterval(load, ms);
     return () => clearInterval(interval);
-  }, [load]);
+  }, [load, round?.status]);
 
   useEffect(() => {
     const interval = setInterval(() => setNow(Date.now()), TICK_INTERVAL_MS);
@@ -205,12 +224,14 @@ export default function Crash() {
       sound.playLiftoff();
     }
     if (round.status === 'crashed' && prevStatus.current !== 'crashed') {
+      // L'explosion sert déjà de signal "perdu" pour quiconque n'a pas retiré à
+      // temps — un `playLose()` séparé par-dessus, au même instant, s'entendait
+      // comme le son du crash joué deux fois.
       sound.playCrashExplosion();
       setShaking(true);
       setTimeout(() => setShaking(false), 400);
       const mine = round.bets.find((b) => b.user_id === user?.id);
       if (mine) {
-        if (mine.cashout_multiplier_x100 === null) sound.playLose();
         loadHistory();
       }
     }
@@ -299,6 +320,30 @@ export default function Crash() {
   const displayMultiplier =
     crashed && round?.crash_point_x100 != null ? round.crash_point_x100 / 100 : liveMultiplier;
   const color = multiplierColor(displayMultiplier);
+  const heartbeatSeconds = heartbeatDuration(liveMultiplier);
+
+  // Battement de basse qui s'accélère avec le multiplicateur : calé sur le tick
+  // déjà en cours (100ms) plutôt qu'un setTimeout récursif séparé, pour rester
+  // synchronisé sans risque de closure périmée sur `liveMultiplier`.
+  const lastBeatAt = useRef(0);
+  useEffect(() => {
+    if (!canCashOut) {
+      lastBeatAt.current = 0;
+      return;
+    }
+    if (lastBeatAt.current === 0) {
+      // Démarre le minuteur sans jouer tout de suite : un battement pile au
+      // moment du décollage se superposerait au son de décollage (playLiftoff),
+      // perçu comme un 3e coup au lieu du lub-dub attendu.
+      lastBeatAt.current = now;
+      return;
+    }
+    if (now - lastBeatAt.current >= heartbeatSeconds * 1000) {
+      sound.playHeartbeatBeat();
+      lastBeatAt.current = now;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [now, canCashOut]);
 
   const estimatedCashout = myBet ? Math.floor(myBet.bet_amount * liveMultiplier) : 0;
 
@@ -443,7 +488,7 @@ export default function Crash() {
                     animation: crashed
                       ? 'popIn 0.25s ease-out'
                       : round.status === 'running'
-                        ? 'softPulse 1.4s ease-in-out infinite'
+                        ? `heartbeat ${heartbeatSeconds}s ease-in-out infinite`
                         : undefined,
                   }}
                 >

@@ -173,6 +173,11 @@ export type ChallengeStatus =
   | 'resolved'
   | 'cancelled';
 
+export const CHALLENGE_TYPES = ['custom', 'coin_flip'] as const;
+export type ChallengeType = (typeof CHALLENGE_TYPES)[number];
+
+export type CoinSide = 'pile' | 'face';
+
 export type ChallengeParticipantStatus = 'pending' | 'accepted' | 'declined';
 
 export interface ChallengeParticipant {
@@ -182,6 +187,7 @@ export interface ChallengeParticipant {
   is_challenger: boolean;
   status: ChallengeParticipantStatus;
   reported_winner_id: number | null;
+  coin_side: CoinSide | null;
   responded_at: string | null;
   created_at: string;
   username: string;
@@ -195,6 +201,7 @@ export interface Challenge {
   challenger_id: number;
   wager_amount: number;
   description: string | null;
+  type: ChallengeType;
   status: ChallengeStatus;
   winner_id: number | null;
   result_note: string | null;
