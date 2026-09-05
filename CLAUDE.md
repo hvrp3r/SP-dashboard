@@ -282,6 +282,7 @@ user_id INT REFERENCES users(id),
 type VARCHAR(50) NOT NULL,
   -- 'challenge_received' | 'challenge_accepted' | 'challenge_declined' | 'challenge_resolved'
   -- 'challenge_cancelled' | 'challenge_expired' | 'minigame_open' | 'sp_gained' | 'sp_lost'
+  -- 'suggestion_comment' | 'suggestion_closed'
 message TEXT NOT NULL,
 link TEXT,                             -- route client pour le clic (ex: '/defis')
 read_at TIMESTAMPTZ,
@@ -307,6 +308,39 @@ updated_at TIMESTAMPTZ DEFAULT NOW()
 --   kofi_subscription_period_days (durée en jours de validité d'un abonnement après paiement, défaut: 35)
 -- Note : minigame_reward_1st/2nd/3rd ont existé puis ont été supprimées (migration 005) —
 -- l'attribution des SP en mini-jeu est un montant libre par joueur, plus des récompenses fixes par rang.
+```
+
+### `suggestions`
+-- Page "Suggestions" : les joueurs proposent des features/bugs, votent, commentent (section 9).
+```sql
+id SERIAL PRIMARY KEY,
+author_id INT REFERENCES users(id),
+type VARCHAR(20) NOT NULL DEFAULT 'feature',  -- 'feature' | 'bug'
+title VARCHAR(200) NOT NULL,
+description TEXT,
+status VARCHAR(20) NOT NULL DEFAULT 'open',   -- 'open' | 'closed'
+closed_at TIMESTAMPTZ,
+closed_by INT REFERENCES users(id),
+created_at TIMESTAMPTZ DEFAULT NOW()
+```
+
+### `suggestion_votes`
+-- Upvote façon Reddit, un vote par joueur par suggestion (toggle, pas de downvote).
+```sql
+id SERIAL PRIMARY KEY,
+suggestion_id INT REFERENCES suggestions(id) ON DELETE CASCADE,
+user_id INT REFERENCES users(id),
+created_at TIMESTAMPTZ DEFAULT NOW(),
+UNIQUE (suggestion_id, user_id)
+```
+
+### `suggestion_comments`
+```sql
+id SERIAL PRIMARY KEY,
+suggestion_id INT REFERENCES suggestions(id) ON DELETE CASCADE,
+author_id INT REFERENCES users(id),
+body TEXT NOT NULL,
+created_at TIMESTAMPTZ DEFAULT NOW()
 ```
 
 ---
@@ -496,6 +530,22 @@ L'utilisateur voulait un abonnement donnant accès à une caisse gambling, **san
 - Liste de tous les abonnements consultés au moins une fois (statut, date de fin, email Ko-fi, dernier paiement), avec activation/prolongation manuelle (ex : paiement vérifié à l'œil sur le dashboard Ko-fi) et révocation
 - File d'attente des paiements Ko-fi non rattachés, avec rattachement manuel à un compte
 
+### 9. Suggestions (features & bugs)
+
+Page (`/suggestions`) où les joueurs proposent des features ou signalent des bugs, votent façon Reddit (upvote **et** downvote) et commentent — accessible depuis le sous-menu du profil (pas dans la barre de nav principale). Pas de page `/admin/suggestions` séparée, les contrôles MSP (clôturer, supprimer) sont directement dans la page de détail, visibles si `user.role === 'admin'` (même pattern que Mini-Jeux/Gambling).
+
+#### Flux :
+- N'importe quel joueur crée une suggestion : type (`feature` ou `bug`), titre, description libre optionnelle.
+- **Vote** : up **ou** down, un vote par joueur par suggestion (`suggestion_votes.value` = 1 ou -1). Revoter dans le même sens retire le vote (bascule) ; voter dans l'autre sens le remplace. Le score affiché est la somme des votes (peut être négatif). Le tri "Top" trie par score, "Récents" par date de création.
+- **Commentaires** : liste plate (pas de réponses imbriquées), un commentaire par soumission, pas de modification/suppression après publication (pas de modération individuelle des commentaires — hors scope, seule la suppression du post entier par le MSP existe).
+- Le compteur de votes/commentaires est calculé à la volée (sous-requêtes scalaires, pas de `JOIN` + `GROUP BY` pour éviter le produit cartésien votes×commentaires), pas dénormalisé sur `suggestions`.
+
+#### Actions MSP :
+- **Clôturer** (`status = 'closed'`) : la suggestion devient lecture seule (plus de vote ni de commentaire possible, vérifié côté serveur dans les deux contrôleurs, pas seulement caché côté client), reste visible dans l'historique/filtre "Clôturées". Notifie l'auteur (`suggestion_closed`).
+- **Supprimer** : suppression **définitive** de la suggestion, de ses votes et commentaires (`ON DELETE CASCADE`) — contrairement au reste de l'app (transactions, défis, comptes joueurs…), il n'y a ici aucun enjeu d'historique économique ou de traçabilité anti-triche à préserver, donc pas de soft-delete. Décision explicite de l'utilisateur ("le MSP peut clôturer ou supprimer des posts").
+- Un nouveau commentaire notifie l'auteur du post (`suggestion_comment`), sauf si l'auteur commente son propre post.
+- Pas de notification broadcast à la création d'une suggestion (contrairement à l'ouverture d'un mini-jeu) — n'importe quel joueur peut poster à tout moment, contrairement à un mini-jeu (action MSP rare), notifier tout le monde à chaque suggestion serait trop bruyant.
+
 ---
 
 ## Rôles & Permissions
@@ -522,6 +572,8 @@ L'utilisateur voulait un abonnement donnant accès à une caisse gambling, **san
 | Voir tous les logs de transactions   | ❌ | ✅ |
 | Activer/prolonger/révoquer un abonnement | ❌ | ✅ |
 | Rattacher manuellement un paiement Ko-fi | ❌ | ✅ |
+| Proposer une suggestion, voter, commenter | ✅ | ✅ |
+| Clôturer/supprimer une suggestion         | ❌ | ✅ |
 
 > Il n'y a **pas de limite** au nombre d'admins. N'importe quel admin peut en promouvoir un autre.
 
@@ -542,6 +594,7 @@ Sections dans des pages `/admin/...` dédiées :
 Sections fusionnées dans la page joueur correspondante (visibles seulement si MSP) :
 - **Mini-Jeux** (`/mini-jeux`, `/mini-jeux/:id`) : créer une session, poser/clôturer une question, attribuer les SP librement, clôturer la session
 - **Gambling** (`/gambling`) : créer/éditer des caisses, gérer le pool de récompenses par caisse (SP ou custom, poids de tirage), archiver/désarchiver une caisse (masquée aux joueurs et repliée par défaut même côté MSP, derrière « Voir les caisses archivées »), supprimer une caisse jamais ouverte (sinon archivage seulement, pour préserver l'historique anti-triche — voir section 7) — même logique que les Mini-Jeux, ne pas créer de page `/admin/gambling` séparée
+- **Suggestions** (`/suggestions`, `/suggestions/:id`) : clôturer ou supprimer une suggestion — même logique que Mini-Jeux/Gambling, pas de page `/admin/suggestions` séparée
 
 ---
 
@@ -595,6 +648,7 @@ Ajoutées en cours de projet, à la demande de l'utilisateur, non prévues dans 
 - Popups de confirmation custom (`useConfirm`) à la place de `window.confirm` natif
 - Tags visuels du type de mini-jeu dans la liste des mini-jeux
 - Abonnement mensuel via Ko-fi (financement des serveurs) avec caisse gambling réservée aux abonnés (voir section 8)
+- Page Suggestions : proposition de features/bugs par les joueurs, vote façon Reddit, commentaires, clôture/suppression par le MSP (voir section 9)
 
 ---
 
@@ -675,3 +729,5 @@ VITE_KOFI_URL=
 | Comment savoir quel joueur a payé sur Ko-fi ? | Code de liaison collé dans le message du paiement. Un don ponctuel porte toujours son message ; un abonnement récurrent ne le fournit que sur le 1er paiement, les renouvellements sont donc rattachés via l'email Ko-fi capturé au 1er paiement matché. Rattachement manuel MSP en secours (`/admin/abonnements`) si le code est absent/erroné |
 | Que se passe-t-il si un abonné annule sur Ko-fi ? | Rien côté webhook — Ko-fi ne notifie pas les annulations. L'accès expire de lui-même à `current_period_end` (paiement + `kofi_subscription_period_days`) faute de renouvellement |
 | La caisse "abonnés" est-elle un système séparé du gambling existant ? | Non — un simple flag `gambling_crates.requires_subscription`, réutilise entièrement le pool de récompenses et le tirage pondéré existants (décision explicite de l'utilisateur) |
+| Le MSP peut-il supprimer une suggestion (contrairement aux autres ressources de l'app) ? | Oui, suppression définitive (cascade sur votes/commentaires) — décision explicite de l'utilisateur. Contrairement aux transactions/comptes/défis, aucun enjeu d'historique économique ou anti-triche à préserver ici |
+| Le vote sur une suggestion est-il façon Reddit (up/down) ? | Oui — up et down, un vote par joueur par suggestion, en bascule ; le score peut être négatif. Décision explicite de l'utilisateur (demande initiale d'upvote seul, étendue au downvote) |

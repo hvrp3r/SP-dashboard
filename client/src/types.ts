@@ -62,6 +62,7 @@ export interface SeasonSnapshotEntry {
   created_at: string;
   username: string;
   avatar_url: string | null;
+  equipped_cosmetics: EquippedCosmetic[];
 }
 
 export interface SeasonSnapshotResponse {
@@ -184,6 +185,8 @@ export interface ChallengeParticipant {
   responded_at: string | null;
   created_at: string;
   username: string;
+  avatar_url: string | null;
+  equipped_cosmetics: EquippedCosmetic[];
 }
 
 export interface Challenge {
@@ -262,6 +265,8 @@ export interface MinigameParticipant {
   awarded_at: string | null;
   joined_at: string;
   username: string;
+  avatar_url: string | null;
+  equipped_cosmetics: EquippedCosmetic[];
 }
 
 export type MinigameQuestionStatus = 'active' | 'closed';
@@ -269,6 +274,8 @@ export type MinigameQuestionStatus = 'active' | 'closed';
 export interface MinigameAnswerView {
   user_id: number;
   username: string;
+  avatar_url: string | null;
+  equipped_cosmetics: EquippedCosmetic[];
   submitted_at: string;
   seconds_to_answer: number;
   answer_text?: string;
@@ -305,7 +312,9 @@ export type NotificationType =
   | 'minigame_open'
   | 'cosmetic_earned'
   | 'sp_gained'
-  | 'sp_lost';
+  | 'sp_lost'
+  | 'suggestion_comment'
+  | 'suggestion_closed';
 
 export interface AppNotification {
   id: number;
@@ -315,6 +324,45 @@ export interface AppNotification {
   link: string | null;
   read_at: string | null;
   created_at: string;
+}
+
+export type SuggestionType = 'feature' | 'bug';
+export type SuggestionStatus = 'open' | 'closed';
+export type SuggestionSort = 'top' | 'new';
+export type SuggestionVoteValue = 1 | -1;
+
+export interface Suggestion {
+  id: number;
+  author_id: number | null;
+  author_username: string | null;
+  author_avatar_url: string | null;
+  author_equipped_cosmetics: EquippedCosmetic[];
+  type: SuggestionType;
+  title: string;
+  description: string | null;
+  status: SuggestionStatus;
+  closed_at: string | null;
+  closed_by: number | null;
+  created_at: string;
+  vote_count: number;
+  comment_count: number;
+  /** 1 = upvoté, -1 = downvoté, 0 = pas de vote du viewer courant. */
+  user_vote: SuggestionVoteValue | 0;
+}
+
+export interface SuggestionComment {
+  id: number;
+  suggestion_id: number;
+  author_id: number | null;
+  author_username: string | null;
+  author_avatar_url: string | null;
+  author_equipped_cosmetics: EquippedCosmetic[];
+  body: string;
+  created_at: string;
+}
+
+export interface SuggestionDetail extends Suggestion {
+  comments: SuggestionComment[];
 }
 
 export type GamblingRewardType = 'sp' | 'custom' | 'cosmetic';
@@ -388,7 +436,9 @@ export interface Auction {
 export interface AuctionEntry extends Auction {
   cosmetic: Cosmetic;
   seller_username: string;
+  seller_equipped_cosmetics: EquippedCosmetic[];
   current_bidder_username: string | null;
+  current_bidder_equipped_cosmetics: EquippedCosmetic[];
   bid_count: number;
 }
 
@@ -402,6 +452,7 @@ export interface AuctionBid {
   hold_transaction_id: number | null;
   refund_transaction_id: number | null;
   bidder_username: string;
+  bidder_equipped_cosmetics: EquippedCosmetic[];
 }
 
 export interface AuctionDetail extends AuctionEntry {
@@ -513,6 +564,7 @@ export interface BlackjackHand {
   resolved_at: string | null;
   username: string;
   avatar_url: string | null;
+  equipped_cosmetics: EquippedCosmetic[];
 }
 
 export interface BlackjackSession {

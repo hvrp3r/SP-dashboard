@@ -3,6 +3,7 @@ import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth.jsx';
 import NotificationBell from './NotificationBell.jsx';
 import Avatar from './Avatar.jsx';
+import UserNameTag from './UserNameTag.jsx';
 import * as gamblingApi from '../api/gambling.js';
 import type { GamblingGameInfo } from '../types.js';
 
@@ -36,13 +37,15 @@ const mobileLinkClass = ({ isActive }: { isActive: boolean }) =>
   }`;
 
 function ProfileMenu() {
-  const { user } = useAuth();
+  const { user, equippedCosmetics } = useAuth();
+  const frameUrl = equippedCosmetics.find((c) => c.slot === 'avatar_frame')?.image_url;
   const location = useLocation();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const isProfileRouteActive =
     location.pathname.startsWith('/profil') ||
     location.pathname.startsWith('/cosmetiques') ||
+    location.pathname.startsWith('/suggestions') ||
     location.pathname.startsWith('/admin');
 
   useEffect(() => {
@@ -76,6 +79,7 @@ function ProfileMenu() {
           avatarUrl={user.avatar_url}
           size={22}
           className="border-2 border-zinc-950"
+          frameUrl={frameUrl}
         />
         <span className="hidden sm:inline">{user.username}</span>
         <span className="hidden sm:inline text-xs font-semibold bg-zinc-950/50 text-emerald-300 px-1.5 py-0.5 rounded-full">
@@ -90,9 +94,13 @@ function ProfileMenu() {
           style={{ animation: 'fadeSlideIn 0.18s ease-out' }}
         >
           <div className="flex items-center gap-3 px-4 py-3 border-b border-zinc-800">
-            <Avatar username={user.username} avatarUrl={user.avatar_url} size={36} />
+            <Avatar username={user.username} avatarUrl={user.avatar_url} size={36} frameUrl={frameUrl} />
             <div className="min-w-0">
-              <p className="text-sm font-medium text-zinc-100 truncate">{user.username}</p>
+              <UserNameTag
+                username={user.username}
+                equipped={equippedCosmetics}
+                className="text-sm text-zinc-100 truncate"
+              />
               <p className="text-xs text-emerald-400 font-semibold">{user.sp_balance} SP</p>
             </div>
           </div>
@@ -102,6 +110,9 @@ function ProfileMenu() {
             </NavLink>
             <NavLink to="/cosmetiques" className={dropdownLinkClass}>
               Cosmétiques
+            </NavLink>
+            <NavLink to="/suggestions" className={dropdownLinkClass}>
+              Suggestions
             </NavLink>
           </div>
 

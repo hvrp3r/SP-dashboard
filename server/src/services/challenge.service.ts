@@ -2,6 +2,7 @@ import type { PoolClient } from 'pg';
 import { pool } from '../db/pool.js';
 import * as spService from './sp.service.js';
 import * as transactionService from './transaction.service.js';
+import * as cosmeticsService from './cosmetics.service.js';
 import type {
   ChallengeEntry,
   ChallengeParticipantEntry,
@@ -76,15 +77,19 @@ export async function getChallengeById(id: number): Promise<ChallengeRow | null>
 }
 
 export async function getParticipants(challengeId: number): Promise<ChallengeParticipantEntry[]> {
-  const { rows } = await pool.query<ChallengeParticipantEntry>(
-    `SELECT p.*, u.username
+  const { rows } = await pool.query<Omit<ChallengeParticipantEntry, 'equipped_cosmetics'>>(
+    `SELECT p.*, u.username, u.avatar_url
      FROM challenge_participants p
      JOIN users u ON u.id = p.user_id
      WHERE p.challenge_id = $1
      ORDER BY p.is_challenger DESC, p.id ASC`,
     [challengeId]
   );
-  return rows;
+  const equippedByUser = await cosmeticsService.getEquippedForUsers(rows.map((r) => r.user_id));
+  return rows.map((row) => ({
+    ...row,
+    equipped_cosmetics: equippedByUser.get(row.user_id) ?? [],
+  }));
 }
 
 export async function getChallengeEntryById(id: number): Promise<ChallengeEntry | null> {

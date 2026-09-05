@@ -15,6 +15,7 @@ import notificationsRoutes from './routes/notifications.routes.js';
 import subscriptionsRoutes from './routes/subscriptions.routes.js';
 import cosmeticsRoutes from './routes/cosmetics.routes.js';
 import auctionsRoutes from './routes/auctions.routes.js';
+import suggestionsRoutes from './routes/suggestions.routes.js';
 import { UPLOADS_DIR } from './middleware/upload.js';
 import { notFoundHandler, errorHandler } from './middleware/errorHandler.js';
 
@@ -47,6 +48,7 @@ export function createApp(): Express {
   app.use('/api/subscriptions', subscriptionsRoutes);
   app.use('/api/cosmetics', cosmeticsRoutes);
   app.use('/api/auctions', auctionsRoutes);
+  app.use('/api/suggestions', suggestionsRoutes);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

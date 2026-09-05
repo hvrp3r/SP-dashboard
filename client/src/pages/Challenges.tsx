@@ -1,5 +1,6 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { Fragment, useEffect, useState, type FormEvent } from 'react';
 import { useAuth } from '../hooks/useAuth.jsx';
+import UserNameTag from '../components/UserNameTag.jsx';
 import * as challengesApi from '../api/challenges.js';
 import * as leaderboardApi from '../api/leaderboard.js';
 import type {
@@ -26,6 +27,21 @@ const PARTICIPANT_STATUS_LABELS: Record<ChallengeParticipant['status'], string> 
 };
 
 const ACTIVE_STATUSES: ChallengeStatus[] = ['pending', 'accepted'];
+
+/** Liste de pseudos séparés par des virgules, chacun avec ses cosmétiques équipés. */
+function NameList({ participants }: { participants: ChallengeParticipant[] }) {
+  if (participants.length === 0) return null;
+  return (
+    <>
+      {participants.map((p, i) => (
+        <Fragment key={p.id}>
+          {i > 0 && ', '}
+          <UserNameTag username={p.username} equipped={p.equipped_cosmetics} />
+        </Fragment>
+      ))}
+    </>
+  );
+}
 
 const POLL_INTERVAL_MS = 5000;
 
@@ -289,7 +305,7 @@ function ChallengeCard({
     <div className="bg-zinc-900 border border-zinc-800 rounded-xl shadow-md p-4">
       <div className="flex items-center justify-between mb-2 gap-2">
         <p className="font-medium text-zinc-100">
-          Toi vs {others.map((p) => p.username).join(', ')}
+          Toi vs <NameList participants={others} />
         </p>
         <span className="text-xs px-2 py-1 rounded-full bg-zinc-800 text-zinc-400 flex-shrink-0">
           {STATUS_LABELS[c.status]}
@@ -309,7 +325,8 @@ function ChallengeCard({
                     : 'bg-zinc-800 text-zinc-400'
               }`}
             >
-              {p.username} · {PARTICIPANT_STATUS_LABELS[p.status]}
+              <UserNameTag username={p.username} equipped={p.equipped_cosmetics} /> ·{' '}
+              {PARTICIPANT_STATUS_LABELS[p.status]}
             </span>
           ))}
         </div>
@@ -345,11 +362,7 @@ function ChallengeCard({
       {c.status === 'pending' && me?.status !== 'pending' && (
         <p className="text-sm text-zinc-500">
           En attente de la réponse de{' '}
-          {others
-            .filter((p) => p.status === 'pending')
-            .map((p) => p.username)
-            .join(', ')}
-          …
+          <NameList participants={others.filter((p) => p.status === 'pending')} />…
         </p>
       )}
 
@@ -364,8 +377,16 @@ function ChallengeCard({
             me.reported_winner_id !== null ? (
               <p className="text-sm text-zinc-500">
                 Tu as déclaré{' '}
-                {c.participants.find((p) => p.user_id === me.reported_winner_id)?.username ??
-                  '???'}{' '}
+                {(() => {
+                  const declared = c.participants.find(
+                    (p) => p.user_id === me.reported_winner_id
+                  );
+                  return declared ? (
+                    <UserNameTag username={declared.username} equipped={declared.equipped_cosmetics} />
+                  ) : (
+                    '???'
+                  );
+                })()}{' '}
                 gagnant. En attente de confirmation.
               </p>
             ) : (
@@ -379,7 +400,11 @@ function ChallengeCard({
                       disabled={actingId === c.id}
                       className="text-sm bg-zinc-800 hover:bg-zinc-700 text-zinc-200 px-3 py-1.5 rounded-md transition disabled:opacity-50"
                     >
-                      {p.user_id === userId ? 'Toi' : p.username}
+                      <UserNameTag
+                        username={p.user_id === userId ? 'Toi' : p.username}
+                        equipped={p.equipped_cosmetics}
+                        className="text-zinc-200"
+                      />
                     </button>
                   ))}
                 </div>
@@ -395,7 +420,15 @@ function ChallengeCard({
         <p className="text-sm">
           <span className="text-zinc-400">Gagnant : </span>
           <span className="text-emerald-400 font-medium">
-            {winner?.user_id === userId ? 'Toi' : (winner?.username ?? '???')}
+            {winner ? (
+              <UserNameTag
+                username={winner.user_id === userId ? 'Toi' : winner.username}
+                equipped={winner.equipped_cosmetics}
+                className="text-emerald-400"
+              />
+            ) : (
+              '???'
+            )}
           </span>
           <span className="text-zinc-500"> ({pot} SP)</span>
         </p>

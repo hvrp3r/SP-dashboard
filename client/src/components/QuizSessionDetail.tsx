@@ -1,5 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useConfirm } from '../hooks/useConfirm.jsx';
+import Avatar from './Avatar.jsx';
+import UserNameTag from './UserNameTag.jsx';
 import * as minigamesApi from '../api/minigames.js';
 import * as leaderboardApi from '../api/leaderboard.js';
 import type { LeaderboardEntry, MinigameQuestionView, MinigameSessionDetail } from '../types.js';
@@ -313,7 +315,15 @@ export default function QuizSessionDetail({
                     key={p.id}
                     className="flex items-center justify-between bg-zinc-800/40 rounded-lg px-3 py-2 text-sm"
                   >
-                    <span className="text-zinc-200">{p.username}</span>
+                    <span className="flex items-center gap-1.5 min-w-0">
+                      <Avatar
+                        username={p.username}
+                        avatarUrl={p.avatar_url}
+                        size={20}
+                        frameUrl={p.equipped_cosmetics.find((c) => c.slot === 'avatar_frame')?.image_url}
+                      />
+                      <UserNameTag username={p.username} equipped={p.equipped_cosmetics} className="text-zinc-200" />
+                    </span>
                     {answer ? (
                       <span className="text-emerald-400">
                         ✓ {answer.seconds_to_answer}s — « {answer.answer_text} »
@@ -365,7 +375,15 @@ export default function QuizSessionDetail({
                   {participants.map((p) => (
                     <tr key={p.id} className="border-t border-zinc-800">
                       <td className="px-4 py-3 font-medium text-zinc-100 whitespace-nowrap">
-                        {p.username}
+                        <span className="flex items-center gap-1.5">
+                          <Avatar
+                            username={p.username}
+                            avatarUrl={p.avatar_url}
+                            size={20}
+                            frameUrl={p.equipped_cosmetics.find((c) => c.slot === 'avatar_frame')?.image_url}
+                          />
+                          <UserNameTag username={p.username} equipped={p.equipped_cosmetics} className="text-zinc-100" />
+                        </span>
                       </td>
                       <td className="px-4 py-3 text-right text-emerald-400 font-bold whitespace-nowrap">
                         {p.sp_awarded > 0 ? `+${p.sp_awarded}` : '—'}
@@ -474,7 +492,15 @@ export default function QuizSessionDetail({
                   <ul className="space-y-1">
                     {q.answers.map((a) => (
                       <li key={a.user_id} className="flex items-center justify-between text-sm">
-                        <span className="text-zinc-300">{a.username}</span>
+                        <span className="flex items-center gap-1.5 min-w-0">
+                          <Avatar
+                            username={a.username}
+                            avatarUrl={a.avatar_url}
+                            size={18}
+                            frameUrl={a.equipped_cosmetics.find((c) => c.slot === 'avatar_frame')?.image_url}
+                          />
+                          <UserNameTag username={a.username} equipped={a.equipped_cosmetics} className="text-zinc-300" />
+                        </span>
                         <span className="text-zinc-500">
                           {a.seconds_to_answer}s
                           {a.answer_text ? ` — « ${a.answer_text} »` : ''}

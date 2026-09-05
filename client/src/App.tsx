@@ -8,6 +8,8 @@ import Leaderboard from './pages/Leaderboard.jsx';
 import Challenges from './pages/Challenges.jsx';
 import Minigames from './pages/Minigames.jsx';
 import MinigameDetail from './pages/MinigameDetail.jsx';
+import Suggestions from './pages/Suggestions.jsx';
+import SuggestionDetail from './pages/SuggestionDetail.jsx';
 import GamblingHome from './pages/GamblingHome.jsx';
 import Cosmetics from './pages/Cosmetics.jsx';
 import Auctions from './pages/Auctions.jsx';
@@ -100,6 +102,22 @@ export default function App() {
           element={
             <PrivateRoute>
               <MinigameDetail />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/suggestions"
+          element={
+            <PrivateRoute>
+              <Suggestions />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/suggestions/:id"
+          element={
+            <PrivateRoute>
+              <SuggestionDetail />
             </PrivateRoute>
           }
         />
