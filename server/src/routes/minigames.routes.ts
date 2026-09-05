@@ -28,6 +28,8 @@ router.post('/:id/questions/:questionId/answer', requireAuth, minigamesControlle
 router.post('/:id/award', requireAuth, requireAdmin, minigamesController.awardParticipants);
 router.post('/:id/close', requireAuth, requireAdmin, minigamesController.closeSession);
 
+router.post('/:id/flappybird/attempts/start', requireAuth, flappybirdController.startAttempt);
+router.post('/:id/flappybird/attempts/point', requireAuth, flappybirdController.reportPoint);
 router.post('/:id/flappybird/attempts', requireAuth, flappybirdController.submitScore);
 router.put('/:id/flappybird/rewards', requireAuth, requireAdmin, flappybirdController.updateRewards);
 router.post(

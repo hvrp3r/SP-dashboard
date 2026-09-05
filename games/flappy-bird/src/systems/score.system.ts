@@ -3,6 +3,7 @@ import { Group as KonvaGroup, Image as KonvaImage, type Layer } from '@nanoforge
 import type { SoundManager } from '../sound-manager.js';
 import type { GameState } from '../game-state.js';
 import type { PipesState } from '../pipes-state.js';
+import { postPointScored } from '../bridge.js';
 
 export interface ScoreSystemDeps {
   birdX: number;
@@ -57,6 +58,7 @@ export function createScoreSystem(deps: ScoreSystemDeps): ScoreSystemControls {
         pipe.scored = true;
         deps.state.score += 1;
         deps.sound.play('point');
+        postPointScored();
         renderScore(deps, group);
       }
     }

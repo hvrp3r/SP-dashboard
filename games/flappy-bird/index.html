@@ -6,9 +6,13 @@
 <style>
   html, body { margin: 0; padding: 0; height: 100%; background: #4ec0ca; overflow: hidden; }
   /* Konva vide entièrement #game-container à l'init (remplace innerHTML) — les
-     contrôles doivent donc vivre à côté, dans #game-root, pas dedans. */
-  #game-root { position: absolute; inset: 0; }
-  #game-container { position: absolute; inset: 0; }
+     contrôles doivent donc vivre à côté, dans #game-root, pas dedans.
+     #game-container a une taille FIXE (résolution logique du jeu, voir main.ts)
+     et est recentré par ce flex quelle que soit la taille réelle de l'iframe ;
+     main.ts lui applique ensuite un transform:scale() pour l'adapter visuellement
+     sans jamais changer la résolution interne du jeu. */
+  #game-root { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  #game-container { position: relative; }
   #game-container canvas { display: block; margin: 0 auto; touch-action: none; }
 
   /* Plein écran : le canvas garde sa résolution interne, on l'agrandit juste

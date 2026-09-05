@@ -22,7 +22,7 @@ const GRAPH_HEIGHT = 220;
  * sondages à partir du seul `started_at` renvoyé par le serveur ; le serveur
  * reste seul juge de l'instant réel du crash et du montant payé à un retrait.
  */
-const GROWTH_PER_SECOND = 0.13;
+const GROWTH_PER_SECOND = 0.1;
 
 function multiplierAt(elapsedSeconds: number): number {
   return Math.exp(GROWTH_PER_SECOND * Math.max(0, elapsedSeconds));
@@ -44,11 +44,36 @@ function netResult(bet: Pick<CrashBet, 'bet_amount' | 'cashout_multiplier_x100'>
   return crashed ? -bet.bet_amount : 0;
 }
 
-/** Couleur du multiplicateur (courbe + texte) : monte en tension avec la valeur, purement cosmétique. */
+const COLOR_START = { r: 248, g: 113, b: 113 }; // red-400 — à x1
+const COLOR_END = { r: 52, g: 211, b: 153 }; // emerald-400 — à partir de COLOR_TRANSITION_MULTIPLIER
+/** Multiplicateur à partir duquel la couleur est intégralement verte. */
+const COLOR_TRANSITION_MULTIPLIER = 4;
+
+/**
+ * Couleur du multiplicateur (courbe, fusée, texte) : rouge à x1, qui vire au vert
+ * au fil de la montée (interpolation sur échelle logarithmique, plus cohérente
+ * avec la perception d'une croissance exponentielle qu'une interpolation linéaire).
+ * Objectif volontairement psychologique : le rouge de départ pousse à attendre
+ * le vert plutôt que de se retirer immédiatement — purement cosmétique, ça ne
+ * change rien à la probabilité réelle de crash (fixée dès la création de la manche).
+ */
+function multiplierColorChannels(m: number): { r: number; g: number; b: number } {
+  const t = Math.min(1, Math.max(0, Math.log(Math.max(m, 1)) / Math.log(COLOR_TRANSITION_MULTIPLIER)));
+  return {
+    r: Math.round(COLOR_START.r + (COLOR_END.r - COLOR_START.r) * t),
+    g: Math.round(COLOR_START.g + (COLOR_END.g - COLOR_START.g) * t),
+    b: Math.round(COLOR_START.b + (COLOR_END.b - COLOR_START.b) * t),
+  };
+}
+
 function multiplierColor(m: number): string {
-  if (m >= 15) return '#f87171';
-  if (m >= 5) return '#fbbf24';
-  return '#34d399';
+  const { r, g, b } = multiplierColorChannels(m);
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
+function multiplierGlow(m: number, alpha: number): string {
+  const { r, g, b } = multiplierColorChannels(m);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
 interface CurvePoint {
@@ -351,7 +376,7 @@ export default function Crash() {
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   style={{
-                    filter: `drop-shadow(0 0 6px ${color}aa)`,
+                    filter: `drop-shadow(0 0 6px ${multiplierGlow(displayMultiplier, 0.67)})`,
                     transition: 'stroke 0.3s ease',
                   }}
                 />
@@ -409,6 +434,12 @@ export default function Crash() {
                   style={{
                     color,
                     transition: 'color 0.3s ease',
+                    // Contour sombre + ombre portée : le texte partage la couleur de la
+                    // ligne (dégradé rouge -> vert), sans ça il s'y fond complètement
+                    // quand la courbe passe derrière lui.
+                    WebkitTextStroke: '2px rgba(9, 9, 11, 0.85)',
+                    paintOrder: 'stroke fill',
+                    textShadow: '0 2px 10px rgba(0, 0, 0, 0.6)',
                     animation: crashed
                       ? 'popIn 0.25s ease-out'
                       : round.status === 'running'

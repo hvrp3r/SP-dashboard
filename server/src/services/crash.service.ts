@@ -20,11 +20,12 @@ const RESULTS_DISPLAY_SECONDS = 5;
 /**
  * Vitesse de croissance du multiplicateur : m(t) = e^(GROWTH_PER_SECOND * t).
  * Réutilisée à l'identique côté client (`Crash.tsx`) pour l'animation entre deux
- * sondages — ne pas modifier l'une sans l'autre. À 0.13, le 2x tombe vers 5.3s,
- * le 10x vers 17.7s : rythme volontairement rapide, une manche dure rarement
- * plus de 30-40s.
+ * sondages — ne pas modifier l'une sans l'autre. À 0.10, le 2x tombe vers 6.9s,
+ * le 10x vers 23s : ralenti par rapport à la version initiale (0.13), pour
+ * laisser plus de temps à la transition rouge -> vert de laisser espérer un
+ * meilleur multiplicateur avant de se retirer.
  */
-const GROWTH_PER_SECOND = 0.13;
+const GROWTH_PER_SECOND = 0.1;
 
 /**
  * Avantage de la maison. Le point de crash est tiré via CP = max(1, (1-e)/u)
