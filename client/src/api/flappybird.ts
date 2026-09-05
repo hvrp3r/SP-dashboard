@@ -1,9 +1,19 @@
 import { apiClient } from './client.js';
 import type { MinigameSessionDetail } from '../types.js';
 
-export const submitScore = (sessionId: number, score: number) =>
+export const startAttempt = (sessionId: number) =>
+  apiClient.post<{ token: string }>(`/api/minigames/${sessionId}/flappybird/attempts/start`);
+
+/** Un point marqué en jeu — le serveur incrémente lui-même le score porté par le token. */
+export const reportPoint = (sessionId: number, token: string) =>
+  apiClient.post<{ token: string }>(`/api/minigames/${sessionId}/flappybird/attempts/point`, {
+    token,
+  });
+
+/** Le score soumis est celui porté par `token` (accumulé via reportPoint) — jamais un nombre local. */
+export const submitScore = (sessionId: number, token: string) =>
   apiClient.post<MinigameSessionDetail>(`/api/minigames/${sessionId}/flappybird/attempts`, {
-    score,
+    token,
   });
 
 export const updateRewards = (

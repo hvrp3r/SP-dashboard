@@ -8,6 +8,26 @@ import type {
   MinigameSessionRow,
 } from '../types.js';
 
+// Un point ne peut jamais tomber plus vite qu'un tuyau (SPAWN_INTERVAL = 1.5s dans
+// games/flappy-bird/src/systems/pipes.system.ts, tuyaux également espacés par
+// construction, PIPE_SPEED=150px/s, BIRD_X=60) — le tout premier point ne peut
+// jamais arriver avant ~4.25s réelles (temps de spawn + temps de trajet jusqu'au
+// piaf), les suivants jamais plus vite que 1.5s d'écart entre eux. On garde une
+// marge sous ces valeurs vraies (plutôt que de coller pile dessus) pour ne jamais
+// rejeter une partie honnête à cause de latence réseau ou d'imprécision de timer.
+//
+// Le but n'ici est PAS de rejouer le jeu côté serveur : chaque point est validé
+// individuellement (voir controller: reportPoint), donc un score forgé exige
+// d'envoyer autant de requêtes authentifiées, correctement espacées dans le temps
+// réel, qu'il y a de points — impossible à faire en une seule requête "à la main".
+const WARMUP_MS = 3000;
+const MIN_MS_PER_POINT = 1000;
+
+/** Délai minimum plausible depuis le dernier token avant d'accepter le prochain point. */
+export function minDelayForNextPoint(currentScore: number): number {
+  return currentScore === 0 ? WARMUP_MS : MIN_MS_PER_POINT;
+}
+
 export async function submitScore(
   sessionId: number,
   userId: number,

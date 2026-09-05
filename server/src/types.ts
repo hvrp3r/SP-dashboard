@@ -57,6 +57,22 @@ export interface RefreshTokenPayload {
   sub: number;
 }
 
+/**
+ * Chaîne de tokens signés portant le score d'une partie Flappy Bird en cours —
+ * `POST /:id/flappybird/attempts/start` émet le premier (score: 0), chaque point
+ * marqué (`POST .../attempts/point`) en réémet un nouveau avec score+1, et
+ * `POST .../attempts` (soumission finale) fait confiance à `score` du DERNIER
+ * token reçu, jamais à un nombre fourni par le client — voir flappybird.service.ts.
+ * `iat` (horodatage de CE token, réémis à chaque étape) sert à borner le délai
+ * minimum plausible avant le prochain point.
+ */
+export interface FlappyBirdAttemptTokenPayload {
+  sessionId: number;
+  userId: number;
+  score: number;
+  iat: number;
+}
+
 export interface AuthenticatedUser {
   id: number;
   username: string;

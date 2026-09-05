@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useConfirm } from '../hooks/useConfirm.jsx';
 import * as flappybirdApi from '../api/flappybird.js';
 import RankBadge from './RankBadge.jsx';
@@ -26,6 +26,11 @@ export default function FlappyBirdSessionDetail({
 }: Props) {
   const confirm = useConfirm();
   const submittingRef = useRef(false);
+  const attemptTokenRef = useRef<string | null>(null);
+  // Sérialise démarrage / points / soumission dans l'ordre où ils arrivent réellement
+  // (un point ne doit jamais être traité avec un token plus vieux qu'un précédent en
+  // cours, sans quoi on pourrait perdre un incrément ou repartir d'un score périmé).
+  const chainRef = useRef<Promise<void>>(Promise.resolve());
   const [submitting, setSubmitting] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -38,20 +43,71 @@ export default function FlappyBirdSessionDetail({
   const deadlinePassed = Boolean(session.ends_at && new Date(session.ends_at) <= new Date());
   const canPlay = session.status === 'open' && !deadlinePassed;
 
-  async function handleGameOver(score: number) {
-    if (submittingRef.current) return;
-    submittingRef.current = true;
-    setSubmitting(true);
-    onError(null);
-    try {
-      const data = await flappybirdApi.submitScore(sessionId, score);
-      onSessionChange(data);
-    } catch (err) {
-      onError(err instanceof Error ? err.message : 'Erreur inconnue');
-    } finally {
-      submittingRef.current = false;
-      setSubmitting(false);
+  // Sérialise `task` après tout ce qui est déjà en attente (démarrage, points,
+  // soumission) — jamais deux à la fois, toujours dans l'ordre où les événements
+  // du jeu sont réellement arrivés.
+  function enqueue(task: () => Promise<void>): void {
+    chainRef.current = chainRef.current.then(task, task);
+  }
+
+  // Le score N'EST PLUS un nombre déclaré par le client : il n'existe QUE comme le
+  // nombre de points acceptés un par un par le serveur (voir reportPoint). On
+  // récupère donc un jeton de départ (score: 0) dès que le jeu devient jouable —
+  // et un nouveau après chaque soumission, puisque le jeu remet son propre score à
+  // 0 à chaque redémarrage après game over.
+  useEffect(() => {
+    if (!canPlay) {
+      attemptTokenRef.current = null;
+      return;
     }
+    enqueue(async () => {
+      try {
+        const data = await flappybirdApi.startAttempt(sessionId);
+        attemptTokenRef.current = data.token;
+      } catch (err) {
+        onError(err instanceof Error ? err.message : 'Erreur inconnue');
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, canPlay]);
+
+  function handlePoint() {
+    enqueue(async () => {
+      const token = attemptTokenRef.current;
+      if (!token) return;
+      try {
+        const data = await flappybirdApi.reportPoint(sessionId, token);
+        attemptTokenRef.current = data.token;
+      } catch {
+        // Point non compté (latence, timing trop rapide…) — la chaîne continue
+        // avec le dernier token valide, un raté isolé ne casse pas le reste.
+      }
+    });
+  }
+
+  function handleGameOver() {
+    enqueue(async () => {
+      if (submittingRef.current) return;
+      const token = attemptTokenRef.current;
+      if (!token) {
+        onError('Partie non reconnue — recharge la page avant de rejouer');
+        return;
+      }
+      submittingRef.current = true;
+      setSubmitting(true);
+      onError(null);
+      try {
+        const data = await flappybirdApi.submitScore(sessionId, token);
+        onSessionChange(data);
+        const fresh = await flappybirdApi.startAttempt(sessionId);
+        attemptTokenRef.current = fresh.token;
+      } catch (err) {
+        onError(err instanceof Error ? err.message : 'Erreur inconnue');
+      } finally {
+        submittingRef.current = false;
+        setSubmitting(false);
+      }
+    });
   }
 
   async function handleSaveRewards() {
@@ -179,7 +235,7 @@ export default function FlappyBirdSessionDetail({
 
       {canPlay ? (
         <div className="mb-6">
-          <FlappyBirdEmbed onGameOver={handleGameOver} />
+          <FlappyBirdEmbed onPoint={handlePoint} onGameOver={handleGameOver} />
           {submitting && <p className="text-xs text-zinc-500 mt-2">Envoi du score…</p>}
         </div>
       ) : (

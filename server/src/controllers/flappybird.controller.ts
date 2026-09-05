@@ -2,15 +2,55 @@ import type { Request, Response } from 'express';
 import * as minigameService from '../services/minigame.service.js';
 import * as flappybirdService from '../services/flappybird.service.js';
 import * as notificationService from '../services/notification.service.js';
+import { signFlappyBirdAttemptToken, verifyFlappyBirdAttemptToken } from '../utils/jwt.js';
+import type { MinigameSessionRow } from '../types.js';
 
 const RANK_LABELS = ['1er', '2e', '3e'];
 
-interface SubmitScoreBody {
-  score?: number;
+/** Précondition commune à `startAttempt` et `submitScore` : session jouable maintenant. */
+function getPlayableSessionError(session: MinigameSessionRow | null): string | null {
+  if (!session) return 'Session introuvable';
+  if (session.game_type !== 'flappy_bird') return 'Cette session n’est pas une session Flappy Bird';
+  if (session.status !== 'open') return 'Cette session est clôturée';
+  if (session.ends_at && new Date(session.ends_at) <= new Date()) {
+    return 'Le temps est écoulé, tu ne peux plus jouer';
+  }
+  return null;
 }
 
-export async function submitScore(
-  req: Request<{ id: string }, {}, SubmitScoreBody>,
+export async function startAttempt(req: Request<{ id: string }>, res: Response): Promise<void> {
+  const sessionId = Number(req.params.id);
+  if (!Number.isInteger(sessionId)) {
+    res.status(400).json({ error: 'Identifiant de session invalide' });
+    return;
+  }
+
+  const session = await minigameService.getSessionById(sessionId);
+  const error = getPlayableSessionError(session);
+  if (error) {
+    res.status(session ? 400 : 404).json({ error });
+    return;
+  }
+
+  const token = signFlappyBirdAttemptToken(sessionId, req.user!.id, 0);
+  res.status(201).json({ token });
+}
+
+interface AttemptTokenBody {
+  token?: string;
+}
+
+/**
+ * Appelé par le client à chaque point marqué EN JEU (un tuyau passé) — jamais à la
+ * fin. Le score n'est donc jamais un nombre déclaré par le client : il n'existe
+ * QUE comme le nombre d'appels à cette route acceptés, un par un, chacun devant
+ * respecter le délai minimum réel depuis le précédent (voir minDelayForNextPoint).
+ * Forger un score élevé exige donc d'envoyer autant de requêtes authentifiées,
+ * correctement espacées dans le temps réel, qu'il y a de points — pas juste un
+ * curl avec un gros nombre après une pause.
+ */
+export async function reportPoint(
+  req: Request<{ id: string }, {}, AttemptTokenBody>,
   res: Response
 ): Promise<void> {
   const sessionId = Number(req.params.id);
@@ -18,31 +58,56 @@ export async function submitScore(
     res.status(400).json({ error: 'Identifiant de session invalide' });
     return;
   }
-  const score = req.body?.score;
-  if (!Number.isInteger(score) || (score as number) < 0) {
-    res.status(400).json({ error: 'Score invalide' });
+
+  const session = await minigameService.getSessionById(sessionId);
+  const playableError = getPlayableSessionError(session);
+  if (playableError) {
+    res.status(session ? 400 : 404).json({ error: playableError });
+    return;
+  }
+
+  const attempt = verifyFlappyBirdAttemptToken(req.body?.token, sessionId, req.user!.id);
+  if (!attempt) {
+    res.status(400).json({ error: 'Partie non reconnue — relance le jeu avant de rejouer' });
+    return;
+  }
+  const elapsedMs = Date.now() - attempt.iat * 1000;
+  if (elapsedMs < flappybirdService.minDelayForNextPoint(attempt.score)) {
+    res.status(400).json({ error: 'Point trop rapide pour être plausible' });
+    return;
+  }
+
+  const token = signFlappyBirdAttemptToken(sessionId, req.user!.id, attempt.score + 1);
+  res.status(201).json({ token });
+}
+
+export async function submitScore(
+  req: Request<{ id: string }, {}, AttemptTokenBody>,
+  res: Response
+): Promise<void> {
+  const sessionId = Number(req.params.id);
+  if (!Number.isInteger(sessionId)) {
+    res.status(400).json({ error: 'Identifiant de session invalide' });
     return;
   }
 
   const session = await minigameService.getSessionById(sessionId);
-  if (!session) {
-    res.status(404).json({ error: 'Session introuvable' });
-    return;
-  }
-  if (session.game_type !== 'flappy_bird') {
-    res.status(400).json({ error: 'Cette session n’est pas une session Flappy Bird' });
-    return;
-  }
-  if (session.status !== 'open') {
-    res.status(400).json({ error: 'Cette session est clôturée' });
-    return;
-  }
-  if (session.ends_at && new Date(session.ends_at) <= new Date()) {
-    res.status(400).json({ error: 'Le temps est écoulé, tu ne peux plus jouer' });
+  const playableError = getPlayableSessionError(session);
+  if (playableError) {
+    res.status(session ? 400 : 404).json({ error: playableError });
     return;
   }
 
-  await flappybirdService.submitScore(sessionId, req.user!.id, score as number);
+  // Le score soumis est TOUJOURS `attempt.score` du token — jamais un champ fourni
+  // par le client. Le token n'avance que via reportPoint, un point authentifié à
+  // la fois (voir plus haut) : il n'y a donc pas de "score" à falsifier ici.
+  const attempt = verifyFlappyBirdAttemptToken(req.body?.token, sessionId, req.user!.id);
+  if (!attempt) {
+    res.status(400).json({ error: 'Partie non reconnue — relance le jeu avant de rejouer' });
+    return;
+  }
+
+  await flappybirdService.submitScore(sessionId, req.user!.id, attempt.score);
   const detail = await buildFlappyBirdDetail(sessionId, req.user!.id, req.user!.role === 'admin');
   res.status(201).json(detail);
 }

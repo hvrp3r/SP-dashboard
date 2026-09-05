@@ -25,6 +25,12 @@ services:
       - ./server/.env
     environment:
       DATABASE_URL: postgresql://sp_user:sp_password@postgres:5432/points_sourires
+      # tsx watch embarque chokidar, dont les events fs natifs ne remontent pas
+      # de manière fiable depuis un bind mount Windows -> conteneur Linux (Docker
+      # Desktop) : sans ça, un fichier modifié côté host ne redémarre jamais le
+      # serveur, qui continue silencieusement à tourner sur l'ancien code.
+      CHOKIDAR_USEPOLLING: "true"
+      CHOKIDAR_INTERVAL: "300"
     ports:
       - "3001:3001"
     depends_on:
@@ -42,6 +48,11 @@ services:
     restart: unless-stopped
     env_file:
       - ./client/.env
+    environment:
+      # Même raison que côté server (voir plus haut) : Vite watche aussi via
+      # chokidar, qui respecte ces variables nativement.
+      CHOKIDAR_USEPOLLING: "true"
+      CHOKIDAR_INTERVAL: "300"
     ports:
       - "5173:5173"
     depends_on:
