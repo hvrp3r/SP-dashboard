@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<title>Flappy Bird</title>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; background: #4ec0ca; overflow: hidden; }
+  /* Konva vide entièrement #game-container à l'init (remplace innerHTML) — les
+     contrôles doivent donc vivre à côté, dans #game-root, pas dedans. */
+  #game-root { position: absolute; inset: 0; }
+  #game-container { position: absolute; inset: 0; }
+  #game-container canvas { display: block; margin: 0 auto; touch-action: none; }
+
+  /* Plein écran : le canvas garde sa résolution interne, on l'agrandit juste
+     visuellement (letterboxé) pour remplir l'écran. */
+  #game-root:fullscreen { background: #000; }
+  #game-root:fullscreen canvas { width: 100vw !important; height: 100vh !important; object-fit: contain; }
+
+  #fullscreen-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 10;
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.45);
+    color: #fff;
+    font-size: 16px;
+    line-height: 32px;
+    text-align: center;
+    cursor: pointer;
+    padding: 0;
+  }
+  #fullscreen-btn:hover { background: rgba(0, 0, 0, 0.65); }
+
+  #volume-control {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 32px;
+    padding: 0 10px;
+    border-radius: 16px;
+    background: rgba(0, 0, 0, 0.45);
+    color: #fff;
+    font-size: 14px;
+  }
+  #volume-slider {
+    width: 70px;
+    accent-color: #fff;
+    cursor: pointer;
+  }
+</style>
+</head>
+<body>
+  <div id="game-root">
+    <div id="game-container"></div>
+    <button id="fullscreen-btn" type="button" title="Plein écran" aria-label="Plein écran">⛶</button>
+    <div id="volume-control">
+      <span aria-hidden="true">🔊</span>
+      <input id="volume-slider" type="range" min="0" max="100" step="1" aria-label="Volume" />
+    </div>
+  </div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

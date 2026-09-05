@@ -19,6 +19,10 @@ export default function Minigames() {
   const [description, setDescription] = useState('');
   const [isPaid, setIsPaid] = useState(false);
   const [entryFee, setEntryFee] = useState('');
+  const [endsAt, setEndsAt] = useState('');
+  const [reward1st, setReward1st] = useState('');
+  const [reward2nd, setReward2nd] = useState('');
+  const [reward3rd, setReward3rd] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   async function load() {
@@ -45,11 +49,32 @@ export default function Minigames() {
   const paidFeeValue = showPaidOption && isPaid ? Number(entryFee) : NaN;
   const paidFeeInvalid = showPaidOption && isPaid && (!Number.isInteger(paidFeeValue) || paidFeeValue <= 0);
 
+  const showFlappyBirdOptions = gameType === 'flappy_bird';
+  const reward1stValue = Number(reward1st);
+  const reward2ndValue = Number(reward2nd);
+  const reward3rdValue = Number(reward3rd);
+  const endsAtDate = endsAt ? new Date(endsAt) : null;
+  const flappyBirdInvalid =
+    showFlappyBirdOptions &&
+    (!endsAtDate ||
+      Number.isNaN(endsAtDate.getTime()) ||
+      endsAtDate <= new Date() ||
+      !Number.isInteger(reward1stValue) ||
+      reward1stValue < 0 ||
+      !Number.isInteger(reward2ndValue) ||
+      reward2ndValue < 0 ||
+      !Number.isInteger(reward3rdValue) ||
+      reward3rdValue < 0);
+
   async function handleCreate(e: FormEvent) {
     e.preventDefault();
     setError(null);
     if (paidFeeInvalid) {
       setError('La mise doit être un entier positif');
+      return;
+    }
+    if (flappyBirdInvalid) {
+      setError('La date limite (dans le futur) et les 3 gains sont requis');
       return;
     }
     setSubmitting(true);
@@ -58,12 +83,24 @@ export default function Minigames() {
         gameType,
         title.trim(),
         description.trim() || undefined,
-        showPaidOption && isPaid ? paidFeeValue : undefined
+        showPaidOption && isPaid ? paidFeeValue : undefined,
+        showFlappyBirdOptions
+          ? {
+              endsAt: new Date(endsAt).toISOString(),
+              reward1st: reward1stValue,
+              reward2nd: reward2ndValue,
+              reward3rd: reward3rdValue,
+            }
+          : undefined
       );
       setTitle('');
       setDescription('');
       setIsPaid(false);
       setEntryFee('');
+      setEndsAt('');
+      setReward1st('');
+      setReward2nd('');
+      setReward3rd('');
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur inconnue');
@@ -91,6 +128,12 @@ export default function Minigames() {
                   if (nextType !== 'quiz') {
                     setIsPaid(false);
                     setEntryFee('');
+                  }
+                  if (nextType !== 'flappy_bird') {
+                    setEndsAt('');
+                    setReward1st('');
+                    setReward2nd('');
+                    setReward3rd('');
                   }
                 }}
                 className="w-full rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
@@ -142,9 +185,59 @@ export default function Minigames() {
                   )}
                 </div>
               )}
+              {showFlappyBirdOptions && (
+                <div className="space-y-2">
+                  <label className="block text-xs text-zinc-500">Date limite</label>
+                  <input
+                    type="datetime-local"
+                    required
+                    value={endsAt}
+                    onChange={(e) => setEndsAt(e.target.value)}
+                    className="w-full rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <label className="block text-xs text-zinc-500 mb-1">1er (SP)</label>
+                      <input
+                        type="number"
+                        required
+                        min={0}
+                        step={1}
+                        value={reward1st}
+                        onChange={(e) => setReward1st(e.target.value)}
+                        className="w-full rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-zinc-500 mb-1">2e (SP)</label>
+                      <input
+                        type="number"
+                        required
+                        min={0}
+                        step={1}
+                        value={reward2nd}
+                        onChange={(e) => setReward2nd(e.target.value)}
+                        className="w-full rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-zinc-500 mb-1">3e (SP)</label>
+                      <input
+                        type="number"
+                        required
+                        min={0}
+                        step={1}
+                        value={reward3rd}
+                        onChange={(e) => setReward3rd(e.target.value)}
+                        className="w-full rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
               <button
                 type="submit"
-                disabled={submitting || paidFeeInvalid}
+                disabled={submitting || paidFeeInvalid || flappyBirdInvalid}
                 className="bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-semibold px-4 py-2 rounded-md transition disabled:opacity-50"
               >
                 Créer
@@ -214,10 +307,12 @@ function MinigameCard({ session: s }: { session: MinigameSession }) {
           className={`flex-shrink-0 text-xs px-2 py-1 rounded-full ${
             s.status === 'open'
               ? 'bg-emerald-500/15 text-emerald-400'
-              : 'bg-zinc-800 text-zinc-400'
+              : s.status === 'cancelled'
+                ? 'bg-red-500/15 text-red-400'
+                : 'bg-zinc-800 text-zinc-400'
           }`}
         >
-          {s.status === 'open' ? 'Ouvert' : 'Clôturé'}
+          {s.status === 'open' ? 'Ouvert' : s.status === 'cancelled' ? 'Annulé' : 'Clôturé'}
         </span>
       </div>
       {s.description && <p className="text-sm text-zinc-500">{s.description}</p>}

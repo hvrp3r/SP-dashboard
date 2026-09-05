@@ -4,6 +4,7 @@ import * as seasonService from '../services/season.service.js';
 import * as userService from '../services/user.service.js';
 import * as notificationService from '../services/notification.service.js';
 import * as discordService from '../services/discord.service.js';
+import { buildFlappyBirdDetail } from './flappybird.controller.js';
 import {
   MINIGAME_GAME_TYPES,
   type AuthenticatedUser,
@@ -14,7 +15,7 @@ import {
   type MinigameStatus,
 } from '../types.js';
 
-const VALID_STATUSES: MinigameStatus[] = ['open', 'closed'];
+const VALID_STATUSES: MinigameStatus[] = ['open', 'closed', 'cancelled'];
 
 async function buildQuestionView(
   question: MinigameQuestionRow,
@@ -47,6 +48,10 @@ async function buildSessionDetail(sessionId: number, viewer: AuthenticatedUser) 
   const session = await minigameService.getSessionById(sessionId);
   if (!session) return null;
 
+  if (session.game_type === 'flappy_bird') {
+    return buildFlappyBirdDetail(sessionId, viewer.id, viewer.role === 'admin');
+  }
+
   const participants = await minigameService.getSessionParticipants(sessionId);
   const latestQuestion = await minigameService.getLatestQuestion(sessionId);
 
@@ -62,6 +67,10 @@ interface CreateSessionBody {
   title?: string;
   description?: string;
   entryFee?: number;
+  endsAt?: string;
+  reward1st?: number;
+  reward2nd?: number;
+  reward3rd?: number;
 }
 
 export async function createSession(
@@ -95,6 +104,36 @@ export async function createSession(
     entryFee = entryFeeRaw;
   }
 
+  let endsAt: string | null = null;
+  let reward1st: number | null = null;
+  let reward2nd: number | null = null;
+  let reward3rd: number | null = null;
+
+  if (gameType === 'flappy_bird') {
+    const endsAtRaw = req.body?.endsAt;
+    const parsedEndsAt = endsAtRaw ? new Date(endsAtRaw) : null;
+    if (!parsedEndsAt || Number.isNaN(parsedEndsAt.getTime()) || parsedEndsAt <= new Date()) {
+      res.status(400).json({ error: 'La date limite doit être une date valide dans le futur' });
+      return;
+    }
+    const { reward1st: r1, reward2nd: r2, reward3rd: r3 } = req.body ?? {};
+    if (
+      !Number.isInteger(r1) ||
+      !Number.isInteger(r2) ||
+      !Number.isInteger(r3) ||
+      (r1 as number) < 0 ||
+      (r2 as number) < 0 ||
+      (r3 as number) < 0
+    ) {
+      res.status(400).json({ error: 'Les 3 gains doivent être des entiers positifs ou nuls' });
+      return;
+    }
+    endsAt = parsedEndsAt.toISOString();
+    reward1st = r1 as number;
+    reward2nd = r2 as number;
+    reward3rd = r3 as number;
+  }
+
   const activeSeason = await seasonService.getActiveSeason();
 
   const session = await minigameService.createSession({
@@ -104,6 +143,10 @@ export async function createSession(
     description: description || null,
     entryFee,
     createdBy: req.user!.id,
+    endsAt,
+    reward1st,
+    reward2nd,
+    reward3rd,
   });
 
   const recipientIds = await userService.listAllIds(req.user!.id);

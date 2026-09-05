@@ -209,9 +209,9 @@ export interface ChallengeQuota {
   countToday: number;
 }
 
-export type MinigameStatus = 'open' | 'closed';
+export type MinigameStatus = 'open' | 'closed' | 'cancelled';
 
-export const MINIGAME_GAME_TYPES = ['quiz'] as const;
+export const MINIGAME_GAME_TYPES = ['quiz', 'flappy_bird'] as const;
 export type MinigameGameType = (typeof MINIGAME_GAME_TYPES)[number];
 
 export interface MinigameSession {
@@ -225,6 +225,31 @@ export interface MinigameSession {
   created_by: number | null;
   created_at: string;
   closed_at: string | null;
+  ends_at: string | null;
+  reward_1st: number | null;
+  reward_2nd: number | null;
+  reward_3rd: number | null;
+  cancelled_at: string | null;
+  cancelled_by: number | null;
+}
+
+export interface FlappyBirdAttempt {
+  id: number;
+  session_id: number;
+  user_id: number;
+  score: number;
+  played_at: string;
+  excluded_at: string | null;
+  excluded_by: number | null;
+  username: string;
+}
+
+export interface FlappyBirdLeaderboardEntry {
+  user_id: number;
+  username: string;
+  avatar_url: string | null;
+  best_score: number;
+  achieved_at: string;
 }
 
 export interface MinigameParticipant {
@@ -260,8 +285,13 @@ export interface MinigameQuestionView {
 }
 
 export interface MinigameSessionDetail extends MinigameSession {
-  participants: MinigameParticipant[];
-  currentQuestion: MinigameQuestionView | null;
+  // Branche quiz
+  participants?: MinigameParticipant[];
+  currentQuestion?: MinigameQuestionView | null;
+  // Branche flappy_bird
+  leaderboard?: FlappyBirdLeaderboardEntry[];
+  myBest?: FlappyBirdLeaderboardEntry | null;
+  attempts?: FlappyBirdAttempt[];
 }
 
 export type NotificationType =

@@ -16,6 +16,10 @@ interface CreateSessionInput {
   description: string | null;
   entryFee: number | null;
   createdBy: number;
+  endsAt?: string | null;
+  reward1st?: number | null;
+  reward2nd?: number | null;
+  reward3rd?: number | null;
 }
 
 export async function createSession({
@@ -25,12 +29,18 @@ export async function createSession({
   description,
   entryFee,
   createdBy,
+  endsAt = null,
+  reward1st = null,
+  reward2nd = null,
+  reward3rd = null,
 }: CreateSessionInput): Promise<MinigameSessionRow> {
   const { rows } = await pool.query<MinigameSessionRow>(
-    `INSERT INTO minigame_sessions (season_id, game_type, title, description, entry_fee, status, created_by)
-     VALUES ($1, $2, $3, $4, $5, 'open', $6)
+    `INSERT INTO minigame_sessions
+       (season_id, game_type, title, description, entry_fee, status, created_by,
+        ends_at, reward_1st, reward_2nd, reward_3rd)
+     VALUES ($1, $2, $3, $4, $5, 'open', $6, $7, $8, $9, $10)
      RETURNING *`,
-    [seasonId, gameType, title, description, entryFee, createdBy]
+    [seasonId, gameType, title, description, entryFee, createdBy, endsAt, reward1st, reward2nd, reward3rd]
   );
   return rows[0] as MinigameSessionRow;
 }
