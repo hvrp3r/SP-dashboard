@@ -473,6 +473,18 @@ export default function AdminCosmetics() {
                           {deletingId === c.id ? '…' : 'Supprimer'}
                         </button>
                       </div>
+                      <textarea
+                        placeholder="Description (optionnel)"
+                        value={draft.description}
+                        onChange={(e) =>
+                          setCatalogDrafts((prev) => ({
+                            ...prev,
+                            [c.id]: { ...draft, description: e.target.value },
+                          }))
+                        }
+                        rows={2}
+                        className="w-full rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
                       <div className="flex items-center gap-2 flex-wrap">
                         {c.slot === 'name_color' || c.slot === 'title' ? (
                           <>
