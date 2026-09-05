@@ -4,6 +4,7 @@ import * as configService from '../services/config.service.js';
 import * as seasonService from '../services/season.service.js';
 import * as userService from '../services/user.service.js';
 import * as notificationService from '../services/notification.service.js';
+import { signTicTacToeMatchToken } from '../utils/jwt.js';
 import type { ChallengeEntry, ChallengeStatus, ChallengeType, CoinSide } from '../types.js';
 
 const VALID_STATUSES: ChallengeStatus[] = [
@@ -15,7 +16,7 @@ const VALID_STATUSES: ChallengeStatus[] = [
   'cancelled',
 ];
 
-const VALID_TYPES: ChallengeType[] = ['custom', 'coin_flip'];
+const VALID_TYPES: ChallengeType[] = ['custom', 'coin_flip', 'tic_tac_toe'];
 
 /**
  * Tire un côté ('pile' ou 'face') au hasard côté serveur uniquement, et désigne
@@ -140,6 +141,12 @@ export async function createChallenge(
       .json({ error: 'Le pile ou face se joue à deux : un seul adversaire à la fois' });
     return;
   }
+  if (challengeType === 'tic_tac_toe' && uniqueOpponentIds.length !== 1) {
+    res
+      .status(400)
+      .json({ error: 'Le morpion se joue à deux : un seul adversaire à la fois' });
+    return;
+  }
 
   const challenger = await userService.findById(req.user!.id);
   if (!challenger) {
@@ -192,7 +199,9 @@ export async function createChallenge(
   const receivedMessage =
     challengeType === 'coin_flip'
       ? `${challenger.username} t'a défié à pile ou face pour ${wagerAmount} SP`
-      : `${challenger.username} t'a défié pour ${wagerAmount} SP`;
+      : challengeType === 'tic_tac_toe'
+        ? `${challenger.username} t'a défié au morpion pour ${wagerAmount} SP`
+        : `${challenger.username} t'a défié pour ${wagerAmount} SP`;
   await Promise.all(
     uniqueOpponentIds.map((id) =>
       notificationService.createNotification({
@@ -416,6 +425,41 @@ export async function reportResult(
     await notifyChallengeResolved(entry);
   }
   res.json(entry);
+}
+
+/**
+ * Émet le token vérifié par le serveur NanoForge séparé (games/tic-tac-toe/server,
+ * aucun accès à cette BDD) pour rejoindre la partie d'un défi 'tic_tac_toe' accepté
+ * — voir TicTacToeMatchTokenPayload. Le résultat de la partie revient ensuite via
+ * l'endpoint /report existant (consensus), jamais un nouvel endpoint dédié.
+ */
+export async function mintTicTacToeToken(req: Request<{ id: string }>, res: Response): Promise<void> {
+  const challengeId = parseChallengeId(req, res);
+  if (challengeId === null) return;
+
+  const challenge = await challengeService.getChallengeById(challengeId);
+  if (!challenge || challenge.type !== 'tic_tac_toe') {
+    res.status(404).json({ error: 'Défi introuvable' });
+    return;
+  }
+  if (challenge.status !== 'accepted') {
+    res.status(400).json({ error: "Ce défi n'est pas en cours" });
+    return;
+  }
+
+  const participants = await challengeService.getParticipants(challengeId);
+  const me = participants.find((p) => p.user_id === req.user!.id && p.status === 'accepted');
+  if (!me) {
+    res.status(403).json({ error: 'Tu ne participes pas à ce défi' });
+    return;
+  }
+
+  const token = signTicTacToeMatchToken({
+    challengeId,
+    userId: req.user!.id,
+    username: req.user!.username,
+  });
+  res.json({ token });
 }
 
 interface ArbitrateBody {

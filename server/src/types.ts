@@ -73,6 +73,20 @@ export interface FlappyBirdAttemptTokenPayload {
   iat: number;
 }
 
+/**
+ * Identité vérifiable côté serveur NanoForge (processus séparé, sans accès à la
+ * BDD SP) pour un défi 'tic_tac_toe' — voir POST /:id/tic-tac-toe/token et
+ * games/tic-tac-toe/server/systems/packet-handlers/join-match-packet.handler.ts.
+ * Le serveur de jeu vérifie ce JWT avec le même JWT_SECRET plutôt que d'appeler
+ * l'API : ça évite un aller-retour réseau et rend le serveur de jeu la seule
+ * source de vérité sur "qui est qui" une fois la partie commencée.
+ */
+export interface TicTacToeMatchTokenPayload {
+  challengeId: number;
+  userId: number;
+  username: string;
+}
+
 export interface AuthenticatedUser {
   id: number;
   username: string;
@@ -168,7 +182,7 @@ export type ChallengeStatus =
   | 'resolved'
   | 'cancelled';
 
-export type ChallengeType = 'custom' | 'coin_flip';
+export type ChallengeType = 'custom' | 'coin_flip' | 'tic_tac_toe';
 
 export type CoinSide = 'pile' | 'face';
 

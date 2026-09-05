@@ -62,6 +62,24 @@ services:
       - client-node-modules:/app/client/node_modules
     command: sh -c "cd /app && pnpm install --frozen-lockfile --filter sp-client && cd /app/client && pnpm dev"
 
+  # Jeu NanoForge du défi "tic_tac_toe" (voir CLAUDE.md section 4) — contrairement à
+  # server/client, pas de bind-mount ni de mode watch : @nanoforge-dev/cli (`nf`)
+  # est cassé sur Windows natif (voir games/tic-tac-toe/Dockerfile) et son mode
+  # `dev` ouvre un port de watcher aléatoire non publiable proprement. Le build est
+  # donc figé dans l'image ; un changement de code exige
+  # `docker compose up -d --build tic-tac-toe`.
+  tic-tac-toe:
+    build:
+      context: .
+      dockerfile: games/tic-tac-toe/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ./server/.env
+      - ./games/tic-tac-toe/.env
+    ports:
+      - "5175:5175"
+      - "4446:4446"
+
 volumes:
   postgres-data:
   server-node-modules:

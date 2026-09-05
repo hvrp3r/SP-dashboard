@@ -2,6 +2,9 @@ packages:
   - "client"
   - "server"
   - "games/flappy-bird"
+  - "games/tic-tac-toe"
 allowBuilds:
   bcrypt: true
   esbuild: true
+  bun: true
+  wrtc: true

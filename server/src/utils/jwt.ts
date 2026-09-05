@@ -3,6 +3,7 @@ import type {
   AccessTokenPayload,
   FlappyBirdAttemptTokenPayload,
   RefreshTokenPayload,
+  TicTacToeMatchTokenPayload,
   UserRow,
 } from '../types.js';
 
@@ -11,6 +12,10 @@ const REFRESH_TOKEN_TTL = '7d';
 // Assez large pour couvrir une session de jeu normale (plusieurs parties d'affilée),
 // sans traîner indéfiniment un token qu'on pourrait réutiliser bien plus tard.
 const FLAPPYBIRD_ATTEMPT_TOKEN_TTL = '30m';
+// Même raisonnement que FLAPPYBIRD_ATTEMPT_TOKEN_TTL : large pour couvrir une
+// partie normale (les deux joueurs se connectent au serveur de jeu avec ce
+// token une seule fois, au chargement de l'iframe).
+const TIC_TAC_TOE_MATCH_TOKEN_TTL = '30m';
 
 export function signAccessToken(user: Pick<UserRow, 'id' | 'username' | 'role'>): string {
   return jwt.sign(
@@ -67,4 +72,16 @@ export function verifyFlappyBirdAttemptToken(
   } catch {
     return null;
   }
+}
+
+/**
+ * Émis par `POST /:id/tic-tac-toe/token` (challenges.controller.ts) une fois le défi
+ * `accepted` — passé au client NanoForge via l'URL de l'iframe, vérifié par le
+ * serveur de jeu (processus séparé, voir games/tic-tac-toe/server) avec ce même
+ * secret sur le packet `joinMatch`.
+ */
+export function signTicTacToeMatchToken(payload: TicTacToeMatchTokenPayload): string {
+  return jwt.sign(payload, process.env.JWT_SECRET as string, {
+    expiresIn: TIC_TAC_TOE_MATCH_TOKEN_TTL,
+  });
 }

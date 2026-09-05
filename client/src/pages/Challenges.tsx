@@ -2,6 +2,7 @@ import { Fragment, useEffect, useRef, useState, type FormEvent } from 'react';
 import { useAuth } from '../hooks/useAuth.jsx';
 import UserNameTag from '../components/UserNameTag.jsx';
 import CoinFlip, { COIN_FLIP_DURATION_MS } from '../components/CoinFlip.jsx';
+import TicTacToeMatch from '../components/TicTacToeMatch.jsx';
 import { unlockAudio } from '../lib/sound.js';
 import * as challengesApi from '../api/challenges.js';
 import * as leaderboardApi from '../api/leaderboard.js';
@@ -141,7 +142,7 @@ export default function Challenges() {
   const quotaReached = quota !== null && quota.countToday >= quota.maxPerDay;
 
   function toggleOpponent(id: number) {
-    if (challengeType === 'coin_flip') {
+    if (challengeType === 'coin_flip' || challengeType === 'tic_tac_toe') {
       setOpponentIds((prev) => (prev.includes(id) ? [] : [id]));
       return;
     }
@@ -150,7 +151,7 @@ export default function Challenges() {
 
   function selectChallengeType(next: ChallengeType) {
     setChallengeType(next);
-    if (next === 'coin_flip' && opponentIds.length > 1) {
+    if ((next === 'coin_flip' || next === 'tic_tac_toe') && opponentIds.length > 1) {
       setOpponentIds((prev) => prev.slice(0, 1));
     }
   }
@@ -260,11 +261,29 @@ export default function Challenges() {
               >
                 🪙 Pile ou face
               </button>
+              <button
+                type="button"
+                onClick={() => selectChallengeType('tic_tac_toe')}
+                aria-pressed={challengeType === 'tic_tac_toe'}
+                className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all duration-150 ${
+                  challengeType === 'tic_tac_toe'
+                    ? 'bg-emerald-500 text-zinc-950'
+                    : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
+                }`}
+              >
+                ❌⭕ Morpion
+              </button>
             </div>
             {challengeType === 'coin_flip' && (
               <p className="w-full text-xs text-zinc-500 -mt-1">
                 Ça se joue à deux : choisis un adversaire, il choisira pile ou face en acceptant
                 (tu hérites automatiquement de l'autre côté).
+              </p>
+            )}
+            {challengeType === 'tic_tac_toe' && (
+              <p className="w-full text-xs text-zinc-500 -mt-1">
+                Ça se joue à deux : une fois le défi accepté, la partie se joue directement ici —
+                une égalité relance une manche jusqu'à ce qu'il y ait un gagnant.
               </p>
             )}
             <div className="w-full">
@@ -323,7 +342,9 @@ export default function Challenges() {
             >
               {challengeType === 'coin_flip'
                 ? 'Lancer la pièce'
-                : `Défier${opponentIds.length > 1 ? ` (${opponentIds.length})` : ''}`}
+                : challengeType === 'tic_tac_toe'
+                  ? 'Défier au morpion'
+                  : `Défier${opponentIds.length > 1 ? ` (${opponentIds.length})` : ''}`}
             </button>
           </form>
           {quotaReached && (
@@ -432,6 +453,11 @@ function ChallengeCard({
           {c.type === 'coin_flip' && (
             <span className="text-xs px-2 py-1 rounded-full bg-amber-500/15 text-amber-400">
               🪙 Pile ou face
+            </span>
+          )}
+          {c.type === 'tic_tac_toe' && (
+            <span className="text-xs px-2 py-1 rounded-full bg-sky-500/15 text-sky-400">
+              ❌⭕ Morpion
             </span>
           )}
           <span className="text-xs px-2 py-1 rounded-full bg-zinc-800 text-zinc-400">
@@ -548,7 +574,14 @@ function ChallengeCard({
         <p className="text-sm text-zinc-500">🪙 Tirage au sort en cours…</p>
       )}
 
-      {c.status === 'accepted' && c.type !== 'coin_flip' && (
+      {c.status === 'accepted' && c.type === 'tic_tac_toe' && (
+        <TicTacToeMatch
+          challengeId={c.id}
+          onGameOver={(winnerId) => runAction(c.id, () => challengesApi.reportResult(c.id, winnerId))}
+        />
+      )}
+
+      {c.status === 'accepted' && c.type === 'custom' && (
         <div>
           {disputed && (
             <p className="text-sm text-red-400 mb-2">

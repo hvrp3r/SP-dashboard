@@ -1,0 +1,28 @@
+{
+  "name": "tic-tac-toe",
+  "language": "ts",
+  "initFunctions": false,
+  "client": {
+    "enable": true,
+    "build": {
+      "entryFile": "client/main.ts",
+      "outDir": ".nanoforge/client"
+    },
+    "runtime": {
+      "dir": ".nanoforge/client"
+    }
+  },
+  "server": {
+    "enable": true,
+    "build": {
+      "entryFile": "server/main.ts",
+      "outDir": ".nanoforge/server"
+    },
+    "runtime": {
+      "dir": ".nanoforge/server"
+    },
+    "ports": {
+      "tcp": 4446
+    }
+  }
+}

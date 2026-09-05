@@ -400,6 +400,11 @@ Un défi peut réunir **plusieurs adversaires au sein d'un même défi** (un seu
 #### Types de défi (`challenges.type`, migration 039)
 - **`custom`** (défaut, comportement historique décrit ci-dessous) : le résultat est déclaré manuellement par les participants (consensus) ou arbitré par le MSP.
 - **`coin_flip`** (pile ou face) : se joue exclusivement à **deux** (un seul adversaire invité, pas de N joueurs — un vrai pile ou face n'a que deux faces). Dès que l'adversaire accepte, le défi ne passe jamais visiblement par l'état `accepted` : le serveur tire immédiatement un gagnant au hasard (`Math.random()`, jamais côté client — même principe que le tirage pondéré du gambling) et résout le défi dans la même requête, en réutilisant `resolveChallenge` (agnostique du type). Aucune déclaration manuelle possible pour ce type — le contrôleur ne propose pas l'UI de report. L'expiration à 24h ne peut jamais faire basculer un `coin_flip` vers `accepted` (avec un seul adversaire, l'issue est soit une réponse explicite soit un refus/expiration vers `declined`), donc le seul point de déclenchement du tirage est `acceptChallenge`.
+- **`tic_tac_toe`** (morpion) : comme `coin_flip`, exclusivement à **deux**. Contrairement à `coin_flip`, il n'y a rien à tirer au sort : le défi passe `accepted` normalement, puis les deux joueurs jouent réellement la partie dans un mini-jeu NanoForge embarqué (voir plus bas) directement sur la carte du défi. **Aucun nouvel endpoint de résolution** — la victoire authentifiée par le serveur de jeu est simplement postée par chaque client via l'endpoint de consensus existant (`POST /:id/report`, la même déclaration manuelle que pour `custom`), donc la partie se résout dès que les deux joueurs (mêmes déclarations, calculées côté serveur de jeu, jamais saisies à la main) sont d'accord — ce qui est automatique ici puisqu'ils reçoivent tous les deux le même paquet autoritaire. Une égalité ne résout jamais le défi (un pari ne se partage pas) : le serveur de jeu relance une manche dans la même partie jusqu'à ce qu'il y ait un gagnant, en alternant qui commence.
+  - **Architecture NanoForge "traditionnelle" (client + serveur), contrairement à Flappy Bird** (mini-jeu, client seul, `vite build` sans passer par `@nanoforge-dev/cli`) : `games/tic-tac-toe` est un vrai projet NanoForge avec un serveur dédié (`@nanoforge-dev/ecs-server` + `@nanoforge-dev/network-server`), buildé/lancé via le vrai CLI `nf` (`nf build`/`nf start`), modelé sur les exemples officiels (`pong-network`, `raid-survival`) — logique de plateau **entièrement autoritaire côté serveur** (le client n'envoie que l'intention `placeMark`, jamais un coup déjà validé), tour par tour appliqué au réseau plutôt qu'en hotseat local comme l'exemple `tic-tac-toe` de base.
+  - **Pont d'identité** : ce serveur de jeu est un processus à part, sans accès à la BDD Points Sourires. `POST /:id/tic-tac-toe/token` (voir `challenges.controller.ts#mintTicTacToeToken`) émet un JWT court (`TicTacToeMatchTokenPayload` : `challengeId`, `userId`, `username`, signé avec le même `JWT_SECRET`) que le client NanoForge envoie dans son paquet `joinMatch` ; le serveur de jeu le vérifie lui-même (même secret, aucun aller-retour réseau vers l'API) et n'accepte que les deux comptes désignés par le token pour ce `challengeId` — sans ça, un client pourrait usurper l'adversaire ou remplir les deux sièges pour forcer une victoire.
+  - **Intégration React** : `TicTacToeMatch.tsx` mint le token et délègue l'affichage à `TicTacToeEmbed.tsx` (iframe + pont `postMessage`, même idée que `FlappyBirdEmbed.tsx` mais **pas même-origine** — le service de jeu a son propre port, voir `VITE_TIC_TAC_TOE_URL` — donc l'origine est vérifiée contre celle configurée, pas `window.location.origin`, et l'origine du parent est transmise dans l'URL de l'iframe pour que le jeu sache où répondre).
+  - **`@nanoforge-dev/cli` (`nf`) a un vrai bug de chemin sur Windows natif** (chemin `C:\C:\...` doublé dans `new`/`build`, confirmé en le lançant en dehors de Docker) — il ne doit **jamais** être invoqué directement sur la machine d'un contributeur Windows, seulement à l'intérieur du conteneur Linux dédié (`games/tic-tac-toe/Dockerfile`), qui build l'image une fois (pas de bind-mount/watch comme `server`/`client` — `nf dev` ouvre un port de watcher choisi au hasard à chaque lancement, impossible à publier proprement via Docker Compose) : un changement de code exige `docker compose up -d --build tic-tac-toe`.
 
 #### Flux :
 1. Joueur A crée un défi vers un ou plusieurs adversaires, avec une mise (identique pour tout le monde) et une description libre optionnelle. Un défi = une ligne `challenges` + une ligne `challenge_participants` par personne (challenger inclus, automatiquement `accepted` — il n'a pas besoin d'accepter son propre défi).
@@ -655,6 +660,7 @@ Ajoutées en cours de projet, à la demande de l'utilisateur, non prévues dans 
 - Abonnement mensuel via Ko-fi (financement des serveurs) avec caisse gambling réservée aux abonnés (voir section 8)
 - Page Suggestions : proposition de features/bugs par les joueurs, vote façon Reddit, commentaires, clôture/suppression par le MSP (voir section 9)
 - Défis "Pile ou face" (`challenges.type = 'coin_flip'`) : variante 1v1 des défis SP Wager où le gagnant est tiré au sort par le serveur dès que l'adversaire accepte, sans déclaration manuelle ni arbitrage nécessaire (voir section 4)
+- Défis "Morpion" (`challenges.type = 'tic_tac_toe'`) : variante 1v1 jouée en direct dans un mini-jeu NanoForge réseauté (client + serveur autoritatif, `games/tic-tac-toe`, premier jeu du repo à utiliser le vrai `@nanoforge-dev/cli` et un serveur dédié plutôt qu'un simple bundle client) — service Docker séparé (`docker-compose.yml`, ports 5175/4446), pont d'identité par JWT court entre l'API et ce serveur de jeu (voir section 4)
 
 ---
 
@@ -696,11 +702,25 @@ NODE_ENV=development
 # Requis pour activer l'abonnement Ko-fi (section 8) — "Verification Token" sur
 # https://ko-fi.com/manage/webhooks. Vide = webhook désactivé (503).
 KOFI_VERIFICATION_TOKEN=
+# JWT_SECRET (déjà défini plus haut) est aussi lu par le service Docker tic-tac-toe
+# (games/tic-tac-toe/.env, voir docker-compose.yml) pour vérifier lui-même le token
+# de partie émis par POST /api/challenges/:id/tic-tac-toe/token — section 4.
 
 # client/.env
 VITE_API_URL=http://localhost:3001
 # URL de la page Ko-fi du MSP (ex: https://ko-fi.com/tonpseudo), affichée sur le profil.
 VITE_KOFI_URL=
+# Origine du service NanoForge du défi "morpion" (section 4) — PAS même-origine
+# avec le client SP, contrairement à Flappy Bird.
+VITE_TIC_TAC_TOE_URL=http://localhost:5175
+
+# games/tic-tac-toe/.env — voir section 4 pour le détail de ces clés. Adresse en IP
+# littérale (pas "localhost") : le validateur de @nanoforge-dev/config rejette un
+# nom d'hôte sans TLD.
+NANOFORGE_SERVER_LISTENING_TCP_PORT=4446
+NANOFORGE_CLIENT_SERVER_TCP_PORT=4446
+NANOFORGE_CLIENT_SERVER_ADDRESS=127.0.0.1
+NANOFORGE_CLIENT_WSS=false
 ```
 
 ---
@@ -738,3 +758,6 @@ VITE_KOFI_URL=
 | Le MSP peut-il supprimer une suggestion (contrairement aux autres ressources de l'app) ? | Oui, suppression définitive (cascade sur votes/commentaires) — décision explicite de l'utilisateur. Contrairement aux transactions/comptes/défis, aucun enjeu d'historique économique ou anti-triche à préserver ici |
 | Le vote sur une suggestion est-il façon Reddit (up/down) ? | Oui — up et down, un vote par joueur par suggestion, en bascule ; le score peut être négatif. Décision explicite de l'utilisateur (demande initiale d'upvote seul, étendue au downvote) |
 | Un défi "pile ou face" peut-il avoir plusieurs adversaires comme un défi classique ? | Non — restreint à un seul adversaire (2 participants), un pile ou face n'a que deux faces. Résolution automatique par le serveur dès acceptation, pas de déclaration manuelle ni d'étape "accepted" visible |
+| Comment le défi "morpion" se résout-il sans déclaration manuelle par les joueurs ? | Il réutilise l'endpoint de consensus existant (`POST /:id/report`) — chaque client du mini-jeu NanoForge le poste automatiquement avec le gagnant calculé côté serveur de jeu (autoritatif), donc les deux déclarations concordent toujours. Pas de nouvel endpoint de résolution |
+| Une égalité au morpion partage-t-elle la mise ? | Non — décision explicite : un pari ne se "partage" pas. Le serveur de jeu relance une manche dans la même partie (plateau vidé, on alterne qui commence) jusqu'à un vainqueur ; le défi SP reste `accepted` tant qu'aucune manche n'est décisive |
+| Pourquoi le morpion a-t-il un vrai serveur NanoForge alors que Flappy Bird n'en a pas ? | Flappy Bird est solo (mini-jeu, `game_type`), le morpion est un défi 1v1 : la logique de plateau doit être arbitrée quelque part pour empêcher la triche, et ça ne peut pas être un simple rapport de score comme Flappy Bird. C'est aussi le seul jeu du repo bâti avec le vrai `@nanoforge-dev/cli` (`nf build`/`nf start`) plutôt qu'un simple `vite build` |

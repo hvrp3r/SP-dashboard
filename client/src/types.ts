@@ -173,7 +173,7 @@ export type ChallengeStatus =
   | 'resolved'
   | 'cancelled';
 
-export const CHALLENGE_TYPES = ['custom', 'coin_flip'] as const;
+export const CHALLENGE_TYPES = ['custom', 'coin_flip', 'tic_tac_toe'] as const;
 export type ChallengeType = (typeof CHALLENGE_TYPES)[number];
 
 export type CoinSide = 'pile' | 'face';

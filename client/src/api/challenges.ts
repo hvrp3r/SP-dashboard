@@ -24,6 +24,10 @@ export const declineChallenge = (id: number) =>
 export const reportResult = (id: number, winnerId: number) =>
   apiClient.post<Challenge>(`/api/challenges/${id}/report`, { winnerId });
 
+/** Token vérifié par le serveur NanoForge séparé (games/tic-tac-toe) pour rejoindre la partie. */
+export const mintTicTacToeToken = (id: number) =>
+  apiClient.post<{ token: string }>(`/api/challenges/${id}/tic-tac-toe/token`);
+
 export const arbitrateChallenge = (id: number, winnerId: number, note?: string) =>
   apiClient.post<Challenge>(`/api/challenges/${id}/arbitrate`, { winnerId, note });
 
