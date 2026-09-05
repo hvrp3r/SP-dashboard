@@ -302,6 +302,11 @@ function MinigameCard({ session: s }: { session: MinigameSession }) {
               {s.entry_fee} SP
             </span>
           )}
+          {s.game_type === 'flappy_bird' && s.reward_1st ? (
+            <span className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-yellow-500/15 text-yellow-400 font-medium uppercase tracking-wide">
+              🥇 {s.reward_1st} SP
+            </span>
+          ) : null}
         </div>
         <span
           className={`flex-shrink-0 text-xs px-2 py-1 rounded-full ${

@@ -3,6 +3,7 @@ import { useConfirm } from '../hooks/useConfirm.jsx';
 import * as flappybirdApi from '../api/flappybird.js';
 import RankBadge from './RankBadge.jsx';
 import Avatar from './Avatar.jsx';
+import UserNameTag from './UserNameTag.jsx';
 import FlappyBirdEmbed from './FlappyBirdEmbed.jsx';
 import type { MinigameSessionDetail } from '../types.js';
 
@@ -158,6 +159,24 @@ export default function FlappyBirdSessionDetail({
         </p>
       )}
 
+      {(session.reward_1st || session.reward_2nd || session.reward_3rd) && (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl shadow-md p-4 mb-6">
+          <h2 className="text-xs font-semibold text-zinc-400 uppercase mb-3">Gains à la clé</h2>
+          <div className="flex flex-wrap gap-4">
+            {[
+              { rank: 1, amount: session.reward_1st },
+              { rank: 2, amount: session.reward_2nd },
+              { rank: 3, amount: session.reward_3rd },
+            ].map(({ rank, amount }) => (
+              <div key={rank} className="flex items-center gap-2">
+                <RankBadge rank={rank} size="sm" />
+                <span className="font-bold text-emerald-400">{amount ?? 0} SP</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {canPlay ? (
         <div className="mb-6">
           <FlappyBirdEmbed onGameOver={handleGameOver} />
@@ -202,8 +221,20 @@ export default function FlappyBirdSessionDetail({
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
-                        <Avatar username={entry.username} avatarUrl={entry.avatar_url} size={28} />
-                        <span className="font-medium text-zinc-100">{entry.username}</span>
+                        <Avatar
+                          username={entry.username}
+                          avatarUrl={entry.avatar_url}
+                          size={28}
+                          frameUrl={
+                            entry.equipped_cosmetics.find((c) => c.slot === 'avatar_frame')
+                              ?.image_url ?? null
+                          }
+                        />
+                        <UserNameTag
+                          username={entry.username}
+                          equipped={entry.equipped_cosmetics}
+                          className="text-zinc-100"
+                        />
                       </div>
                     </td>
                     <td className="px-4 py-3 text-right font-bold text-emerald-400 whitespace-nowrap">

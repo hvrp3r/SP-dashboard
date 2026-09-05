@@ -1,5 +1,6 @@
 import { pool } from '../db/pool.js';
 import * as spService from './sp.service.js';
+import * as cosmeticsService from './cosmetics.service.js';
 import type {
   FlappyBirdAttemptEntry,
   FlappyBirdAttemptRow,
@@ -29,7 +30,7 @@ export async function submitScore(
  * reste de l'app (is_leaderboard_hidden / disabled_at).
  */
 export async function getLeaderboard(sessionId: number): Promise<FlappyBirdLeaderboardEntry[]> {
-  const { rows } = await pool.query<FlappyBirdLeaderboardEntry>(
+  const { rows } = await pool.query<Omit<FlappyBirdLeaderboardEntry, 'equipped_cosmetics'>>(
     `SELECT DISTINCT ON (a.user_id)
        a.user_id, u.username, u.avatar_url, a.score AS best_score, a.played_at AS achieved_at
      FROM flappybird_attempts a
@@ -41,7 +42,14 @@ export async function getLeaderboard(sessionId: number): Promise<FlappyBirdLeade
      ORDER BY a.user_id, a.score DESC, a.played_at ASC`,
     [sessionId]
   );
-  return rows.sort(
+
+  const equippedByUser = await cosmeticsService.getEquippedForUsers(rows.map((r) => r.user_id));
+  const entries = rows.map((row) => ({
+    ...row,
+    equipped_cosmetics: equippedByUser.get(row.user_id) ?? [],
+  }));
+
+  return entries.sort(
     (a, b) =>
       b.best_score - a.best_score ||
       new Date(a.achieved_at).getTime() - new Date(b.achieved_at).getTime()

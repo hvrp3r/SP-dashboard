@@ -250,6 +250,7 @@ export interface FlappyBirdLeaderboardEntry {
   avatar_url: string | null;
   best_score: number;
   achieved_at: string;
+  equipped_cosmetics: EquippedCosmetic[];
 }
 
 export interface MinigameParticipant {
