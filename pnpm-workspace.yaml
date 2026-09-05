@@ -1,6 +1,7 @@
 packages:
   - "client"
   - "server"
+  - "games/flappy-bird"
 allowBuilds:
   bcrypt: true
   esbuild: true

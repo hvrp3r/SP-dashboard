@@ -48,6 +48,40 @@ importers:
         specifier: ^5.3.4
         version: 5.4.21(@types/node@20.19.43)
 
+  games/flappy-bird:
+    dependencies:
+      '@nanoforge-dev/asset-manager':
+        specifier: ^1
+        version: 1.4.2
+      '@nanoforge-dev/common':
+        specifier: ^1
+        version: 1.4.2
+      '@nanoforge-dev/core':
+        specifier: ^1
+        version: 1.4.2
+      '@nanoforge-dev/ecs-client':
+        specifier: ^1
+        version: 1.4.2
+      '@nanoforge-dev/ecs-lib':
+        specifier: ^1
+        version: 1.4.2
+      '@nanoforge-dev/graphics-2d':
+        specifier: ^1
+        version: 1.4.2
+      '@nanoforge-dev/input':
+        specifier: ^1
+        version: 1.4.2
+      konva:
+        specifier: ^10
+        version: 10.3.3
+    devDependencies:
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vite:
+        specifier: ^5.4.0
+        version: 5.4.21(@types/node@20.19.43)
+
   server:
     dependencies:
       bcrypt:
@@ -509,12 +543,39 @@ packages:
     resolution: {integrity: sha512-Yhlar6v9WQgUp/He7BdgzOz8lqMQ8sU+jkCq7Wx8Myc5YFJLbEe7lgui/V7G1qB1DJykHSGwreceSaD60Y0PUQ==}
     hasBin: true
 
+  '@nanoforge-dev/asset-manager@1.4.2':
+    resolution: {integrity: sha512-CtUoNc5tc2QVdEs6nDER2WutBArS72RFod+cM+fwwrq+1btNeI7ed4sjbxqCBJLASqvZ7HQ3av6P8FGpfjRI6g==}
+    engines: {node: '25'}
+
+  '@nanoforge-dev/common@1.4.2':
+    resolution: {integrity: sha512-Km7eTwmpQ0XTx5o15Cu05ojRCL8px/DANVc0eYBLzKnG2/LamKs5P/e3HG+woULPz0/fc+ah/RPKyQwFtx5lBw==}
+    engines: {node: '25'}
+
+  '@nanoforge-dev/core@1.4.2':
+    resolution: {integrity: sha512-Ja7zNj78f/gMipBR7n+4u7Xb/UOZZzPMt55jb/mEj7g+0Qloq66cPwT1lHhx+8owi+lOncJ1bjIu2QUzThHvqg==}
+    engines: {node: '25'}
+
+  '@nanoforge-dev/ecs-client@1.4.2':
+    resolution: {integrity: sha512-toeySsQfH0VMsA1UKUrhRWACYj7g7ikru8SqMf5e4LdacQAOkIenMRDyuyo52OVq1fJs1e47jM4XBkX6wGghQA==}
+    engines: {node: '25'}
+
+  '@nanoforge-dev/ecs-lib@1.4.2':
+    resolution: {integrity: sha512-FM7lhHvBWvsaZs03biagHAu3P2Hlw1hoEye2b3xjj3EeVbRE8r8CNFcYtCoSbM2cVFKZBr3Z0N0UJBXLnizkgw==}
+    engines: {node: '25'}
+
+  '@nanoforge-dev/graphics-2d@1.4.2':
+    resolution: {integrity: sha512-wH275hs9nl48HVI8GN5UjUIupylJ9Q9dJAxA8MCxKvgkEUcKwtC2gYXIjxaf5b2CoqG1O+qipnHzpnrAQCqrgA==}
+    engines: {node: '25'}
+
+  '@nanoforge-dev/input@1.4.2':
+    resolution: {integrity: sha512-U38Eo1anJe9Fehzq4iQ/xIpDWnoWxXVLkAZ5CPf/k4iKLNm0scUg5LHZ8TswGEoaBtJmwFeiIGWU6OHfYYHcJw==}
+    engines: {node: '25'}
+
   '@napi-rs/lzma-linux-x64-gnu@1.5.1':
     resolution: {integrity: sha512-oTXEIha4SsuXdTA4Iyskj0kpdx2yVXdhd75c2v3xGrHFfVMsbhTPZU/nMPL4sWKo4pBHm3aucLaqGlF696dTyQ==}
     engines: {node: ^22.20 || ^24.12 || >=25}
     cpu: [x64]
     os: [linux]
-    libc: [glibc]
 
   '@nodelib/fs.scandir@2.1.5':
     resolution: {integrity: sha512-vq24Bq3ym5HEQm2NKCr3yXDwjc7vTsEThRDnkp2DK9p1uqLR+DHurm/NOTo0KG7HYHU7eppKZj3MyqYuMBf62g==}
@@ -569,79 +630,66 @@ packages:
     resolution: {integrity: sha512-YDUNvVM85TI3g/1OpnqKP1h4NeW/j64DfWMf+G3M809xNk1bJSnpFp4sh83NpmVE5DXnkh8ULor4LTVZKoYLHw==}
     cpu: [arm]
     os: [linux]
-    libc: [glibc]
 
   '@rollup/rollup-linux-arm-musleabihf@4.63.1':
     resolution: {integrity: sha512-7Mcn71p9ZuQFAj+h+dhQXy/yeLePRS2yKRnmW1DijA9thKO5qap0GNOIQK4yQ6iP3SU0Mrb/yWo8h8vgRba8lw==}
     cpu: [arm]
     os: [linux]
-    libc: [musl]
 
   '@rollup/rollup-linux-arm64-gnu@4.63.1':
     resolution: {integrity: sha512-4YiLQTX6U4CSl0L9cluep9A9W6UmTfqBDc2/CH6wlu54pl4E7Jn3cOD8oxzvBDEGk/JMKgJ47C8g+radF7mwvg==}
     cpu: [arm64]
     os: [linux]
-    libc: [glibc]
 
   '@rollup/rollup-linux-arm64-musl@4.63.1':
     resolution: {integrity: sha512-2ra8F7w8OquwZN9z2/fKFnli69wa8PLwaVzRMIPGb13ByMJwC28Fbp8YcVGoUhlYMTt7j5j9bNgpysrN2UM+vw==}
     cpu: [arm64]
     os: [linux]
-    libc: [musl]
 
   '@rollup/rollup-linux-loong64-gnu@4.63.1':
     resolution: {integrity: sha512-Sy20ncyhjmBP0Ml+UvQbimjlk6VFgjW5uNP+qqwHB00mTE8Bl2C1TuHTlRwK2YoXeZbee5lP2XevBWVkAQAtSQ==}
     cpu: [loong64]
     os: [linux]
-    libc: [glibc]
 
   '@rollup/rollup-linux-loong64-musl@4.63.1':
     resolution: {integrity: sha512-noITLp8oNjYliPnGWmLyelIHwULGqbHloQHGw1rtxbWhTuWooRpnZarZQJ1y9EUC4szuCusCc+HEpUtxpIwYvA==}
     cpu: [loong64]
     os: [linux]
-    libc: [musl]
 
   '@rollup/rollup-linux-ppc64-gnu@4.63.1':
     resolution: {integrity: sha512-hlxxXd+F1mWiAcaFR7Sv9ZQT6m6UfI8+Vy/kFJzztq2pDMU/0wZ9sish0iszNZvsQDo8Gc0i5yuFEOz5dDf6fA==}
     cpu: [ppc64]
     os: [linux]
-    libc: [glibc]
 
   '@rollup/rollup-linux-ppc64-musl@4.63.1':
     resolution: {integrity: sha512-EF7OpqQTQ/BvGqLzUi4rEHuagCV9MugAUXSHemwPW5vxZ75RR+jxO/2j95Ph2dalMpFHSVECjRoioHZgA9zOYA==}
     cpu: [ppc64]
     os: [linux]
-    libc: [musl]
 
   '@rollup/rollup-linux-riscv64-gnu@4.63.1':
     resolution: {integrity: sha512-wQO3JesW9PRkwlabQ27y7sPfVOOTLRG73I4F2UYHG5PXun3J9U3y+b7ezVKSYbsvSKGQ1k1cq8Qlun4C9kLt3w==}
     cpu: [riscv64]
     os: [linux]
-    libc: [glibc]
 
   '@rollup/rollup-linux-riscv64-musl@4.63.1':
     resolution: {integrity: sha512-ouAGwhO6wHRXdnOVCOsB0tRFkA7nhNB2Nwax6oECXN0YiN8EYUTBAOudADOB1PI+yDL61TeNx/u7MVCzksNbkQ==}
     cpu: [riscv64]
     os: [linux]
-    libc: [musl]
 
   '@rollup/rollup-linux-s390x-gnu@4.63.1':
     resolution: {integrity: sha512-q2R38Sn+1J8RxhfJ+T54wSWmyKXWec+9jgDfqO2AtArEqHO5R2aeayp5H5OYLr5UYDVGsVaZPEFUooMhYCdz5A==}
     cpu: [s390x]
     os: [linux]
-    libc: [glibc]
 
   '@rollup/rollup-linux-x64-gnu@4.63.1':
     resolution: {integrity: sha512-gfI5T24WLLuFfSKw7Go/zDXjAAV0fny0swTaDv+WjK7vqcw4cRhFfdsyKL1n+ukI+ooBxn3bVQnyrn06WpI50w==}
     cpu: [x64]
     os: [linux]
-    libc: [glibc]
 
   '@rollup/rollup-linux-x64-musl@4.63.1':
     resolution: {integrity: sha512-4h6XqthmB4Hspji84wvgk+ElodTsGj+dbZqHJHHtKxj4mYq0ANSEEPX9ys3moJueqsRjwpaJYH7874Itwnj2ow==}
     cpu: [x64]
     os: [linux]
-    libc: [musl]
 
   '@rollup/rollup-openbsd-x64@4.63.1':
     resolution: {integrity: sha512-dlfCOa87o1VAYegLQ9EKilx2JCeRofiyPGhTCmqnuXZ6bMPiycO1rq1+sKoulAp7pGLIsTIw+1x5R+zgh5LhhA==}
@@ -757,6 +805,9 @@ packages:
 
   '@types/serve-static@1.15.10':
     resolution: {integrity: sha512-tRs1dB+g8Itk72rlSI2ZrW6vZg0YrLI81iQSTkMmOqnqCaNr/8Ek4VwWcN5vZgCYWbg/JJSGBlUaYGAOP73qBw==}
+
+  '@types/validator@13.15.10':
+    resolution: {integrity: sha512-T8L6i7wCuyoK8A/ZeLYt1+q0ty3Zb9+qbSSvrIVitzT3YjZqkTZ40IbRsPanlB4h1QB3JVL1SYCdR6ngtFYcuA==}
 
   '@vitejs/plugin-react@4.7.0':
     resolution: {integrity: sha512-gUu9hwfWvvEDBBmgtAowQCojwZmJ5mcLn3aufeCsitijs3+f2NsrPtlAWIR6OPiqljl96GVCUbLe0HyqIpVaoA==}
@@ -878,6 +929,12 @@ packages:
   chownr@2.0.0:
     resolution: {integrity: sha512-bIomtDF5KGpdogkLd9VspvFzk9KfpyyGlS8YFVZl7TGPBHL5snIOnxeshwVgPteQ9b4Eydl+pVbIyE1DcvCWgQ==}
     engines: {node: '>=10'}
+
+  class-transformer@0.5.1:
+    resolution: {integrity: sha512-SQa1Ws6hUbfC98vKGxZH3KFY0Y1lm5Zm0SY8XX9zbK7FJCyVEac3ATW0RIpwzW+oOfmHE5PMPufDG9hCfoEOMw==}
+
+  class-validator@0.14.4:
+    resolution: {integrity: sha512-AwNusCCam51q703dW82x95tOqQp6oC9HNUl724KxJJOfnKscI8dOloXFgyez7LbTTKWuRBA37FScqVbJEoq8Yw==}
 
   color-support@1.1.3:
     resolution: {integrity: sha512-qiBjkpbMLO/HL68y+lh4q0/O1MZFj2RX6X/KmMa3+gJD3z+WwI1ZzDHysvqHGS3mP6mznPckpXmw1nI9cJjyRg==}
@@ -1200,6 +1257,20 @@ packages:
 
   jws@4.0.1:
     resolution: {integrity: sha512-EKI/M/yqPncGUUh44xz0PxSidXFr/+r0pA70+gIYhjv+et7yxM+s29Y+VGDkovRofQem0fs7Uvf4+YmAdyRduA==}
+
+  konva@10.3.3:
+    resolution: {integrity: sha512-j3Rrn504bYFwJ0zV0ZbSOQRsM9KMBLOpEq6xZuyIjbaKeFbBXwgiM5SA4IDq4nwM1l49GVKs66Mo+sl7+4G7PQ==}
+    peerDependencies:
+      canvas: ^3.0.0
+      skia-canvas: ^3.0.0
+    peerDependenciesMeta:
+      canvas:
+        optional: true
+      skia-canvas:
+        optional: true
+
+  libphonenumber-js@1.13.12:
+    resolution: {integrity: sha512-uLVeV1c9OTk6qkdqnj+mpMD+ZdnZ0szVyWu58HwMmpwkHA1gCEkyjd3veZQXDnuw9KEwSRjcc9B1pS9XKIN1fA==}
 
   lilconfig@3.1.3:
     resolution: {integrity: sha512-/vlFKAoH5Cgt3Ie+JLhRbwOsCQePABiU3tJ1egGvyQ+33R/vcwM2Zl2QR/LzjsBeItPt3oSVXapn+m4nQDvpzw==}
@@ -1729,6 +1800,10 @@ packages:
     resolution: {integrity: sha512-pMZTvIkT1d+TFGvDOqodOclx0QWkkgi6Tdoa8gC8ffGAAqz9pzPTZWAybbsHHoED/ztMtkv/VoYTYyShUn81hA==}
     engines: {node: '>= 0.4.0'}
 
+  validator@13.15.35:
+    resolution: {integrity: sha512-TQ5pAGhd5whStmqWvYF4OjQROlmv9SMFVt37qoCBdqRffuuklWYQlCNnEs2ZaIBD1kZRNnikiZOS1eqgkar0iw==}
+    engines: {node: '>= 0.10'}
+
   vary@1.1.2:
     resolution: {integrity: sha512-BNGbWLfd0eUPabhkXUVm0j8uuvREyTh5ovRa/dyow/BqAbZJyC+5fU+IzQOzmAKzYqYRAISoRhdQr3eIZ/PXqg==}
     engines: {node: '>= 0.8'}
@@ -2083,6 +2158,41 @@ snapshots:
       - encoding
       - supports-color
 
+  '@nanoforge-dev/asset-manager@1.4.2':
+    dependencies:
+      '@nanoforge-dev/common': 1.4.2
+
+  '@nanoforge-dev/common@1.4.2': {}
+
+  '@nanoforge-dev/core@1.4.2':
+    dependencies:
+      '@nanoforge-dev/asset-manager': 1.4.2
+      '@nanoforge-dev/common': 1.4.2
+      '@nanoforge-dev/input': 1.4.2
+      class-transformer: 0.5.1
+      class-validator: 0.14.4
+
+  '@nanoforge-dev/ecs-client@1.4.2':
+    dependencies:
+      '@nanoforge-dev/common': 1.4.2
+      '@nanoforge-dev/ecs-lib': 1.4.2
+
+  '@nanoforge-dev/ecs-lib@1.4.2':
+    dependencies:
+      '@nanoforge-dev/common': 1.4.2
+
+  '@nanoforge-dev/graphics-2d@1.4.2':
+    dependencies:
+      '@nanoforge-dev/common': 1.4.2
+      konva: 10.3.3
+    transitivePeerDependencies:
+      - canvas
+      - skia-canvas
+
+  '@nanoforge-dev/input@1.4.2':
+    dependencies:
+      '@nanoforge-dev/common': 1.4.2
+
   '@napi-rs/lzma-linux-x64-gnu@1.5.1':
     optional: true
 
@@ -2290,6 +2400,8 @@ snapshots:
       '@types/node': 20.19.43
       '@types/send': 0.17.6
 
+  '@types/validator@13.15.10': {}
+
   '@vitejs/plugin-react@4.7.0(vite@5.4.21(@types/node@20.19.43))':
     dependencies:
       '@babel/core': 7.29.7
@@ -2431,6 +2543,14 @@ snapshots:
       fsevents: 2.3.3
 
   chownr@2.0.0: {}
+
+  class-transformer@0.5.1: {}
+
+  class-validator@0.14.4:
+    dependencies:
+      '@types/validator': 13.15.10
+      libphonenumber-js: 1.13.12
+      validator: 13.15.35
 
   color-support@1.1.3: {}
 
@@ -2805,6 +2925,10 @@ snapshots:
     dependencies:
       jwa: 2.0.1
       safe-buffer: 5.2.1
+
+  konva@10.3.3: {}
+
+  libphonenumber-js@1.13.12: {}
 
   lilconfig@3.1.3: {}
 
@@ -3332,6 +3456,8 @@ snapshots:
   util-deprecate@1.0.2: {}
 
   utils-merge@1.0.1: {}
+
+  validator@13.15.35: {}
 
   vary@1.1.2: {}
 

@@ -188,9 +188,9 @@ export interface ChallengeEntry extends ChallengeRow {
   participants: ChallengeParticipantEntry[];
 }
 
-export type MinigameStatus = 'open' | 'closed';
+export type MinigameStatus = 'open' | 'closed' | 'cancelled';
 
-export const MINIGAME_GAME_TYPES = ['quiz'] as const;
+export const MINIGAME_GAME_TYPES = ['quiz', 'flappy_bird'] as const;
 export type MinigameGameType = (typeof MINIGAME_GAME_TYPES)[number];
 
 export interface MinigameSessionRow {
@@ -204,6 +204,12 @@ export interface MinigameSessionRow {
   created_by: number | null;
   created_at: string;
   closed_at: string | null;
+  ends_at: string | null;
+  reward_1st: number | null;
+  reward_2nd: number | null;
+  reward_3rd: number | null;
+  cancelled_at: string | null;
+  cancelled_by: number | null;
 }
 
 export interface MinigameParticipantRow {
@@ -218,6 +224,29 @@ export interface MinigameParticipantRow {
 
 export interface MinigameParticipantEntry extends MinigameParticipantRow {
   username: string;
+}
+
+export interface FlappyBirdAttemptRow {
+  id: number;
+  session_id: number;
+  user_id: number;
+  score: number;
+  played_at: string;
+  excluded_at: string | null;
+  excluded_by: number | null;
+}
+
+export interface FlappyBirdAttemptEntry extends FlappyBirdAttemptRow {
+  username: string;
+}
+
+export interface FlappyBirdLeaderboardEntry {
+  user_id: number;
+  username: string;
+  avatar_url: string | null;
+  best_score: number;
+  /** played_at de la tentative qui a établi best_score — sert au départage (premier arrivé). */
+  achieved_at: string;
 }
 
 export type MinigameQuestionStatus = 'active' | 'closed';
@@ -267,7 +296,8 @@ export type NotificationType =
   | 'auction_won'
   | 'auction_sold'
   | 'auction_expired'
-  | 'auction_cancelled';
+  | 'auction_cancelled'
+  | 'minigame_cancelled';
 
 export type CosmeticSlot = 'avatar_frame' | 'banner' | 'name_color' | 'title' | 'name_font';
 export type CosmeticRarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';

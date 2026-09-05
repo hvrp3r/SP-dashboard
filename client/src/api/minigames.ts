@@ -15,12 +15,27 @@ export const getSession = (id: number) =>
 export const listQuestions = (sessionId: number) =>
   apiClient.get<MinigameQuestionView[]>(`/api/minigames/${sessionId}/questions`);
 
+interface CreateFlappyBirdOptions {
+  endsAt: string;
+  reward1st: number;
+  reward2nd: number;
+  reward3rd: number;
+}
+
 export const createSession = (
   gameType: string,
   title: string,
   description?: string,
-  entryFee?: number
-) => apiClient.post<MinigameSession>('/api/minigames', { gameType, title, description, entryFee });
+  entryFee?: number,
+  flappyBird?: CreateFlappyBirdOptions
+) =>
+  apiClient.post<MinigameSession>('/api/minigames', {
+    gameType,
+    title,
+    description,
+    entryFee,
+    ...flappyBird,
+  });
 
 export const joinSession = (sessionId: number) =>
   apiClient.post<MinigameSessionDetail>(`/api/minigames/${sessionId}/join`);
