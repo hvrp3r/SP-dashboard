@@ -598,7 +598,7 @@ export interface BlackjackHistoryEntry {
   dealer_cards: BlackjackCard[];
 }
 
-export type GamblingGameId = 'crates' | 'blackjack';
+export type GamblingGameId = 'crates' | 'blackjack' | 'crash';
 
 export interface GamblingGameInfo {
   id: GamblingGameId;
@@ -607,6 +607,51 @@ export interface GamblingGameInfo {
   path: string;
   enabled: boolean;
   rtp: number | null;
+}
+
+export type CrashRoundStatus = 'betting' | 'running' | 'crashed';
+
+/** Multiplicateurs en entier × 100 (234 = 2.34x) — voir le commentaire en tête de 038_crash.sql côté serveur. */
+export interface CrashBet {
+  id: number;
+  round_id: number;
+  user_id: number;
+  bet_amount: number;
+  cashout_multiplier_x100: number | null;
+  bet_transaction_id: number | null;
+  payout_transaction_id: number | null;
+  joined_at: string;
+  resolved_at: string | null;
+  username: string;
+  avatar_url: string | null;
+  equipped_cosmetics: EquippedCosmetic[];
+}
+
+export interface CrashRound {
+  id: number;
+  season_id: number | null;
+  status: CrashRoundStatus;
+  crash_point_x100: number | null;
+  starts_at: string | null;
+  started_at: string | null;
+  crashed_at: string | null;
+  created_at: string;
+  bets: CrashBet[];
+}
+
+export interface CrashActionResult {
+  round: CrashRound;
+  balance: number;
+  enabled: boolean;
+}
+
+export interface CrashHistoryEntry {
+  id: number;
+  round_id: number;
+  bet_amount: number;
+  cashout_multiplier_x100: number | null;
+  resolved_at: string;
+  crash_point_x100: number;
 }
 
 export interface PlayerStats {

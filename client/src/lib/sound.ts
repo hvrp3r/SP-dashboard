@@ -139,3 +139,64 @@ export function playPush(): void {
   if (!audio) return;
   tone(440, audio.currentTime, 0.16, 'sine', 0.07);
 }
+
+/** Glissando ascendant bref au décollage (passage betting -> running du Crash). */
+export function playLiftoff(): void {
+  if (volume <= 0) return;
+  const audio = getContext();
+  if (!audio) return;
+  const now = audio.currentTime;
+  const osc = audio.createOscillator();
+  const gain = audio.createGain();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(140, now);
+  osc.frequency.exponentialRampToValueAtTime(520, now + 0.45);
+  gain.gain.setValueAtTime(0, now);
+  gain.gain.linearRampToValueAtTime(0.06 * volume, now + 0.05);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.45);
+  osc.connect(gain);
+  gain.connect(audio.destination);
+  osc.start(now);
+  osc.stop(now + 0.47);
+}
+
+/** Explosion sourde (thump grave + bruit blanc filtré en decay) au crash. */
+export function playCrashExplosion(): void {
+  if (volume <= 0) return;
+  const audio = getContext();
+  if (!audio) return;
+  const now = audio.currentTime;
+
+  tone(90, now, 0.35, 'sawtooth', 0.16);
+  tone(55, now + 0.03, 0.4, 'sine', 0.14);
+
+  const bufferSize = Math.floor(audio.sampleRate * 0.3);
+  const buffer = audio.createBuffer(1, bufferSize, audio.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < bufferSize; i++) {
+    data[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize);
+  }
+  const noise = audio.createBufferSource();
+  noise.buffer = buffer;
+  const filter = audio.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.setValueAtTime(1200, now);
+  const noiseGain = audio.createGain();
+  noiseGain.gain.setValueAtTime(0.18 * volume, now);
+  noiseGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.3);
+  noise.connect(filter);
+  filter.connect(noiseGain);
+  noiseGain.connect(audio.destination);
+  noise.start(now);
+  noise.stop(now + 0.3);
+}
+
+/** "Cha-ching" de caisse enregistreuse à un retrait Crash réussi. */
+export function playCashRegister(): void {
+  const audio = getContext();
+  if (!audio) return;
+  const now = audio.currentTime;
+  tone(1046.5, now, 0.09, 'square', 0.06);
+  tone(1318.5, now + 0.06, 0.09, 'square', 0.06);
+  tone(1568, now + 0.12, 0.28, 'triangle', 0.12);
+}

@@ -120,7 +120,7 @@ export default function BlackjackSeat({
             : 'border-zinc-800'
       }`}
     >
-      <div className="flex items-center justify-between gap-1 mb-1.5">
+      <div className="mb-1.5">
         <div className="flex items-center gap-1.5 min-w-0">
           <Avatar
             username={hand.username}
@@ -131,10 +131,10 @@ export default function BlackjackSeat({
           <UserNameTag
             username={isMe ? 'Toi' : hand.username}
             equipped={hand.equipped_cosmetics}
-            className="text-sm font-semibold text-zinc-100 truncate"
+            className="text-sm font-semibold text-zinc-100 truncate min-w-0"
           />
         </div>
-        <span className="text-xs text-zinc-400 flex-shrink-0">{hand.bet_amount} SP</span>
+        <span className="text-xs text-zinc-400">{hand.bet_amount} SP</span>
       </div>
 
       <div className="flex flex-wrap items-center justify-center gap-1 mb-1.5 min-h-[3rem]">
