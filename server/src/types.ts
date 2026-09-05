@@ -170,6 +170,8 @@ export type ChallengeStatus =
 
 export type ChallengeType = 'custom' | 'coin_flip';
 
+export type CoinSide = 'pile' | 'face';
+
 export interface ChallengeRow {
   id: number;
   season_id: number | null;
@@ -196,6 +198,7 @@ export interface ChallengeParticipantRow {
   is_challenger: boolean;
   status: ChallengeParticipantStatus;
   reported_winner_id: number | null;
+  coin_side: CoinSide | null;
   responded_at: string | null;
   created_at: string;
 }

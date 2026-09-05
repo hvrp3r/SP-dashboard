@@ -11,8 +11,11 @@ import type {
   ChallengeQuota,
   ChallengeStatus,
   ChallengeType,
+  CoinSide,
   LeaderboardEntry,
 } from '../types.js';
+
+const COIN_SIDE_LABELS: Record<CoinSide, string> = { pile: '😊 Pile', face: '⭐ Face' };
 
 const STATUS_LABELS: Record<ChallengeStatus, string> = {
   pending: 'En attente',
@@ -193,9 +196,9 @@ export default function Challenges() {
     }
   }
 
-  function handleAccept(id: number) {
+  function handleAccept(id: number, side?: CoinSide) {
     unlockAudio();
-    runAction(id, () => challengesApi.acceptChallenge(id), (result) => {
+    runAction(id, () => challengesApi.acceptChallenge(id, side), (result) => {
       if (result.type === 'coin_flip' && result.status === 'resolved') {
         startFlip(result.id);
       }
@@ -260,7 +263,8 @@ export default function Challenges() {
             </div>
             {challengeType === 'coin_flip' && (
               <p className="w-full text-xs text-zinc-500 -mt-1">
-                Ça se joue à deux : choisis un adversaire, le serveur tire au sort dès qu'il accepte.
+                Ça se joue à deux : choisis un adversaire, il choisira pile ou face en acceptant
+                (tu hérites automatiquement de l'autre côté).
               </p>
             )}
             <div className="w-full">
@@ -403,7 +407,7 @@ function ChallengeCard({
   userId: number;
   actingId: number | null;
   runAction: (id: number, action: () => Promise<unknown>) => Promise<void>;
-  onAccept: (id: number) => void;
+  onAccept: (id: number, side?: CoinSide) => void;
   isFlipping?: boolean;
 }) {
   const me = c.participants.find((p) => p.user_id === userId);
@@ -464,7 +468,54 @@ function ChallengeCard({
         {c.description && <p className="text-sm text-zinc-500 italic">{c.description}</p>}
       </div>
 
-      {c.status === 'pending' && me?.status === 'pending' && (
+      {c.type === 'coin_flip' && c.participants.some((p) => p.coin_side !== null) && (
+        <div className="mb-3 flex flex-wrap gap-1.5">
+          {c.participants.map((p) => (
+            <span
+              key={p.id}
+              className="text-xs px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-300"
+            >
+              <UserNameTag
+                username={p.user_id === userId ? 'Toi' : p.username}
+                equipped={p.equipped_cosmetics}
+                className="text-amber-300"
+              />{' '}
+              · {p.coin_side ? COIN_SIDE_LABELS[p.coin_side] : '???'}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {c.status === 'pending' && me?.status === 'pending' && c.type === 'coin_flip' && (
+        <div>
+          <p className="text-sm text-zinc-400 mb-2">Choisis ton côté pour accepter :</p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => onAccept(c.id, 'pile')}
+              disabled={actingId === c.id}
+              className="text-sm bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-semibold px-3 py-1.5 rounded-md transition disabled:opacity-50"
+            >
+              😊 Pile
+            </button>
+            <button
+              onClick={() => onAccept(c.id, 'face')}
+              disabled={actingId === c.id}
+              className="text-sm bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-semibold px-3 py-1.5 rounded-md transition disabled:opacity-50"
+            >
+              ⭐ Face
+            </button>
+            <button
+              onClick={() => runAction(c.id, () => challengesApi.declineChallenge(c.id))}
+              disabled={actingId === c.id}
+              className="text-sm bg-zinc-800 hover:bg-zinc-700 text-zinc-200 px-3 py-1.5 rounded-md transition disabled:opacity-50"
+            >
+              Décliner
+            </button>
+          </div>
+        </div>
+      )}
+
+      {c.status === 'pending' && me?.status === 'pending' && c.type !== 'coin_flip' && (
         <div className="flex gap-2">
           <button
             onClick={() => onAccept(c.id)}
@@ -485,8 +536,11 @@ function ChallengeCard({
 
       {c.status === 'pending' && me?.status !== 'pending' && (
         <p className="text-sm text-zinc-500">
-          En attente de la réponse de{' '}
-          <NameList participants={others.filter((p) => p.status === 'pending')} />…
+          {c.type === 'coin_flip'
+            ? 'En attente que '
+            : 'En attente de la réponse de '}
+          <NameList participants={others.filter((p) => p.status === 'pending')} />
+          {c.type === 'coin_flip' ? ' choisisse pile ou face…' : '…'}
         </p>
       )}
 

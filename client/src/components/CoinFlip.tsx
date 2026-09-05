@@ -87,17 +87,27 @@ export default function CoinFlip({ challenge }: { challenge: Challenge }) {
     return () => clearTimeout(t);
   }, []);
 
-  const challenger = challenge.participants.find((p) => p.is_challenger);
-  const winnerIsChallenger = challenge.winner_id === challenger?.user_id;
   const winner = challenge.participants.find((p) => p.user_id === challenge.winner_id);
+  // Le camp gagnant est celui du côté qui a été tiré au sort côté serveur, pas celui
+  // du challenger — les deux joueurs ont chacun un côté (le défié choisit à
+  // l'acceptation, le challenger hérite de l'autre, voir respondToChallenge côté serveur).
+  const winnerSide: 'pile' | 'face' = winner?.coin_side ?? 'pile';
   const pot =
     challenge.wager_amount * challenge.participants.filter((p) => p.status === 'accepted').length;
 
   const baseDeg = SPIN_TURNS * 360;
-  const finalDeg = winnerIsChallenger ? baseDeg : baseDeg + 180;
+  const finalDeg = winnerSide === 'pile' ? baseDeg : baseDeg + 180;
 
   return (
     <div className="flex flex-col items-center py-3">
+      <div className="flex items-center gap-3 mb-3 text-xs text-zinc-400">
+        {challenge.participants.map((p) => (
+          <span key={p.id}>
+            <UserNameTag username={p.username} equipped={p.equipped_cosmetics} /> :{' '}
+            {p.coin_side ? FACES[p.coin_side].emoji : ''} {p.coin_side ? FACES[p.coin_side].label : '???'}
+          </span>
+        ))}
+      </div>
       <div
         className="relative"
         style={{ width: COIN_SIZE, height: COIN_SIZE, perspective: '800px' }}

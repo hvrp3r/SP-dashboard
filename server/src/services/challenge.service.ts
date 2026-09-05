@@ -10,6 +10,7 @@ import type {
   ChallengeRow,
   ChallengeStatus,
   ChallengeType,
+  CoinSide,
 } from '../types.js';
 
 export async function countChallengesToday(userId: number): Promise<number> {
@@ -165,20 +166,30 @@ async function finalizeIfComplete(
 export async function respondToChallenge(
   challengeId: number,
   userId: number,
-  response: 'accepted' | 'declined'
+  response: 'accepted' | 'declined',
+  coinSide?: CoinSide
 ): Promise<ChallengeStatus | null> {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     const { rowCount } = await client.query(
-      `UPDATE challenge_participants SET status = $1, responded_at = NOW()
+      `UPDATE challenge_participants SET status = $1, responded_at = NOW(), coin_side = COALESCE($4, coin_side)
        WHERE challenge_id = $2 AND user_id = $3 AND status = 'pending'`,
-      [response, challengeId, userId]
+      [response, challengeId, userId, coinSide ?? null]
     );
     if (!rowCount) {
       throw Object.assign(new Error('Réponse déjà enregistrée ou tu ne fais pas partie de ce défi'), {
         status: 400,
       });
+    }
+    // Pile ou face : dès que le joueur défié a choisi son côté, le challenger
+    // hérite automatiquement du côté opposé — lui ne choisit jamais.
+    if (coinSide) {
+      const otherSide: CoinSide = coinSide === 'pile' ? 'face' : 'pile';
+      await client.query(
+        `UPDATE challenge_participants SET coin_side = $1 WHERE challenge_id = $2 AND user_id != $3`,
+        [otherSide, challengeId, userId]
+      );
     }
     const finalStatus = await finalizeIfComplete(client, challengeId);
     await client.query('COMMIT');

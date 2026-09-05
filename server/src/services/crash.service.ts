@@ -54,10 +54,20 @@ function isOlderThan(ts: string | null, seconds: number): boolean {
   return Date.now() - new Date(ts).getTime() > seconds * 1000;
 }
 
+/**
+ * `crash_point_x100` ET `crashed_at` sont tous les deux masqués tant que la
+ * manche n'est pas `crashed` : `crashed_at = started_at + ln(crash_point)/GROWTH_PER_SECOND`,
+ * donc révéler `crashed_at` en avance équivaudrait à révéler le point de crash
+ * lui-même (il suffirait d'inverser la formule) — un client pourrait alors se
+ * retirer à la dernière milliseconde avec un multiplicateur garanti à chaque
+ * manche, ce qui annulerait tout le risque du jeu.
+ */
 function toPublicView(round: CrashRoundRow, bets: CrashBetEntry[]): CrashRoundPublicView {
+  const revealed = round.status === 'crashed';
   return {
     ...round,
-    crash_point_x100: round.status === 'crashed' ? round.crash_point_x100 : null,
+    crash_point_x100: revealed ? round.crash_point_x100 : null,
+    crashed_at: revealed ? round.crashed_at : null,
     bets,
   };
 }

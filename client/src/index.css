@@ -80,6 +80,28 @@ body {
   }
 }
 
+/* Battement "lub-dub" : un grand coup puis un plus petit, comme un vrai pouls.
+   La durée du cycle est pilotée en JS (animationDuration dynamique) pour accélérer
+   avec le multiplicateur — voir heartbeatDuration() dans Crash.tsx. */
+@keyframes heartbeat {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  14% {
+    transform: scale(1.3);
+  }
+  28% {
+    transform: scale(1);
+  }
+  42% {
+    transform: scale(1.15);
+  }
+  70% {
+    transform: scale(1);
+  }
+}
+
 @keyframes shake {
   10%,
   90% {

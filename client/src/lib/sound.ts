@@ -230,6 +230,40 @@ export function playCoinReveal(): void {
   tone(1174.66, now + 0.08, 0.24, 'triangle', 0.11);
 }
 
+function bassThump(startTime: number, peak: number): void {
+  if (volume <= 0) return;
+  const audio = getContext();
+  if (!audio) return;
+  const osc = audio.createOscillator();
+  const gain = audio.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(95, startTime);
+  osc.frequency.exponentialRampToValueAtTime(45, startTime + 0.1);
+  gain.gain.setValueAtTime(peak * volume, startTime);
+  gain.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.12);
+  osc.connect(gain);
+  gain.connect(audio.destination);
+  osc.start(startTime);
+  osc.stop(startTime + 0.13);
+}
+
+/**
+ * Battement de coeur ("lub-dub") : un coup de basse suivi d'un second plus
+ * discret peu après — appelé en boucle depuis `Crash.tsx` à un tempo qui
+ * s'accélère avec le multiplicateur, pour monter la tension pendant le vol.
+ * Le second coup démarre après l'extinction complète du premier (0.13s) pour
+ * ne jamais chevaucher — un chevauchement des deux glissandos de fréquence
+ * pouvait se percevoir comme un 3e battement fantôme au lieu de 2 nets.
+ */
+export function playHeartbeatBeat(): void {
+  if (volume <= 0) return;
+  const audio = getContext();
+  if (!audio) return;
+  const now = audio.currentTime;
+  bassThump(now, 0.17);
+  bassThump(now + 0.16, 0.09);
+}
+
 /** "Cha-ching" de caisse enregistreuse à un retrait Crash réussi. */
 export function playCashRegister(): void {
   const audio = getContext();

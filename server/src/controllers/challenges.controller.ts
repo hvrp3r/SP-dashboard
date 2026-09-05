@@ -4,7 +4,7 @@ import * as configService from '../services/config.service.js';
 import * as seasonService from '../services/season.service.js';
 import * as userService from '../services/user.service.js';
 import * as notificationService from '../services/notification.service.js';
-import type { ChallengeEntry, ChallengeStatus, ChallengeType } from '../types.js';
+import type { ChallengeEntry, ChallengeStatus, ChallengeType, CoinSide } from '../types.js';
 
 const VALID_STATUSES: ChallengeStatus[] = [
   'pending',
@@ -17,10 +17,16 @@ const VALID_STATUSES: ChallengeStatus[] = [
 
 const VALID_TYPES: ChallengeType[] = ['custom', 'coin_flip'];
 
-/** Choisit un gagnant au hasard parmi les participants accepted — tirage côté serveur uniquement. */
-function pickRandomWinner(entry: ChallengeEntry): number {
+/**
+ * Tire un côté ('pile' ou 'face') au hasard côté serveur uniquement, et désigne
+ * gagnant le participant qui avait choisi ce côté (le joueur défié choisit à
+ * l'acceptation, le challenger hérite du côté opposé — voir respondToChallenge).
+ */
+function pickCoinFlipWinner(entry: ChallengeEntry): number {
   const accepted = entry.participants.filter((p) => p.status === 'accepted');
-  return accepted[Math.floor(Math.random() * accepted.length)]!.user_id;
+  const flip: CoinSide = Math.random() < 0.5 ? 'pile' : 'face';
+  const winner = accepted.find((p) => p.coin_side === flip);
+  return (winner ?? accepted[Math.floor(Math.random() * accepted.length)])!.user_id;
 }
 
 async function expireAndNotify(): Promise<void> {
@@ -240,7 +246,14 @@ function parseChallengeId(req: Request<{ id: string }>, res: Response): number |
   return challengeId;
 }
 
-export async function acceptChallenge(req: Request<{ id: string }>, res: Response): Promise<void> {
+interface AcceptChallengeBody {
+  side?: CoinSide;
+}
+
+export async function acceptChallenge(
+  req: Request<{ id: string }, {}, AcceptChallengeBody>,
+  res: Response
+): Promise<void> {
   await expireAndNotify();
   const challengeId = parseChallengeId(req, res);
   if (challengeId === null) return;
@@ -256,9 +269,26 @@ export async function acceptChallenge(req: Request<{ id: string }>, res: Respons
     return;
   }
 
+  // Pile ou face : c'est le joueur défié qui choisit son côté en acceptant —
+  // jamais le challenger, qui hérite automatiquement du côté opposé.
+  let coinSide: CoinSide | undefined;
+  if (challenge.type === 'coin_flip') {
+    const { side } = req.body ?? {};
+    if (side !== 'pile' && side !== 'face') {
+      res.status(400).json({ error: 'Choisis pile ou face pour accepter ce défi' });
+      return;
+    }
+    coinSide = side;
+  }
+
   let finalStatus: ChallengeStatus | null;
   try {
-    finalStatus = await challengeService.respondToChallenge(challengeId, req.user!.id, 'accepted');
+    finalStatus = await challengeService.respondToChallenge(
+      challengeId,
+      req.user!.id,
+      'accepted',
+      coinSide
+    );
   } catch (err) {
     const status = (err as { status?: number }).status ?? 500;
     res.status(status).json({ error: err instanceof Error ? err.message : 'Erreur serveur' });
@@ -271,7 +301,7 @@ export async function acceptChallenge(req: Request<{ id: string }>, res: Respons
   // le serveur tire immédiatement un gagnant et résout le défi dans la foulée —
   // pas de déclaration manuelle pour ce type de défi (voir CreateChallengeBody).
   if (finalStatus === 'accepted' && entry?.type === 'coin_flip') {
-    const winnerId = pickRandomWinner(entry);
+    const winnerId = pickCoinFlipWinner(entry);
     try {
       await challengeService.resolveChallenge(challengeId, winnerId, false, 'Pile ou face');
       entry = await challengeService.getChallengeEntryById(challengeId);
