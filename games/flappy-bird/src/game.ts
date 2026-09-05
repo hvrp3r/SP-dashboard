@@ -24,7 +24,14 @@ export interface GameLibraries {
   ecs: ECSClientLibrary;
 }
 
-export async function registerGame(libs: GameLibraries): Promise<void> {
+export interface GameHandle {
+  /** Déclenche un saut — utilisé par l'input clavier/souris de NanoForge, et
+   * rebranché manuellement sur le tactile (voir main.ts) puisque
+   * @nanoforge-dev/input n'écoute aucun événement touch. */
+  flap: () => void;
+}
+
+export async function registerGame(libs: GameLibraries): Promise<GameHandle> {
   const { graphics, input, sound, ecs } = libs;
   const stage = graphics.stage;
   const layer = graphics.baseLayer;
@@ -194,4 +201,6 @@ export async function registerGame(libs: GameLibraries): Promise<void> {
   registry.addSystem(() => {
     layer.batchDraw();
   });
+
+  return { flap: handleFlap };
 }

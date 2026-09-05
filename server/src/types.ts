@@ -247,6 +247,7 @@ export interface FlappyBirdLeaderboardEntry {
   best_score: number;
   /** played_at de la tentative qui a établi best_score — sert au départage (premier arrivé). */
   achieved_at: string;
+  equipped_cosmetics: EquippedCosmetic[];
 }
 
 export type MinigameQuestionStatus = 'active' | 'closed';

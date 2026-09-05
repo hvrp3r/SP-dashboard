@@ -39,8 +39,21 @@ await client.init({ container, files, env: {} });
 // reste bloqué à 0x0. On le recale explicitement une fois le DOM stabilisé.
 graphics.stage.size({ width: container.offsetWidth, height: container.offsetHeight });
 
-await registerGame({ graphics, input, sound, ecs });
+const game = await registerGame({ graphics, input, sound, ecs });
 await client.run();
+
+// @nanoforge-dev/input n'écoute que mousedown/mouseup/keydown — aucun événement
+// tactile. Combiné à `touch-action: none` sur le canvas (nécessaire pour bloquer
+// le scroll/zoom pendant la partie), ça supprime aussi la synthèse de clics par le
+// navigateur sur mobile : sans ce listener, aucune touche ne réagit sur téléphone.
+container.addEventListener(
+  'touchstart',
+  (e) => {
+    e.preventDefault();
+    game.flap();
+  },
+  { passive: false }
+);
 
 // Boutons/slider superposés au jeu — stopPropagation empêche leurs interactions
 // d'être aussi lues comme un saut par InputLibrary (qui écoute mousedown sur
