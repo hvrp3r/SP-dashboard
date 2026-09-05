@@ -271,9 +271,22 @@ export default function Leaderboard() {
                           <td className="px-4 py-3">
                             <Link
                               to={`/joueurs/${entry.username}`}
-                              className="font-medium text-zinc-100 hover:opacity-80 transition whitespace-nowrap"
+                              className="flex items-center gap-2 hover:opacity-80 transition whitespace-nowrap"
                             >
-                              {entry.username}
+                              <Avatar
+                                username={entry.username}
+                                avatarUrl={entry.avatar_url}
+                                size={24}
+                                frameUrl={
+                                  entry.equipped_cosmetics.find((c) => c.slot === 'avatar_frame')
+                                    ?.image_url ?? null
+                                }
+                              />
+                              <UserNameTag
+                                username={entry.username}
+                                equipped={entry.equipped_cosmetics}
+                                className="text-zinc-100"
+                              />
                             </Link>
                           </td>
                           <td className="px-4 py-3 text-right text-zinc-400">

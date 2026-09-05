@@ -88,6 +88,7 @@ export interface SeasonSnapshotRow {
 export interface SeasonSnapshotEntry extends SeasonSnapshotRow {
   username: string;
   avatar_url: string | null;
+  equipped_cosmetics: EquippedCosmetic[];
 }
 
 export type LeaderboardSort = 'sp_balance' | 'sp_total_earned';
@@ -182,6 +183,8 @@ export interface ChallengeParticipantRow {
 
 export interface ChallengeParticipantEntry extends ChallengeParticipantRow {
   username: string;
+  avatar_url: string | null;
+  equipped_cosmetics: EquippedCosmetic[];
 }
 
 export interface ChallengeEntry extends ChallengeRow {
@@ -224,6 +227,8 @@ export interface MinigameParticipantRow {
 
 export interface MinigameParticipantEntry extends MinigameParticipantRow {
   username: string;
+  avatar_url: string | null;
+  equipped_cosmetics: EquippedCosmetic[];
 }
 
 export interface FlappyBirdAttemptRow {
@@ -273,6 +278,8 @@ export interface MinigameAnswerRow {
 export interface MinigameAnswerView {
   user_id: number;
   username: string;
+  avatar_url: string | null;
+  equipped_cosmetics: EquippedCosmetic[];
   submitted_at: string;
   seconds_to_answer: number;
   answer_text?: string;
@@ -298,7 +305,9 @@ export type NotificationType =
   | 'auction_sold'
   | 'auction_expired'
   | 'auction_cancelled'
-  | 'minigame_cancelled';
+  | 'minigame_cancelled'
+  | 'suggestion_comment'
+  | 'suggestion_closed';
 
 export type CosmeticSlot = 'avatar_frame' | 'banner' | 'name_color' | 'title' | 'name_font';
 export type CosmeticRarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
@@ -366,7 +375,9 @@ export interface CosmeticAuctionRow {
 export interface CosmeticAuctionEntry extends CosmeticAuctionRow {
   cosmetic: CosmeticRow;
   seller_username: string;
+  seller_equipped_cosmetics: EquippedCosmetic[];
   current_bidder_username: string | null;
+  current_bidder_equipped_cosmetics: EquippedCosmetic[];
   bid_count: number;
 }
 
@@ -383,6 +394,7 @@ export interface AuctionBidRow {
 
 export interface AuctionBidEntry extends AuctionBidRow {
   bidder_username: string;
+  bidder_equipped_cosmetics: EquippedCosmetic[];
 }
 
 export interface CosmeticAuctionDetail extends CosmeticAuctionEntry {
@@ -526,7 +538,7 @@ export interface KofiWebhookPayload {
   tier_name: string | null;
 }
 
-export type GamblingGameId = 'crates' | 'blackjack';
+export type GamblingGameId = 'crates' | 'blackjack' | 'crash';
 
 export interface GamblingGameInfo {
   id: GamblingGameId;
@@ -578,6 +590,7 @@ export interface BlackjackHandRow {
 export interface BlackjackHandEntry extends BlackjackHandRow {
   username: string;
   avatar_url: string | null;
+  equipped_cosmetics: EquippedCosmetic[];
 }
 
 export interface BlackjackSessionPublicView extends Omit<BlackjackSessionRow, 'dealer_cards'> {
@@ -602,6 +615,59 @@ export interface BlackjackHistoryEntry {
   dealer_cards: BlackjackCard[];
 }
 
+export type CrashRoundStatus = 'betting' | 'running' | 'crashed';
+
+/** Multiplicateurs en entier × 100 (234 = 2.34x) — voir le commentaire en tête de 038_crash.sql. */
+export interface CrashRoundRow {
+  id: number;
+  season_id: number | null;
+  status: CrashRoundStatus;
+  crash_point_x100: number;
+  starts_at: string | null;
+  started_at: string | null;
+  crashed_at: string | null;
+  created_at: string;
+}
+
+export interface CrashBetRow {
+  id: number;
+  round_id: number;
+  user_id: number;
+  bet_amount: number;
+  cashout_multiplier_x100: number | null;
+  bet_transaction_id: number | null;
+  payout_transaction_id: number | null;
+  joined_at: string;
+  resolved_at: string | null;
+}
+
+export interface CrashBetEntry extends CrashBetRow {
+  username: string;
+  avatar_url: string | null;
+  equipped_cosmetics: EquippedCosmetic[];
+}
+
+/** `crash_point_x100` masqué (null) tant que la manche n'est pas `crashed`, pour ne pas révéler l'issue à l'avance. */
+export interface CrashRoundPublicView extends Omit<CrashRoundRow, 'crash_point_x100'> {
+  crash_point_x100: number | null;
+  bets: CrashBetEntry[];
+}
+
+export interface CrashActionResult {
+  round: CrashRoundPublicView;
+  balance: number;
+  enabled: boolean;
+}
+
+export interface CrashHistoryEntry {
+  id: number;
+  round_id: number;
+  bet_amount: number;
+  cashout_multiplier_x100: number | null;
+  resolved_at: string;
+  crash_point_x100: number;
+}
+
 export interface NotificationRow {
   id: number;
   user_id: number;
@@ -610,4 +676,49 @@ export interface NotificationRow {
   link: string | null;
   read_at: string | null;
   created_at: string;
+}
+
+export type SuggestionType = 'feature' | 'bug';
+export type SuggestionStatus = 'open' | 'closed';
+export type SuggestionSort = 'top' | 'new';
+export type SuggestionVoteValue = 1 | -1;
+
+export interface SuggestionRow {
+  id: number;
+  author_id: number | null;
+  type: SuggestionType;
+  title: string;
+  description: string | null;
+  status: SuggestionStatus;
+  closed_at: string | null;
+  closed_by: number | null;
+  created_at: string;
+}
+
+export interface SuggestionListEntry extends SuggestionRow {
+  author_username: string | null;
+  author_avatar_url: string | null;
+  author_equipped_cosmetics: EquippedCosmetic[];
+  vote_count: number;
+  comment_count: number;
+  /** 1 = upvoté, -1 = downvoté, 0 = pas de vote du viewer courant. */
+  user_vote: SuggestionVoteValue | 0;
+}
+
+export interface SuggestionCommentRow {
+  id: number;
+  suggestion_id: number;
+  author_id: number | null;
+  body: string;
+  created_at: string;
+}
+
+export interface SuggestionCommentEntry extends SuggestionCommentRow {
+  author_username: string | null;
+  author_avatar_url: string | null;
+  author_equipped_cosmetics: EquippedCosmetic[];
+}
+
+export interface SuggestionDetail extends SuggestionListEntry {
+  comments: SuggestionCommentEntry[];
 }

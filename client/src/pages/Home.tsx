@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth.jsx';
+import UserNameTag from '../components/UserNameTag.jsx';
 import * as usersApi from '../api/users.js';
 import * as seasonsApi from '../api/seasons.js';
 import type { Season } from '../types.js';
@@ -26,7 +27,7 @@ const NAV_CARDS: NavCard[] = [
 ];
 
 export default function Home() {
-  const { user, setUser } = useAuth();
+  const { user, setUser, equippedCosmetics } = useAuth();
   const [activeSeason, setActiveSeason] = useState<Season | null>(null);
   const [rank, setRank] = useState<number | null | undefined>(undefined);
   const [claimingBonus, setClaimingBonus] = useState(false);
@@ -70,7 +71,11 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-zinc-950 py-10 px-4">
       <div className="max-w-2xl mx-auto">
-        <h1 className="text-2xl font-bold text-zinc-50 mb-1">Bonjour, {user.username} 👋</h1>
+        <h1 className="text-2xl font-bold text-zinc-50 mb-1 flex items-center gap-2 flex-wrap">
+          Bonjour,{' '}
+          <UserNameTag username={user.username} equipped={equippedCosmetics} className="text-2xl font-bold text-zinc-50" />
+          👋
+        </h1>
         {activeSeason && <p className="text-sm text-zinc-400 mb-6">Saison active : {activeSeason.name}</p>}
 
         <div className="flex items-center justify-between gap-4 bg-zinc-900 border border-zinc-800 rounded-xl shadow-md p-4 mb-4">

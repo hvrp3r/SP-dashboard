@@ -8,6 +8,8 @@ import Leaderboard from './pages/Leaderboard.jsx';
 import Challenges from './pages/Challenges.jsx';
 import Minigames from './pages/Minigames.jsx';
 import MinigameDetail from './pages/MinigameDetail.jsx';
+import Suggestions from './pages/Suggestions.jsx';
+import SuggestionDetail from './pages/SuggestionDetail.jsx';
 import GamblingHome from './pages/GamblingHome.jsx';
 import Cosmetics from './pages/Cosmetics.jsx';
 import Auctions from './pages/Auctions.jsx';
@@ -15,6 +17,7 @@ import AuctionDetail from './pages/AuctionDetail.jsx';
 import Gambling from './pages/Gambling.jsx';
 import GamblingCrateDetail from './pages/GamblingCrateDetail.jsx';
 import BlackjackTable from './pages/BlackjackTable.jsx';
+import Crash from './pages/Crash.jsx';
 import PlayerStats from './pages/PlayerStats.jsx';
 import AdminSeasons from './pages/admin/Seasons.jsx';
 import AdminConfig from './pages/admin/Config.jsx';
@@ -104,6 +107,22 @@ export default function App() {
           }
         />
         <Route
+          path="/suggestions"
+          element={
+            <PrivateRoute>
+              <Suggestions />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/suggestions/:id"
+          element={
+            <PrivateRoute>
+              <SuggestionDetail />
+            </PrivateRoute>
+          }
+        />
+        <Route
           path="/cosmetiques"
           element={
             <PrivateRoute>
@@ -156,6 +175,14 @@ export default function App() {
           element={
             <PrivateRoute>
               <BlackjackTable />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/gambling/crash"
+          element={
+            <PrivateRoute>
+              <Crash />
             </PrivateRoute>
           }
         />

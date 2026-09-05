@@ -4,6 +4,7 @@ import { useAuth } from '../hooks/useAuth.jsx';
 import { useConfirm } from '../hooks/useConfirm.jsx';
 import * as auctionsApi from '../api/auctions.js';
 import CosmeticPreview from '../components/CosmeticPreview.jsx';
+import UserNameTag from '../components/UserNameTag.jsx';
 import { RARITY_LABELS, RARITY_TEXT_CLASSES } from '../lib/cosmeticsLabels.js';
 import {
   AUCTION_BID_STATUS_LABELS,
@@ -155,7 +156,10 @@ export default function AuctionDetail() {
               <p className={`text-sm font-medium ${RARITY_TEXT_CLASSES[auction.cosmetic.rarity]}`}>
                 {RARITY_LABELS[auction.cosmetic.rarity]}
               </p>
-              <p className="text-sm text-zinc-500 mt-1">Vendeur : {auction.seller_username}</p>
+              <p className="text-sm text-zinc-500 mt-1">
+                Vendeur :{' '}
+                <UserNameTag username={auction.seller_username} equipped={auction.seller_equipped_cosmetics} />
+              </p>
               {auction.status === 'active' && (
                 <p className="text-sm text-zinc-400 mt-1">
                   Temps restant : {formatTimeRemaining(auction.ends_at, now)}
@@ -169,9 +173,18 @@ export default function AuctionDetail() {
               {auction.current_bid ?? auction.starting_price} SP
             </span>
             <span className="text-sm text-zinc-500">
-              {auction.current_bid !== null
-                ? `enchère actuelle · ${auction.current_bidder_username}`
-                : 'prix de départ · aucune offre'}
+              {auction.current_bid !== null && auction.current_bidder_username ? (
+                <>
+                  enchère actuelle ·{' '}
+                  <UserNameTag
+                    username={auction.current_bidder_username}
+                    equipped={auction.current_bidder_equipped_cosmetics}
+                    className="text-zinc-500"
+                  />
+                </>
+              ) : (
+                'prix de départ · aucune offre'
+              )}
             </span>
           </div>
 
@@ -225,7 +238,7 @@ export default function AuctionDetail() {
                 className="flex items-center justify-between gap-2 bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2"
               >
                 <div className="min-w-0">
-                  <span className="text-sm text-zinc-200">{b.bidder_username}</span>
+                  <UserNameTag username={b.bidder_username} equipped={b.bidder_equipped_cosmetics} className="text-zinc-200" />
                   <span className="text-xs text-zinc-500 ml-2">
                     {new Date(b.created_at).toLocaleString('fr-FR')}
                   </span>

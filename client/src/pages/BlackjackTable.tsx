@@ -8,6 +8,7 @@ import PlayingCard from '../components/PlayingCard.jsx';
 import BlackjackSeat from '../components/BlackjackSeat.jsx';
 import VolumeSlider from '../components/VolumeSlider.jsx';
 import Avatar from '../components/Avatar.jsx';
+import UserNameTag from '../components/UserNameTag.jsx';
 import * as sound from '../lib/sound.js';
 import type {
   BlackjackCard,
@@ -396,10 +397,19 @@ export default function BlackjackTable() {
                         return (
                           <li key={h.id} className="flex items-center justify-between gap-2 py-2 text-sm">
                             <div className="flex items-center gap-2 min-w-0">
-                              <Avatar username={h.username} avatarUrl={h.avatar_url} size={24} />
+                              <Avatar
+                                username={h.username}
+                                avatarUrl={h.avatar_url}
+                                size={24}
+                                frameUrl={h.equipped_cosmetics.find((c) => c.slot === 'avatar_frame')?.image_url}
+                              />
                               <div className="min-w-0">
-                                <p className="text-zinc-300 truncate">
-                                  {h.user_id === user?.id ? 'Toi' : h.username}
+                                <p className="text-zinc-300 truncate flex items-center gap-1">
+                                  <UserNameTag
+                                    username={h.user_id === user?.id ? 'Toi' : h.username}
+                                    equipped={h.equipped_cosmetics}
+                                    className="text-zinc-300"
+                                  />
                                   {h.outcome === 'blackjack' && (
                                     <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 font-medium uppercase tracking-wide">
                                       Blackjack

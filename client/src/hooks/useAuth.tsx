@@ -7,12 +7,15 @@ import {
   type ReactNode,
 } from 'react';
 import * as authApi from '../api/auth.js';
+import * as cosmeticsApi from '../api/cosmetics.js';
 import { setAccessToken } from '../api/client.js';
-import type { User } from '../types.js';
+import type { EquippedCosmetic, User } from '../types.js';
 
 interface AuthContextValue {
   user: User | null;
   loading: boolean;
+  /** Cosmétiques équipés par l'utilisateur connecté — pour afficher son propre pseudo stylé (nav, accueil…). */
+  equippedCosmetics: EquippedCosmetic[];
   login: (email: string, password: string) => Promise<User>;
   register: (username: string, email: string, password: string) => Promise<User>;
   logout: () => Promise<void>;
@@ -26,6 +29,14 @@ const BALANCE_POLL_INTERVAL_MS = 15000;
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [equippedCosmetics, setEquippedCosmetics] = useState<EquippedCosmetic[]>([]);
+
+  function refreshEquipped() {
+    cosmeticsApi
+      .getMine()
+      .then((data) => setEquippedCosmetics(data.equipped))
+      .catch(() => {});
+  }
 
   useEffect(() => {
     (async () => {
@@ -39,6 +50,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setAccessToken(data.accessToken);
           const me = await authApi.getMe();
           setUser(me);
+          refreshEquipped();
         }
       } catch {
         // Pas de session valide, l'utilisateur reste déconnecté
@@ -67,6 +79,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const data = await authApi.login(email, password);
     setAccessToken(data.accessToken);
     setUser(data.user);
+    refreshEquipped();
     return data.user;
   }, []);
 
@@ -74,6 +87,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const data = await authApi.register(username, email, password);
     setAccessToken(data.accessToken);
     setUser(data.user);
+    refreshEquipped();
     return data.user;
   }, []);
 
@@ -81,10 +95,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await authApi.logout();
     setAccessToken(null);
     setUser(null);
+    setEquippedCosmetics([]);
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout, setUser }}>
+    <AuthContext.Provider
+      value={{ user, loading, equippedCosmetics, login, register, logout, setUser }}
+    >
       {children}
     </AuthContext.Provider>
   );

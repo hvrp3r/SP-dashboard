@@ -1,4 +1,5 @@
 import { pool } from '../db/pool.js';
+import * as cosmeticsService from './cosmetics.service.js';
 import type { SeasonRow, SeasonSnapshotEntry, SeasonStatus } from '../types.js';
 
 export async function getActiveSeason(): Promise<SeasonRow | null> {
@@ -75,7 +76,7 @@ export async function closeSeason(seasonId: number): Promise<SeasonRow> {
 }
 
 export async function getSeasonSnapshot(seasonId: number): Promise<SeasonSnapshotEntry[]> {
-  const { rows } = await pool.query<SeasonSnapshotEntry>(
+  const { rows } = await pool.query<Omit<SeasonSnapshotEntry, 'equipped_cosmetics'>>(
     `SELECT s.id, s.season_id, s.user_id, s.final_balance, s.final_total_earned, s.rank, s.created_at,
             u.username, u.avatar_url
      FROM season_snapshots s
@@ -84,5 +85,9 @@ export async function getSeasonSnapshot(seasonId: number): Promise<SeasonSnapsho
      ORDER BY s.rank ASC`,
     [seasonId]
   );
-  return rows;
+  const equippedByUser = await cosmeticsService.getEquippedForUsers(rows.map((r) => r.user_id));
+  return rows.map((row) => ({
+    ...row,
+    equipped_cosmetics: equippedByUser.get(row.user_id) ?? [],
+  }));
 }

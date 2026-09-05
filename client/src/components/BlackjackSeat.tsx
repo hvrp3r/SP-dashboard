@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import PlayingCard from './PlayingCard.jsx';
 import Avatar from './Avatar.jsx';
+import UserNameTag from './UserNameTag.jsx';
 import * as sound from '../lib/sound.js';
 import type { BlackjackHand } from '../types.js';
 
@@ -119,14 +120,21 @@ export default function BlackjackSeat({
             : 'border-zinc-800'
       }`}
     >
-      <div className="flex items-center justify-between gap-1 mb-1.5">
+      <div className="mb-1.5">
         <div className="flex items-center gap-1.5 min-w-0">
-          <Avatar username={hand.username} avatarUrl={hand.avatar_url} size={20} />
-          <p className="text-sm font-semibold text-zinc-100 truncate">
-            {isMe ? 'Toi' : hand.username}
-          </p>
+          <Avatar
+            username={hand.username}
+            avatarUrl={hand.avatar_url}
+            size={20}
+            frameUrl={hand.equipped_cosmetics.find((c) => c.slot === 'avatar_frame')?.image_url}
+          />
+          <UserNameTag
+            username={isMe ? 'Toi' : hand.username}
+            equipped={hand.equipped_cosmetics}
+            className="text-sm font-semibold text-zinc-100 truncate min-w-0"
+          />
         </div>
-        <span className="text-xs text-zinc-400 flex-shrink-0">{hand.bet_amount} SP</span>
+        <span className="text-xs text-zinc-400">{hand.bet_amount} SP</span>
       </div>
 
       <div className="flex flex-wrap items-center justify-center gap-1 mb-1.5 min-h-[3rem]">

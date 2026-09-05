@@ -31,7 +31,12 @@ const ENTRY_SELECT = `
   LEFT JOIN users bidder ON bidder.id = a.current_bidder_id
 `;
 
-function toEntry(row: AuctionJoinRow): CosmeticAuctionEntry {
+type EntryWithoutCosmetics = Omit<
+  CosmeticAuctionEntry,
+  'seller_equipped_cosmetics' | 'current_bidder_equipped_cosmetics'
+>;
+
+function toEntry(row: AuctionJoinRow): EntryWithoutCosmetics {
   const { cosmetic_json, seller_username, current_bidder_username, bid_count, ...auction } = row;
   return {
     ...auction,
@@ -40,6 +45,25 @@ function toEntry(row: AuctionJoinRow): CosmeticAuctionEntry {
     current_bidder_username,
     bid_count: Number(bid_count),
   };
+}
+
+/** Fusionne les cosmétiques équipés du vendeur et de l'enchérisseur actuel sur un lot d'enchères. */
+async function withParticipantCosmetics(
+  entries: EntryWithoutCosmetics[]
+): Promise<CosmeticAuctionEntry[]> {
+  const userIds = [
+    ...new Set(
+      entries.flatMap((e) => (e.current_bidder_id ? [e.seller_id, e.current_bidder_id] : [e.seller_id]))
+    ),
+  ];
+  const equippedByUser = await cosmeticsService.getEquippedForUsers(userIds);
+  return entries.map((e) => ({
+    ...e,
+    seller_equipped_cosmetics: equippedByUser.get(e.seller_id) ?? [],
+    current_bidder_equipped_cosmetics: e.current_bidder_id
+      ? equippedByUser.get(e.current_bidder_id) ?? []
+      : [],
+  }));
 }
 
 /**
@@ -135,7 +159,7 @@ export async function listActiveAuctions(): Promise<CosmeticAuctionEntry[]> {
   const { rows } = await pool.query<AuctionJoinRow>(
     `${ENTRY_SELECT} WHERE a.status = 'active' ORDER BY a.ends_at ASC`
   );
-  return rows.map(toEntry);
+  return withParticipantCosmetics(rows.map(toEntry));
 }
 
 export async function getAuctionById(id: number): Promise<CosmeticAuctionDetail | null> {
@@ -143,7 +167,7 @@ export async function getAuctionById(id: number): Promise<CosmeticAuctionDetail 
   const row = rows[0];
   if (!row) return null;
 
-  const { rows: bidRows } = await pool.query<AuctionBidRow & { bidder_username: string }>(
+  const { rows: bidRows } = await pool.query<Omit<AuctionBidEntry, 'bidder_equipped_cosmetics'>>(
     `SELECT b.*, u.username AS bidder_username
      FROM cosmetic_auction_bids b
      JOIN users u ON u.id = b.bidder_id
@@ -151,8 +175,14 @@ export async function getAuctionById(id: number): Promise<CosmeticAuctionDetail 
      ORDER BY b.created_at DESC`,
     [id]
   );
+  const bidderCosmetics = await cosmeticsService.getEquippedForUsers(bidRows.map((b) => b.bidder_id));
+  const bids: AuctionBidEntry[] = bidRows.map((b) => ({
+    ...b,
+    bidder_equipped_cosmetics: bidderCosmetics.get(b.bidder_id) ?? [],
+  }));
 
-  return { ...toEntry(row), bids: bidRows as AuctionBidEntry[] };
+  const [entry] = await withParticipantCosmetics([toEntry(row)]);
+  return { ...(entry as CosmeticAuctionEntry), bids };
 }
 
 export async function getMyActivity(
@@ -168,7 +198,11 @@ export async function getMyActivity(
      ORDER BY a.created_at DESC`,
     [userId]
   );
-  return { selling: sellingRows.map(toEntry), bidding: biddingRows.map(toEntry) };
+  const [selling, bidding] = await Promise.all([
+    withParticipantCosmetics(sellingRows.map(toEntry)),
+    withParticipantCosmetics(biddingRows.map(toEntry)),
+  ]);
+  return { selling, bidding };
 }
 
 export async function createAuction(

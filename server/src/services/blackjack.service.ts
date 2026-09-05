@@ -2,6 +2,7 @@ import type { PoolClient } from 'pg';
 import { pool } from '../db/pool.js';
 import * as spService from './sp.service.js';
 import * as configService from './config.service.js';
+import * as cosmeticsService from './cosmetics.service.js';
 import { startOfDayLocalAsUTC } from '../utils/localDate.js';
 import * as engine from './blackjackEngine.js';
 import type {
@@ -79,7 +80,7 @@ async function getBalance(userId: number): Promise<number> {
 }
 
 async function listHands(sessionId: number): Promise<BlackjackHandEntry[]> {
-  const { rows } = await pool.query<BlackjackHandEntry>(
+  const { rows } = await pool.query<Omit<BlackjackHandEntry, 'equipped_cosmetics'>>(
     `SELECT h.*, u.username, u.avatar_url
      FROM blackjack_hands h
      JOIN users u ON u.id = h.user_id
@@ -87,7 +88,11 @@ async function listHands(sessionId: number): Promise<BlackjackHandEntry[]> {
      ORDER BY h.joined_at ASC`,
     [sessionId]
   );
-  return rows;
+  const equippedByUser = await cosmeticsService.getEquippedForUsers(rows.map((r) => r.user_id));
+  return rows.map((row) => ({
+    ...row,
+    equipped_cosmetics: equippedByUser.get(row.user_id) ?? [],
+  }));
 }
 
 /**

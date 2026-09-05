@@ -4,6 +4,7 @@ import { useAuth } from '../hooks/useAuth.jsx';
 import * as auctionsApi from '../api/auctions.js';
 import * as cosmeticsApi from '../api/cosmetics.js';
 import CosmeticPreview from '../components/CosmeticPreview.jsx';
+import UserNameTag from '../components/UserNameTag.jsx';
 import {
   AUCTION_STATUS_CLASSES,
   AUCTION_STATUS_LABELS,
@@ -266,7 +267,9 @@ function AuctionCard({ auction: a, now }: { auction: AuctionEntry; now: number }
       <CosmeticPreview cosmetic={a.cosmetic} />
       <div className="min-w-0 flex-1">
         <p className="font-medium text-zinc-100 truncate">{a.cosmetic.name}</p>
-        <p className="text-xs text-zinc-500">Vendeur : {a.seller_username}</p>
+        <p className="text-xs text-zinc-500">
+          Vendeur : <UserNameTag username={a.seller_username} equipped={a.seller_equipped_cosmetics} />
+        </p>
         <p className="text-sm text-zinc-300 mt-0.5">
           {a.current_bid ?? a.starting_price} SP
           {a.bid_count > 0 && (

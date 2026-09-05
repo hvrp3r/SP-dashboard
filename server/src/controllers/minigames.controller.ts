@@ -23,15 +23,18 @@ async function buildQuestionView(
   viewer: AuthenticatedUser
 ): Promise<MinigameQuestionView> {
   const answers = await minigameService.getAnswers(question.id);
-  const usernameById = new Map(participants.map((p) => [p.user_id, p.username]));
+  const participantById = new Map(participants.map((p) => [p.user_id, p]));
   const activatedAtMs = new Date(question.activated_at ?? question.created_at).getTime();
 
   const answerViews: MinigameAnswerView[] = answers.map((a) => {
     const submittedAtMs = new Date(a.submitted_at).getTime();
     const secondsToAnswer = Math.max(0, Math.round((submittedAtMs - activatedAtMs) / 1000));
+    const participant = participantById.get(a.user_id);
     const view: MinigameAnswerView = {
       user_id: a.user_id,
-      username: usernameById.get(a.user_id) ?? '',
+      username: participant?.username ?? '',
+      avatar_url: participant?.avatar_url ?? null,
+      equipped_cosmetics: participant?.equipped_cosmetics ?? [],
       submitted_at: a.submitted_at,
       seconds_to_answer: secondsToAnswer,
     };

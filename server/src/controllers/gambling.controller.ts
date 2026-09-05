@@ -6,6 +6,7 @@ import * as subscriptionService from '../services/subscription.service.js';
 import * as cosmeticsService from '../services/cosmetics.service.js';
 import * as notificationService from '../services/notification.service.js';
 import { BLACKJACK_RTP_PERCENT } from '../services/blackjack.service.js';
+import { CRASH_RTP_PERCENT } from '../services/crash.service.js';
 import type {
   CosmeticRarity,
   CosmeticSlot,
@@ -483,9 +484,10 @@ export async function openCrate(req: Request<{ id: string }>, res: Response): Pr
  * pas bloqué en accès direct).
  */
 export async function listGames(req: Request, res: Response): Promise<void> {
-  const [cratesEnabled, blackjackEnabled] = await Promise.all([
+  const [cratesEnabled, blackjackEnabled, crashEnabled] = await Promise.all([
     configService.getConfigBool('gambling_enabled', true),
     configService.getConfigBool('blackjack_enabled', false),
+    configService.getConfigBool('crash_enabled', false),
   ]);
   const games: GamblingGameInfo[] = [
     {
@@ -503,6 +505,14 @@ export async function listGames(req: Request, res: Response): Promise<void> {
       path: '/gambling/blackjack',
       enabled: blackjackEnabled,
       rtp: BLACKJACK_RTP_PERCENT,
+    },
+    {
+      id: 'crash',
+      name: 'Crash',
+      description: 'Le multiplicateur grimpe, retire-toi avant le crash pour empocher la mise.',
+      path: '/gambling/crash',
+      enabled: crashEnabled,
+      rtp: CRASH_RTP_PERCENT,
     },
   ];
   res.json(games);

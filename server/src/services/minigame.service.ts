@@ -1,5 +1,6 @@
 import { pool } from '../db/pool.js';
 import * as spService from './sp.service.js';
+import * as cosmeticsService from './cosmetics.service.js';
 import type {
   MinigameAnswerRow,
   MinigameParticipantEntry,
@@ -70,15 +71,19 @@ export async function getSessionById(id: number): Promise<MinigameSessionRow | n
 export async function getSessionParticipants(
   sessionId: number
 ): Promise<MinigameParticipantEntry[]> {
-  const { rows } = await pool.query<MinigameParticipantEntry>(
-    `SELECT p.*, u.username
+  const { rows } = await pool.query<Omit<MinigameParticipantEntry, 'equipped_cosmetics'>>(
+    `SELECT p.*, u.username, u.avatar_url
      FROM minigame_participants p
      JOIN users u ON u.id = p.user_id
      WHERE p.session_id = $1
      ORDER BY p.joined_at ASC`,
     [sessionId]
   );
-  return rows;
+  const equippedByUser = await cosmeticsService.getEquippedForUsers(rows.map((r) => r.user_id));
+  return rows.map((row) => ({
+    ...row,
+    equipped_cosmetics: equippedByUser.get(row.user_id) ?? [],
+  }));
 }
 
 export async function getParticipantByUser(
