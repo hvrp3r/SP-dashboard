@@ -168,12 +168,15 @@ export type ChallengeStatus =
   | 'resolved'
   | 'cancelled';
 
+export type ChallengeType = 'custom' | 'coin_flip';
+
 export interface ChallengeRow {
   id: number;
   season_id: number | null;
   challenger_id: number;
   wager_amount: number;
   description: string | null;
+  type: ChallengeType;
   status: ChallengeStatus;
   winner_id: number | null;
   result_note: string | null;

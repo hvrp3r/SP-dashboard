@@ -16,9 +16,21 @@
   #game-container canvas { display: block; margin: 0 auto; touch-action: none; }
 
   /* Plein écran : le canvas garde sa résolution interne, on l'agrandit juste
-     visuellement (letterboxé) pour remplir l'écran. */
+     visuellement (letterboxé) pour remplir l'écran. `position: fixed` est
+     nécessaire depuis que #game-container n'est plus ancré à l'origine de
+     l'écran (voir plus haut, recentré par flex + transform:scale) — sans ça,
+     le canvas s'étend bien à 100vw/100vh mais à partir de la position (souvent
+     décalée vers le centre) de son parent, au lieu de remplir l'écran depuis
+     son coin. */
   #game-root:fullscreen { background: #000; }
-  #game-root:fullscreen canvas { width: 100vw !important; height: 100vh !important; object-fit: contain; }
+  #game-root:fullscreen canvas {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    object-fit: contain;
+  }
 
   #fullscreen-btn {
     position: absolute;

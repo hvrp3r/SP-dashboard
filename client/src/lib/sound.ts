@@ -191,6 +191,45 @@ export function playCrashExplosion(): void {
   noise.stop(now + 0.3);
 }
 
+/** Chuintement ascendant au lancer de la pièce (pile ou face). */
+export function playCoinToss(): void {
+  if (volume <= 0) return;
+  const audio = getContext();
+  if (!audio) return;
+  const now = audio.currentTime;
+  const osc = audio.createOscillator();
+  const gain = audio.createGain();
+  osc.type = 'triangle';
+  osc.frequency.setValueAtTime(260, now);
+  osc.frequency.exponentialRampToValueAtTime(920, now + 0.22);
+  gain.gain.setValueAtTime(0, now);
+  gain.gain.linearRampToValueAtTime(0.09 * volume, now + 0.03);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.24);
+  osc.connect(gain);
+  gain.connect(audio.destination);
+  osc.start(now);
+  osc.stop(now + 0.26);
+}
+
+/** Petit "clic" métallique à un rebond de la pièce — `delaySeconds` synchronise avec
+ * les rebonds de l'animation coinBounceFlip, `strength` atténue les rebonds suivants. */
+export function playCoinBounce(delaySeconds: number, strength: number): void {
+  const audio = getContext();
+  if (!audio) return;
+  const startTime = audio.currentTime + delaySeconds;
+  tone(1500, startTime, 0.08, 'triangle', 0.1 * strength);
+  tone(680, startTime, 0.12, 'sine', 0.06 * strength);
+}
+
+/** Petit carillon neutre à la révélation du résultat du pile ou face. */
+export function playCoinReveal(): void {
+  const audio = getContext();
+  if (!audio) return;
+  const now = audio.currentTime;
+  tone(784, now, 0.12, 'triangle', 0.09);
+  tone(1174.66, now + 0.08, 0.24, 'triangle', 0.11);
+}
+
 /** "Cha-ching" de caisse enregistreuse à un retrait Crash réussi. */
 export function playCashRegister(): void {
   const audio = getContext();

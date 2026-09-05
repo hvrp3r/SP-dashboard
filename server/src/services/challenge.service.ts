@@ -9,6 +9,7 @@ import type {
   ChallengeParticipantRow,
   ChallengeRow,
   ChallengeStatus,
+  ChallengeType,
 } from '../types.js';
 
 export async function countChallengesToday(userId: number): Promise<number> {
@@ -27,6 +28,7 @@ interface CreateChallengeInput {
   opponentIds: number[];
   wagerAmount: number;
   description: string | null;
+  type: ChallengeType;
 }
 
 export async function createChallenge({
@@ -35,16 +37,17 @@ export async function createChallenge({
   opponentIds,
   wagerAmount,
   description,
+  type,
 }: CreateChallengeInput): Promise<ChallengeRow> {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
 
     const { rows } = await client.query<ChallengeRow>(
-      `INSERT INTO challenges (season_id, challenger_id, wager_amount, description, status, expires_at)
-       VALUES ($1, $2, $3, $4, 'pending', NOW() + INTERVAL '24 hours')
+      `INSERT INTO challenges (season_id, challenger_id, wager_amount, description, type, status, expires_at)
+       VALUES ($1, $2, $3, $4, $5, 'pending', NOW() + INTERVAL '24 hours')
        RETURNING *`,
-      [seasonId, challengerId, wagerAmount, description]
+      [seasonId, challengerId, wagerAmount, description, type]
     );
     const challenge = rows[0] as ChallengeRow;
 
@@ -163,7 +166,7 @@ export async function respondToChallenge(
   challengeId: number,
   userId: number,
   response: 'accepted' | 'declined'
-): Promise<void> {
+): Promise<ChallengeStatus | null> {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -177,8 +180,9 @@ export async function respondToChallenge(
         status: 400,
       });
     }
-    await finalizeIfComplete(client, challengeId);
+    const finalStatus = await finalizeIfComplete(client, challengeId);
     await client.query('COMMIT');
+    return finalStatus;
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;
