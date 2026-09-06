@@ -17,6 +17,17 @@ export const CONFIG_SECTIONS: ConfigSection[] = [
     keys: ['motus_reward_sp', 'motus_max_attempts'],
   },
   {
+    title: 'Sudoku',
+    keys: [
+      'sudoku_reward_easy',
+      'sudoku_reward_medium',
+      'sudoku_reward_hard',
+      'sudoku_max_attempts_easy',
+      'sudoku_max_attempts_medium',
+      'sudoku_max_attempts_hard',
+    ],
+  },
+  {
     title: 'Gambling',
     keys: [
       'gambling_enabled',

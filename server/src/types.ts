@@ -133,7 +133,8 @@ export type SpTransactionType =
   | 'auction_bid_hold'
   | 'auction_bid_refund'
   | 'auction_sale'
-  | 'motus_reward';
+  | 'motus_reward'
+  | 'sudoku_reward';
 
 export interface SpTransactionRow {
   id: number;
@@ -836,6 +837,80 @@ export interface MotusGameView {
 
 /** Historique MSP : mots des jours passés, `source` indique déjà leur provenance. */
 export type MotusHistoryEntry = MotusDailyWordRow;
+
+export type SudokuDifficulty = 'easy' | 'medium' | 'hard';
+
+export interface SudokuDailyPuzzleRow {
+  id: number;
+  puzzle_date: string;
+  difficulty: SudokuDifficulty;
+  givens: string;    // 81 caractères, '0' = case vide
+  solution: string;  // 81 caractères, jamais renvoyée au client tant que la partie n'est pas terminée
+  season_id: number | null;
+  created_at: string;
+}
+
+/** Choix de difficulté d'un joueur pour une date locale donnée — un par jour, définitif. */
+export interface SudokuPlayerChoiceRow {
+  id: number;
+  puzzle_date: string;
+  user_id: number;
+  difficulty: SudokuDifficulty;
+  chosen_at: string;
+}
+
+export interface SudokuAttemptRow {
+  id: number;
+  puzzle_id: number;
+  user_id: number;
+  attempt_number: number;
+  guess: string;
+  is_correct: boolean;
+  created_at: string;
+}
+
+export type SudokuGameStatus = 'in_progress' | 'won' | 'lost';
+
+/** Vue tant qu'aucune difficulté n'a encore été choisie aujourd'hui — aucune grille n'est révélée. */
+export interface SudokuChoosingView {
+  status: 'choosing';
+  rewards: Record<SudokuDifficulty, number>;
+  maxAttempts: Record<SudokuDifficulty, number>;
+}
+
+/** Vue publique du puzzle du jour une fois la difficulté choisie : la solution n'est incluse qu'en fin de partie. */
+export interface SudokuGameView {
+  status: SudokuGameStatus;
+  puzzleDate: string;
+  difficulty: SudokuDifficulty;
+  givens: string;
+  maxAttempts: number;
+  attemptsUsed: number;
+  rewardSp: number;
+  solution: string | null;
+}
+
+export type SudokuTodayView = SudokuChoosingView | SudokuGameView;
+
+/** Résultat d'une soumission (consomme une tentative) : correction cellule par cellule (case vide jamais correcte). */
+export interface SudokuCheckResult {
+  solved: boolean;
+  cellCorrect: boolean[];
+  status: SudokuGameStatus;
+  attemptsUsed: number;
+  maxAttempts: number;
+  rewardSp: number;
+  rewardGranted: boolean;
+  solution: string | null;
+}
+
+/** Vue MSP : un puzzle par difficulté — aucune action de création, génération 100% automatique. */
+export interface SudokuTodayAdminEntry {
+  difficulty: SudokuDifficulty;
+  puzzleDate: string;
+  clues: number;
+  completions: number;
+}
 
 export interface NotificationRow {
   id: number;

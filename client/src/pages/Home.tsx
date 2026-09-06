@@ -5,9 +5,10 @@ import UserNameTag from '../components/UserNameTag.jsx';
 import * as usersApi from '../api/users.js';
 import * as seasonsApi from '../api/seasons.js';
 import * as motusApi from '../api/motus.js';
+import * as sudokuApi from '../api/sudoku.js';
 import * as minigamesApi from '../api/minigames.js';
 import { gameTypeIcon, gameTypeLabel } from '../lib/minigameLabels.js';
-import type { MinigameSession, MotusGame, Season } from '../types.js';
+import type { MinigameSession, MotusGame, Season, SudokuTodayView } from '../types.js';
 
 function todayLocal(): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris' }).format(new Date());
@@ -22,6 +23,15 @@ function motusStatusText(motus: MotusGame): string {
     return `Gagné ! +${motus.rewardSp} SP`;
   }
   return motus.word ? `Perdu — le mot était "${motus.word.toUpperCase()}"` : 'Perdu pour aujourd\'hui';
+}
+
+function sudokuStatusText(sudoku: SudokuTodayView): string {
+  if (sudoku.status === 'choosing') return 'Choisis ta difficulté';
+  if (sudoku.status === 'in_progress') {
+    return `${sudoku.attemptsUsed}/${sudoku.maxAttempts} tentative${sudoku.attemptsUsed > 1 ? 's' : ''} utilisée${sudoku.attemptsUsed > 1 ? 's' : ''}`;
+  }
+  if (sudoku.status === 'won') return `Gagné ! +${sudoku.rewardSp} SP`;
+  return 'Perdu pour aujourd\'hui';
 }
 
 interface NavCard {
@@ -48,6 +58,7 @@ export default function Home() {
   const [bonusError, setBonusError] = useState<string | null>(null);
   const [bonusAmount, setBonusAmount] = useState<number | null>(null);
   const [motus, setMotus] = useState<MotusGame | null>(null);
+  const [sudoku, setSudoku] = useState<SudokuTodayView | null>(null);
   const [openMinigames, setOpenMinigames] = useState<MinigameSession[]>([]);
 
   useEffect(() => {
@@ -57,6 +68,7 @@ export default function Home() {
   useEffect(() => {
     if (!user) return;
     motusApi.getToday().then(setMotus).catch(() => setMotus(null));
+    sudokuApi.getToday().then(setSudoku).catch(() => setSudoku(null));
     minigamesApi
       .listSessions('open')
       .then(setOpenMinigames)
@@ -158,6 +170,24 @@ export default function Home() {
               className="flex-shrink-0 bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-semibold px-4 py-2 rounded-md transition text-sm"
             >
               {motus.status === 'in_progress' ? 'Jouer' : 'Revoir'}
+            </Link>
+          </div>
+        )}
+
+        {sudoku && (
+          <div className="flex items-center justify-between gap-4 bg-zinc-900 border border-zinc-800 rounded-xl shadow-md p-4 mb-4">
+            <div className="flex items-center gap-3 min-w-0">
+              <span className="text-2xl flex-shrink-0">🔢</span>
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-zinc-100">Sudoku du jour</p>
+                <p className="text-xs text-zinc-500 truncate">{sudokuStatusText(sudoku)}</p>
+              </div>
+            </div>
+            <Link
+              to="/sudoku"
+              className="flex-shrink-0 bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-semibold px-4 py-2 rounded-md transition text-sm"
+            >
+              {sudoku.status === 'choosing' || sudoku.status === 'in_progress' ? 'Jouer' : 'Revoir'}
             </Link>
           </div>
         )}

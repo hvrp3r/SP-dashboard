@@ -160,6 +160,7 @@ function JeuxMenu({ games }: { games: GamblingGameInfo[] }) {
   const ref = useRef<HTMLDivElement>(null);
   const isJeuxRouteActive =
     location.pathname.startsWith('/motus') ||
+    location.pathname.startsWith('/sudoku') ||
     location.pathname.startsWith('/mini-jeux') ||
     location.pathname.startsWith('/gambling');
 
@@ -205,6 +206,9 @@ function JeuxMenu({ games }: { games: GamblingGameInfo[] }) {
           <p className={dropdownSectionLabelClass}>Jeu du jour</p>
           <NavLink to="/motus" className={dropdownLinkClass}>
             <span>🟩</span> Motus
+          </NavLink>
+          <NavLink to="/sudoku" className={dropdownLinkClass}>
+            <span>🔢</span> Sudoku
           </NavLink>
 
           <p className={dropdownSectionLabelClass}>Casino</p>
@@ -372,6 +376,9 @@ export default function NavBar() {
           </p>
           <NavLink to="/motus" className={mobileLinkClass}>
             🟩 Motus
+          </NavLink>
+          <NavLink to="/sudoku" className={mobileLinkClass}>
+            🔢 Sudoku
           </NavLink>
 
           <p className="px-3 pt-3 pb-1 text-[10px] font-semibold text-zinc-500 uppercase tracking-wide">
