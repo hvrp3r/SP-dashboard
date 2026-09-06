@@ -1,21 +1,29 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth.jsx';
+import { useSpectators } from '../hooks/useSpectators.js';
 import * as crashApi from '../api/crash.js';
 import * as gamblingApi from '../api/gambling.js';
 import GamblingBudgetBar from '../components/GamblingBudgetBar.jsx';
 import VolumeSlider from '../components/VolumeSlider.jsx';
 import Avatar from '../components/Avatar.jsx';
 import UserNameTag from '../components/UserNameTag.jsx';
+import SpectatorsList from '../components/SpectatorsList.jsx';
 import HistoryScopeToggle, { type HistoryScope } from '../components/HistoryScopeToggle.jsx';
 import * as sound from '../lib/sound.js';
+import { syncServerClock, getServerNow } from '../lib/serverClock.js';
 import type { CrashBet, CrashHistoryEntry, CrashRound, GamblingStatus } from '../types.js';
 
 const POLL_INTERVAL_MS = 1000;
 /** Sondage plus rapide pendant le vol, pour réduire le délai entre l'instant réel
  * du crash côté serveur et le moment où le client l'affiche (jusqu'à POLL_INTERVAL_MS
- * de latence dans le pire cas sinon, puisque l'état n'avance qu'à la lecture). */
-const POLL_INTERVAL_RUNNING_MS = 300;
+ * de latence dans le pire cas sinon, puisque l'état n'avance qu'à la lecture). Descendu
+ * de 300 à 150ms : le retrait manuel reste plafonné côté serveur au point de crash exact
+ * (jamais de sur-paiement), et le retrait automatique est désormais payé à l'instant réel
+ * demandé plutôt qu'au multiplicateur constaté au sondage (voir crash.service.ts) — ce
+ * sondage plus fréquent ne fait donc que réduire le délai purement visuel d'affichage du
+ * crash et du solde, sans risque économique supplémentaire. */
+const POLL_INTERVAL_RUNNING_MS = 150;
 /** Rafraîchissement rapide, uniquement pendant le vol, pour une animation fluide du multiplicateur entre deux sondages. */
 const TICK_INTERVAL_MS = 100;
 const GRAPH_WIDTH = 500;
@@ -137,16 +145,25 @@ function clampPercent(value: number, margin: number): number {
 
 export default function Crash() {
   const { user, setUser } = useAuth();
+  const spectators = useSpectators('crash');
   const [round, setRound] = useState<CrashRound | null>(null);
   const [status, setStatus] = useState<GamblingStatus | null>(null);
   const [crashEnabled, setCrashEnabled] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [now, setNow] = useState(Date.now());
+  const [now, setNow] = useState(getServerNow);
   const [shaking, setShaking] = useState(false);
   const [cashoutPopup, setCashoutPopup] = useState<{ key: number; amount: number } | null>(null);
+  // Coupe-circuit du détecteur de retrait automatique pendant un retrait manuel en
+  // vol : celui-ci affiche déjà son propre popup/son, un ref (plutôt qu'un state)
+  // pour rester à jour de façon synchrone sans dépendre de l'ordre de traitement
+  // des mises à jour de state par React.
+  const manualCashoutRef = useRef(false);
 
   const [betAmount, setBetAmount] = useState('');
+  const [autoCashout, setAutoCashout] = useState('');
+  const [autoCashoutEdit, setAutoCashoutEdit] = useState('');
+  const [savingAutoCashout, setSavingAutoCashout] = useState(false);
   const [betting, setBetting] = useState(false);
   const [cashingOut, setCashingOut] = useState(false);
   const [history, setHistory] = useState<CrashHistoryEntry[]>([]);
@@ -198,7 +215,19 @@ export default function Crash() {
   }, [load, round?.status]);
 
   useEffect(() => {
-    const interval = setInterval(() => setNow(Date.now()), TICK_INTERVAL_MS);
+    const interval = setInterval(() => setNow(getServerNow()), TICK_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Calage sur l'horloge serveur (voir lib/serverClock.ts) : une horloge client qui
+  // dérive de quelques centaines de ms suffit à afficher un multiplicateur visuellement
+  // faux par rapport à `started_at`/`crashed_at`, qui sont des instants serveur. Un
+  // premier calage précis au montage (plusieurs essais, meilleur round-trip), puis un
+  // recalage léger périodique pour suivre une éventuelle dérive/changement de réseau
+  // tant que la page reste ouverte.
+  useEffect(() => {
+    syncServerClock().then(() => setNow(getServerNow()));
+    const interval = setInterval(syncServerClock, 30_000);
     return () => clearInterval(interval);
   }, []);
 
@@ -216,6 +245,28 @@ export default function Crash() {
       sound.playChip();
     }
     prevBetCount.current = round.bets.length;
+  }, [round]);
+
+  // Détecte un retrait automatique déclenché côté serveur (donc jamais vu par
+  // handleCashOut, qui affiche déjà son propre popup) : dès que la mise du joueur
+  // passe de "en jeu" à "retirée" sans qu'un retrait manuel soit en cours.
+  const prevMyCashedOut = useRef<boolean | null>(null);
+  useEffect(() => {
+    if (!round) return;
+    const mine = round.bets.find((b) => b.user_id === user?.id);
+    if (!mine) {
+      prevMyCashedOut.current = null;
+      return;
+    }
+    const isCashedOut = mine.cashout_multiplier_x100 !== null;
+    if (prevMyCashedOut.current === false && isCashedOut && !manualCashoutRef.current) {
+      sound.playCashRegister();
+      const payout = Math.floor((mine.bet_amount * (mine.cashout_multiplier_x100 as number)) / 100);
+      setCashoutPopup({ key: Date.now(), amount: payout - mine.bet_amount });
+      setTimeout(() => setCashoutPopup(null), 1200);
+    }
+    prevMyCashedOut.current = isCashedOut;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [round]);
 
   // Décollage au passage betting -> running, explosion + secousse au crash.
@@ -261,14 +312,22 @@ export default function Crash() {
     sound.unlockAudio();
     const amount = Number(betAmount);
     if (!Number.isInteger(amount) || amount <= 0) return;
+    const autoRaw = autoCashout.trim();
+    const autoValue = autoRaw ? Number(autoRaw) : null;
+    if (autoValue !== null && (!Number.isFinite(autoValue) || autoValue <= 1)) {
+      setError('Le multiplicateur de retrait automatique doit être supérieur à 1x');
+      return;
+    }
     setBetting(true);
     setError(null);
     try {
-      const result = await crashApi.bet(amount);
+      const autoCashoutX100 = autoValue !== null ? Math.round(autoValue * 100) : null;
+      const result = await crashApi.bet(amount, autoCashoutX100);
       setRound(result.round);
       setCrashEnabled(result.enabled);
       if (user) setUser({ ...user, sp_balance: result.balance });
       setBetAmount('');
+      setAutoCashout('');
       gamblingApi.getStatus().then(setStatus).catch(() => {});
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur inconnue');
@@ -277,8 +336,48 @@ export default function Crash() {
     }
   }
 
+  async function handleSetAutoCashout(e: FormEvent) {
+    e.preventDefault();
+    const raw = autoCashoutEdit.trim();
+    const value = raw ? Number(raw) : null;
+    if (value !== null && (!Number.isFinite(value) || value <= 1)) {
+      setError('Le multiplicateur de retrait automatique doit être supérieur à 1x');
+      return;
+    }
+    setSavingAutoCashout(true);
+    setError(null);
+    try {
+      const multiplierX100 = value !== null ? Math.round(value * 100) : null;
+      const result = await crashApi.setAutoCashout(multiplierX100);
+      setRound(result.round);
+      setCrashEnabled(result.enabled);
+      if (user) setUser({ ...user, sp_balance: result.balance });
+      setAutoCashoutEdit('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erreur inconnue');
+    } finally {
+      setSavingAutoCashout(false);
+    }
+  }
+
+  async function handleClearAutoCashout() {
+    setSavingAutoCashout(true);
+    setError(null);
+    try {
+      const result = await crashApi.setAutoCashout(null);
+      setRound(result.round);
+      setCrashEnabled(result.enabled);
+      if (user) setUser({ ...user, sp_balance: result.balance });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erreur inconnue');
+    } finally {
+      setSavingAutoCashout(false);
+    }
+  }
+
   async function handleCashOut() {
     sound.unlockAudio();
+    manualCashoutRef.current = true;
     setCashingOut(true);
     setError(null);
     try {
@@ -297,6 +396,7 @@ export default function Crash() {
       setError(err instanceof Error ? err.message : 'Erreur inconnue');
     } finally {
       setCashingOut(false);
+      manualCashoutRef.current = false;
     }
   }
 
@@ -399,6 +499,8 @@ export default function Crash() {
         </div>
 
         {error && <p className="mb-4 text-sm text-red-400">{error}</p>}
+
+        <SpectatorsList spectators={spectators} />
 
         {status && <GamblingBudgetBar status={{ ...status, enabled: crashEnabled }} />}
 
@@ -548,6 +650,15 @@ export default function Crash() {
                 {betAmount && !canAfford && (
                   <p className="text-xs text-red-400 mt-2">Solde SP insuffisant.</p>
                 )}
+                <input
+                  type="number"
+                  min="1.01"
+                  step="0.01"
+                  placeholder="Retrait auto (optionnel, ex: 2.00)"
+                  value={autoCashout}
+                  onChange={(e) => setAutoCashout(e.target.value)}
+                  className="w-full mt-2 rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
                 <p className="text-xs text-zinc-500 mt-2">
                   Il te reste {budgetLeft} SP de budget gambling aujourd'hui.
                 </p>
@@ -558,6 +669,46 @@ export default function Crash() {
               <p className="text-center text-sm text-zinc-400 mb-4">
                 Tu as misé {myBet.bet_amount} SP — la manche démarre bientôt.
               </p>
+            )}
+
+            {myBet && myBet.cashout_multiplier_x100 === null && !crashed && (
+              <div className="bg-zinc-900 border border-zinc-800 rounded-xl shadow-md p-4 mb-4">
+                <p className="text-sm font-medium text-zinc-200 mb-2">Retrait automatique</p>
+                {myBet.auto_cashout_multiplier_x100 !== null ? (
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-emerald-400 font-semibold">
+                      Réglé à {formatX100(myBet.auto_cashout_multiplier_x100)}x
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleClearAutoCashout}
+                      disabled={savingAutoCashout}
+                      className="text-xs text-red-400 hover:underline disabled:opacity-40"
+                    >
+                      Annuler
+                    </button>
+                  </div>
+                ) : (
+                  <form onSubmit={handleSetAutoCashout} className="flex gap-2">
+                    <input
+                      type="number"
+                      min="1.01"
+                      step="0.01"
+                      placeholder="ex: 2.00"
+                      value={autoCashoutEdit}
+                      onChange={(e) => setAutoCashoutEdit(e.target.value)}
+                      className="flex-1 rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                    <button
+                      type="submit"
+                      disabled={savingAutoCashout || !autoCashoutEdit}
+                      className="bg-zinc-800 hover:bg-zinc-700 text-zinc-100 text-sm font-medium px-3 py-2 rounded-md transition disabled:opacity-40"
+                    >
+                      {savingAutoCashout ? '…' : 'Régler'}
+                    </button>
+                  </form>
+                )}
+              </div>
             )}
 
             {canCashOut && (

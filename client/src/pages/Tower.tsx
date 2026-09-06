@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth.jsx';
+import { useSpectators } from '../hooks/useSpectators.js';
 import * as towerApi from '../api/tower.js';
 import * as gamblingApi from '../api/gambling.js';
 import GamblingBudgetBar from '../components/GamblingBudgetBar.jsx';
 import VolumeSlider from '../components/VolumeSlider.jsx';
 import Avatar from '../components/Avatar.jsx';
 import UserNameTag from '../components/UserNameTag.jsx';
+import SpectatorsList from '../components/SpectatorsList.jsx';
 import HistoryScopeToggle, { type HistoryScope } from '../components/HistoryScopeToggle.jsx';
 import * as sound from '../lib/sound.js';
 import type {
@@ -83,6 +85,7 @@ function pluralize(count: number, word: string): string {
 
 export default function Tower() {
   const { user, setUser } = useAuth();
+  const spectators = useSpectators('tower');
   const [game, setGame] = useState<TowerGame | null>(null);
   const [difficulties, setDifficulties] = useState<TowerDifficultyInfo[]>([]);
   const [towerEnabled, setTowerEnabled] = useState(true);
@@ -276,6 +279,8 @@ export default function Tower() {
         </div>
 
         {error && <p className="mb-4 text-sm text-red-400">{error}</p>}
+
+        <SpectatorsList spectators={spectators} />
 
         {status && <GamblingBudgetBar status={{ ...status, enabled: towerEnabled }} />}
 

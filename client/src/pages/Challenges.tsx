@@ -586,6 +586,7 @@ function ChallengeCard({
                         username={p.user_id === userId ? 'Toi' : p.username}
                         equipped={p.equipped_cosmetics}
                         className="text-zinc-200"
+                        linkable={false}
                       />
                     </button>
                   ))}

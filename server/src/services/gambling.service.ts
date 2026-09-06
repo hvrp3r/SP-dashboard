@@ -16,7 +16,15 @@ import type {
   GamblingOpenEntry,
   GamblingOpenRow,
   GamblingRewardType,
+  GamblingSpectatorEntry,
+  GamblingSpectatorRoom,
 } from '../types.js';
+
+/** Fenêtre au-delà de laquelle un heartbeat expiré ne compte plus comme "présent" —
+ * doit rester nettement au-dessus de HEARTBEAT_INTERVAL_MS côté client pour absorber
+ * un poll manqué ou un peu de latence réseau sans faire disparaître/réapparaître un
+ * spectateur toujours là. */
+const SPECTATOR_ACTIVE_WINDOW = "15 seconds";
 
 export async function listCrates(
   includeInactive: boolean,
@@ -585,6 +593,50 @@ export async function listOpens(
      ORDER BY o.opened_at DESC
      LIMIT $2`,
     [userId, limit]
+  );
+  const equippedByUser = await cosmeticsService.getEquippedForUsers(rows.map((r) => r.user_id));
+  return rows.map((row) => ({
+    ...row,
+    equipped_cosmetics: equippedByUser.get(row.user_id) ?? [],
+  }));
+}
+
+/**
+ * Enregistre (ou rafraîchit) la présence d'un joueur sur une page de jeu de
+ * gambling — appelé en heartbeat périodique par le client tant que la page
+ * reste ouverte (voir useSpectators.ts). `roomKey` distingue les caisses
+ * entre elles (id de la caisse) ; vide pour les jeux singleton.
+ */
+export async function heartbeatSpectator(
+  userId: number,
+  room: GamblingSpectatorRoom,
+  roomKey: string
+): Promise<void> {
+  await pool.query(
+    `INSERT INTO gambling_spectators (room, room_key, user_id, last_seen_at)
+     VALUES ($1, $2, $3, NOW())
+     ON CONFLICT (room, room_key, user_id) DO UPDATE SET last_seen_at = NOW()`,
+    [room, roomKey, userId]
+  );
+}
+
+/**
+ * Liste les spectateurs actuellement présents sur une room — un joueur est
+ * considéré présent si son dernier heartbeat date de moins de
+ * SPECTATOR_ACTIVE_WINDOW (pas de suppression explicite à la fermeture de
+ * l'onglet, voir la migration 049).
+ */
+export async function listSpectators(
+  room: GamblingSpectatorRoom,
+  roomKey: string
+): Promise<GamblingSpectatorEntry[]> {
+  const { rows } = await pool.query<{ user_id: number; username: string; avatar_url: string | null }>(
+    `SELECT u.id AS user_id, u.username, u.avatar_url
+     FROM gambling_spectators gs
+     JOIN users u ON u.id = gs.user_id
+     WHERE gs.room = $1 AND gs.room_key = $2 AND gs.last_seen_at > NOW() - INTERVAL '${SPECTATOR_ACTIVE_WINDOW}'
+     ORDER BY u.username ASC`,
+    [room, roomKey]
   );
   const equippedByUser = await cosmeticsService.getEquippedForUsers(rows.map((r) => r.user_id));
   return rows.map((row) => ({

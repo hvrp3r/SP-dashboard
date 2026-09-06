@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth.jsx';
 import { useConfirm } from '../hooks/useConfirm.jsx';
+import { useSpectators } from '../hooks/useSpectators.js';
 import * as gamblingApi from '../api/gambling.js';
 import * as cosmeticsApi from '../api/cosmetics.js';
 import {
@@ -28,6 +29,7 @@ import CrateIcon from '../components/CrateIcon.jsx';
 import ResetIntervalField from '../components/ResetIntervalField.jsx';
 import Avatar from '../components/Avatar.jsx';
 import UserNameTag from '../components/UserNameTag.jsx';
+import SpectatorsList from '../components/SpectatorsList.jsx';
 import HistoryScopeToggle, { type HistoryScope } from '../components/HistoryScopeToggle.jsx';
 import { unlockAudio } from '../lib/sound.js';
 import type {
@@ -127,6 +129,7 @@ export default function GamblingCrateDetail() {
   const { user, setUser } = useAuth();
   const confirm = useConfirm();
   const isAdmin = user?.role === 'admin';
+  const spectators = useSpectators('crates', id);
 
   const [crate, setCrate] = useState<CrateDetail | null>(null);
   const [status, setStatus] = useState<GamblingStatus | null>(null);
@@ -500,6 +503,8 @@ export default function GamblingCrateDetail() {
             </span>
           )}
         </div>
+
+        <SpectatorsList spectators={spectators} />
 
         {status && <GamblingBudgetBar status={status} />}
 

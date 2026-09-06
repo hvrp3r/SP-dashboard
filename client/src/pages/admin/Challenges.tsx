@@ -1,7 +1,16 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import * as challengesApi from '../../api/challenges.js';
 import { useConfirm } from '../../hooks/useConfirm.jsx';
 import type { Challenge, ChallengeParticipant, ChallengeStatus } from '../../types.js';
+
+function PlayerLink({ username, className = '' }: { username: string; className?: string }) {
+  return (
+    <Link to={`/joueurs/${encodeURIComponent(username)}`} className={`hover:underline ${className}`}>
+      {username}
+    </Link>
+  );
+}
 
 const STATUS_LABELS: Record<ChallengeStatus, string> = {
   pending: 'En attente',
@@ -135,7 +144,12 @@ export default function AdminChallenges() {
                 <div key={c.id} className="bg-zinc-900 border border-zinc-800 rounded-xl shadow-md p-4">
                   <div className="flex items-center justify-between mb-2 gap-2">
                     <p className="font-medium text-zinc-100">
-                      {c.participants.map((p) => p.username).join(' vs ')}
+                      {c.participants.map((p, i) => (
+                        <span key={p.id}>
+                          {i > 0 && ' vs '}
+                          <PlayerLink username={p.username} />
+                        </span>
+                      ))}
                     </p>
                     <div className="flex items-center gap-1.5 flex-shrink-0">
                       {c.type === 'coin_flip' && (
@@ -162,7 +176,7 @@ export default function AdminChallenges() {
                                 : 'bg-zinc-800 text-zinc-400'
                           }`}
                         >
-                          {p.username} · {PARTICIPANT_STATUS_LABELS[p.status]}
+                          <PlayerLink username={p.username} /> · {PARTICIPANT_STATUS_LABELS[p.status]}
                         </span>
                       ))}
                     </div>
@@ -183,15 +197,20 @@ export default function AdminChallenges() {
                       Désaccord :{' '}
                       {acceptedParticipants
                         .filter((p) => p.reported_winner_id !== null)
-                        .map((p) => `${p.username} déclare ${usernameOf(p.reported_winner_id)}`)
-                        .join(', ')}
+                        .map((p, i, arr) => (
+                          <span key={p.id}>
+                            <PlayerLink username={p.username} /> déclare{' '}
+                            <PlayerLink username={usernameOf(p.reported_winner_id)} />
+                            {i < arr.length - 1 ? ', ' : ''}
+                          </span>
+                        ))}
                       .
                     </p>
                   )}
 
                   {c.status === 'resolved' && (
                     <p className="text-sm text-emerald-400">
-                      Gagnant : {winner?.username ?? '???'} ({pot} SP)
+                      Gagnant : {winner ? <PlayerLink username={winner.username} /> : '???'} ({pot} SP)
                     </p>
                   )}
 

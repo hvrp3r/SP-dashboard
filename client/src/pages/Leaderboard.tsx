@@ -195,6 +195,7 @@ export default function Leaderboard() {
                                 username={entry.username}
                                 equipped={entry.equipped_cosmetics}
                                 className="text-zinc-100"
+                                linkable={false}
                               />
                               {entry.role === 'admin' && (
                                 <span className="text-[10px] bg-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded">
@@ -286,6 +287,7 @@ export default function Leaderboard() {
                                 username={entry.username}
                                 equipped={entry.equipped_cosmetics}
                                 className="text-zinc-100"
+                                linkable={false}
                               />
                             </Link>
                           </td>
