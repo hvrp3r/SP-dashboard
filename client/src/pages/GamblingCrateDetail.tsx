@@ -26,6 +26,9 @@ import GamblingReel from '../components/GamblingReel.jsx';
 import VolumeSlider from '../components/VolumeSlider.jsx';
 import CrateIcon from '../components/CrateIcon.jsx';
 import ResetIntervalField from '../components/ResetIntervalField.jsx';
+import Avatar from '../components/Avatar.jsx';
+import UserNameTag from '../components/UserNameTag.jsx';
+import HistoryScopeToggle, { type HistoryScope } from '../components/HistoryScopeToggle.jsx';
 import { unlockAudio } from '../lib/sound.js';
 import type {
   Cosmetic,
@@ -128,6 +131,7 @@ export default function GamblingCrateDetail() {
   const [crate, setCrate] = useState<CrateDetail | null>(null);
   const [status, setStatus] = useState<GamblingStatus | null>(null);
   const [opens, setOpens] = useState<GamblingOpenEntry[]>([]);
+  const [historyScope, setHistoryScope] = useState<HistoryScope>('all');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -195,8 +199,18 @@ export default function GamblingCrateDetail() {
 
   useEffect(() => {
     gamblingApi.getStatus().then(setStatus).catch(() => {});
-    gamblingApi.getMyOpens(10).then(setOpens).catch(() => {});
   }, [crateId]);
+
+  const loadOpens = useCallback(() => {
+    gamblingApi
+      .getOpens(10, historyScope === 'mine')
+      .then(setOpens)
+      .catch(() => {});
+  }, [historyScope]);
+
+  useEffect(() => {
+    loadOpens();
+  }, [loadOpens]);
 
   useEffect(() => {
     // Chargé pour tout le monde (pas seulement le MSP) : sert aussi à afficher
@@ -246,7 +260,7 @@ export default function GamblingCrateDetail() {
     setLastResult(pendingResultRef.current);
     pendingResultRef.current = null;
     setOpening(false);
-    gamblingApi.getMyOpens(10).then(setOpens).catch(() => {});
+    loadOpens();
   }
 
   async function handleSaveCrate(e: FormEvent) {
@@ -607,28 +621,48 @@ export default function GamblingCrateDetail() {
           )}
         </div>
 
-        {opens.length > 0 && (
-          <div className="mb-6">
-            <h2 className="text-sm font-semibold text-zinc-300 uppercase mb-3">
-              Tes dernières ouvertures
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold text-zinc-300 uppercase">
+              Historique des ouvertures
             </h2>
+            <HistoryScopeToggle scope={historyScope} onChange={setHistoryScope} />
+          </div>
+          {opens.length === 0 ? (
+            <p className="text-sm text-zinc-500">Aucune ouverture pour le moment.</p>
+          ) : (
             <ul className="space-y-2">
               {opens.map((o) => (
                 <li
                   key={o.id}
-                  className="flex items-center justify-between bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm"
+                  className="flex items-center justify-between gap-2 bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm"
                 >
-                  <span className="text-zinc-300">
-                    {o.crate_name} — {o.reward_title}
-                  </span>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Avatar
+                      username={o.username}
+                      avatarUrl={o.avatar_url}
+                      size={24}
+                      frameUrl={o.equipped_cosmetics.find((c) => c.slot === 'avatar_frame')?.image_url}
+                    />
+                    <div className="min-w-0">
+                      <UserNameTag
+                        username={o.user_id === user?.id ? 'Toi' : o.username}
+                        equipped={o.equipped_cosmetics}
+                        className="text-zinc-300 truncate"
+                      />
+                      <p className="text-xs text-zinc-500 truncate">
+                        {o.crate_name} — {o.reward_title}
+                      </p>
+                    </div>
+                  </div>
                   {o.sp_amount !== null && (
-                    <span className="text-emerald-400 font-bold">+{o.sp_amount} SP</span>
+                    <span className="text-emerald-400 font-bold flex-shrink-0">+{o.sp_amount} SP</span>
                   )}
                 </li>
               ))}
             </ul>
-          </div>
-        )}
+          )}
+        </div>
 
         {isAdmin && (
           <>

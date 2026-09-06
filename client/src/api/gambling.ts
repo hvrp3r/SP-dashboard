@@ -29,8 +29,13 @@ export const getStatus = () => apiClient.get<GamblingStatus>('/api/gambling/stat
 export const getMyInventory = () =>
   apiClient.get<GamblingInventoryEntry[]>('/api/gambling/inventory/me');
 
-export const getMyOpens = (limit?: number) =>
-  apiClient.get<GamblingOpenEntry[]>(`/api/gambling/opens/me${limit ? `?limit=${limit}` : ''}`);
+export const getOpens = (limit?: number, mine?: boolean) => {
+  const params = new URLSearchParams();
+  if (limit) params.set('limit', String(limit));
+  if (mine) params.set('mine', 'true');
+  const qs = params.toString();
+  return apiClient.get<GamblingOpenEntry[]>(`/api/gambling/opens${qs ? `?${qs}` : ''}`);
+};
 
 export const createCrate = (input: {
   name: string;

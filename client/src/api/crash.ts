@@ -8,5 +8,10 @@ export const bet = (betAmount: number) =>
 
 export const cashOut = () => apiClient.post<CrashActionResult>('/api/crash/cashout');
 
-export const getMyHistory = (limit?: number) =>
-  apiClient.get<CrashHistoryEntry[]>(`/api/crash/history/me${limit ? `?limit=${limit}` : ''}`);
+export const getHistory = (limit?: number, mine?: boolean) => {
+  const params = new URLSearchParams();
+  if (limit) params.set('limit', String(limit));
+  if (mine) params.set('mine', 'true');
+  const qs = params.toString();
+  return apiClient.get<CrashHistoryEntry[]>(`/api/crash/history${qs ? `?${qs}` : ''}`);
+};

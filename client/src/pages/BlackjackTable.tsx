@@ -9,6 +9,7 @@ import BlackjackSeat from '../components/BlackjackSeat.jsx';
 import VolumeSlider from '../components/VolumeSlider.jsx';
 import Avatar from '../components/Avatar.jsx';
 import UserNameTag from '../components/UserNameTag.jsx';
+import HistoryScopeToggle, { type HistoryScope } from '../components/HistoryScopeToggle.jsx';
 import * as sound from '../lib/sound.js';
 import type {
   BlackjackCard,
@@ -138,14 +139,15 @@ export default function BlackjackTable() {
   const [joining, setJoining] = useState(false);
   const [acting, setActing] = useState(false);
   const [history, setHistory] = useState<BlackjackHistoryEntry[]>([]);
+  const [historyScope, setHistoryScope] = useState<HistoryScope>('all');
   const [rtp, setRtp] = useState<number | null>(null);
 
   const loadHistory = useCallback(() => {
     blackjackApi
-      .getMyHistory(10)
+      .getHistory(10, historyScope === 'mine')
       .then(setHistory)
       .catch(() => {});
-  }, []);
+  }, [historyScope]);
 
   useEffect(() => {
     loadHistory();
@@ -510,33 +512,48 @@ export default function BlackjackTable() {
           </>
         )}
 
-        {history.length > 0 && (
-          <div className="mt-2">
-            <h2 className="text-sm font-semibold text-zinc-300 uppercase mb-3">
-              Historique de tes parties
-            </h2>
+        <div className="mt-2">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold text-zinc-300 uppercase">Historique des parties</h2>
+            <HistoryScopeToggle scope={historyScope} onChange={setHistoryScope} />
+          </div>
+          {history.length === 0 ? (
+            <p className="text-sm text-zinc-500">Aucune partie pour le moment.</p>
+          ) : (
             <ul className="space-y-2">
               {history.map((h) => {
                 const net = netResult(h);
                 const dealerFinal = handValue(h.dealer_cards);
-                const myFinal = h.status === 'busted' ? 'Dépassé' : handValue(h.cards);
+                const handFinal = h.status === 'busted' ? 'Dépassé' : handValue(h.cards);
                 return (
                   <li
                     key={h.id}
-                    className="flex items-center justify-between bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm"
+                    className="flex items-center justify-between gap-2 bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm"
                   >
-                    <div className="min-w-0">
-                      <p className="text-zinc-300">
-                        Mise {h.bet_amount} SP
-                        {h.outcome === 'blackjack' && (
-                          <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 font-medium uppercase tracking-wide">
-                            Blackjack
-                          </span>
-                        )}
-                      </p>
-                      <p className="text-xs text-zinc-500">
-                        Toi : {myFinal} · Croupier : {dealerFinal}
-                      </p>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Avatar
+                        username={h.username}
+                        avatarUrl={h.avatar_url}
+                        size={24}
+                        frameUrl={h.equipped_cosmetics.find((c) => c.slot === 'avatar_frame')?.image_url}
+                      />
+                      <div className="min-w-0">
+                        <p className="text-zinc-300 truncate flex items-center gap-1">
+                          <UserNameTag
+                            username={h.user_id === user?.id ? 'Toi' : h.username}
+                            equipped={h.equipped_cosmetics}
+                            className="text-zinc-300"
+                          />
+                          {h.outcome === 'blackjack' && (
+                            <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 font-medium uppercase tracking-wide">
+                              Blackjack
+                            </span>
+                          )}
+                        </p>
+                        <p className="text-xs text-zinc-500">
+                          Mise {h.bet_amount} SP · {handFinal} · Croupier : {dealerFinal}
+                        </p>
+                      </div>
                     </div>
                     <span
                       className={`font-semibold flex-shrink-0 ${
@@ -549,8 +566,8 @@ export default function BlackjackTable() {
                 );
               })}
             </ul>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );

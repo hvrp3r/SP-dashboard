@@ -7,7 +7,7 @@ const router = Router();
 router.get('/games', requireAuth, gamblingController.listGames);
 router.get('/status', requireAuth, gamblingController.getStatus);
 router.get('/inventory/me', requireAuth, gamblingController.listMyInventory);
-router.get('/opens/me', requireAuth, gamblingController.listMyOpens);
+router.get('/opens', requireAuth, gamblingController.listOpens);
 
 router.get('/crates', requireAuth, gamblingController.listCrates);
 router.get('/crates/:id', requireAuth, gamblingController.getCrate);

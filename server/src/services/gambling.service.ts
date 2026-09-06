@@ -561,18 +561,34 @@ export async function listMyInventory(userId: number): Promise<GamblingInventory
   return rows;
 }
 
-export async function listMyOpens(userId: number, limit: number): Promise<GamblingOpenEntry[]> {
-  const { rows } = await pool.query<GamblingOpenEntry>(
+/**
+ * Historique des ouvertures de caisses — toutes les ouvertures de tous les
+ * joueurs par défaut (`userId = null`), ou filtré sur un seul joueur (page
+ * "Mes ouvertures uniquement"). Toujours joint username/avatar/cosmétiques
+ * équipés, même en mode "un seul joueur" — même convention que
+ * blackjack/crash/tower `listHistory`, pour un composant client unique.
+ */
+export async function listOpens(
+  limit: number,
+  userId: number | null = null
+): Promise<GamblingOpenEntry[]> {
+  const { rows } = await pool.query<Omit<GamblingOpenEntry, 'equipped_cosmetics'>>(
     `SELECT o.id, o.user_id, o.crate_id, o.reward_id, o.season_id, o.sp_transaction_id, o.opened_at,
             c.name AS crate_name, r.title AS reward_title, r.type AS reward_type,
-            r.image_url AS reward_image_url, r.sp_amount
+            r.image_url AS reward_image_url, r.sp_amount,
+            u.username, u.avatar_url
      FROM gambling_opens o
      JOIN gambling_crates c ON c.id = o.crate_id
      JOIN gambling_crate_rewards r ON r.id = o.reward_id
-     WHERE o.user_id = $1
+     JOIN users u ON u.id = o.user_id
+     WHERE $1::int IS NULL OR o.user_id = $1
      ORDER BY o.opened_at DESC
      LIMIT $2`,
     [userId, limit]
   );
-  return rows;
+  const equippedByUser = await cosmeticsService.getEquippedForUsers(rows.map((r) => r.user_id));
+  return rows.map((row) => ({
+    ...row,
+    equipped_cosmetics: equippedByUser.get(row.user_id) ?? [],
+  }));
 }

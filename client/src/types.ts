@@ -540,6 +540,9 @@ export interface GamblingOpenEntry {
   season_id: number | null;
   sp_transaction_id: number | null;
   opened_at: string;
+  username: string;
+  avatar_url: string | null;
+  equipped_cosmetics: EquippedCosmetic[];
   crate_name: string;
   reward_title: string;
   reward_type: GamblingRewardType;
@@ -597,12 +600,16 @@ export interface BlackjackActionResult {
 export interface BlackjackHistoryEntry {
   id: number;
   session_id: number;
+  user_id: number;
   bet_amount: number;
   cards: BlackjackCard[];
   status: BlackjackHandStatus;
   outcome: BlackjackOutcome;
   resolved_at: string;
   dealer_cards: BlackjackCard[];
+  username: string;
+  avatar_url: string | null;
+  equipped_cosmetics: EquippedCosmetic[];
 }
 
 export type GamblingGameId = 'crates' | 'blackjack' | 'crash' | 'tower';
@@ -655,10 +662,14 @@ export interface CrashActionResult {
 export interface CrashHistoryEntry {
   id: number;
   round_id: number;
+  user_id: number;
   bet_amount: number;
   cashout_multiplier_x100: number | null;
   resolved_at: string;
   crash_point_x100: number;
+  username: string;
+  avatar_url: string | null;
+  equipped_cosmetics: EquippedCosmetic[];
 }
 
 export type TowerDifficulty = 'easy' | 'medium' | 'hard';
@@ -695,6 +706,7 @@ export interface TowerActionResult {
 
 export interface TowerHistoryEntry {
   id: number;
+  user_id: number;
   difficulty: TowerDifficulty;
   bet_amount: number;
   status: TowerGameStatus;
@@ -703,6 +715,9 @@ export interface TowerHistoryEntry {
   final_multiplier_x100: number;
   payout: number;
   resolved_at: string;
+  username: string;
+  avatar_url: string | null;
+  equipped_cosmetics: EquippedCosmetic[];
 }
 
 export interface TowerDifficultyInfo {
