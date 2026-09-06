@@ -146,16 +146,72 @@ async function resolveRound(client: PoolClient, round: CrashRoundRow): Promise<C
 }
 
 /**
+ * Retire automatiquement les mises dont le multiplicateur cible (`auto_cashout_multiplier_x100`)
+ * a été atteint — toujours payé exactement à ce multiplicateur, jamais au multiplicateur
+ * constaté au moment de l'appel (qui peut être en retard de jusqu'à POLL_INTERVAL_RUNNING_MS
+ * côté client, voire davantage si personne n'a sondé depuis un moment) : dès lors que la cible
+ * est sous le point de crash, elle a forcément déjà été atteinte "dans le temps réel" du jeu,
+ * qu'on la détecte en retard ou non. Appelée avant la vérification de résolution par crash,
+ * pour qu'un retrait auto sous le point de crash soit toujours payé même si le sondage qui le
+ * détecte arrive après l'instant réel du crash.
+ */
+async function processAutoCashouts(client: PoolClient, round: CrashRoundRow): Promise<void> {
+  if (round.status !== 'running' || !round.started_at) return;
+
+  const elapsedSeconds = (Date.now() - new Date(round.started_at).getTime()) / 1000;
+  const currentMultiplierX100 = Math.round(multiplierAt(elapsedSeconds) * 100);
+  const reachedX100 = Math.min(currentMultiplierX100, round.crash_point_x100);
+
+  const { rows: bets } = await client.query<CrashBetRow>(
+    `SELECT * FROM crash_bets
+     WHERE round_id = $1
+       AND cashout_multiplier_x100 IS NULL
+       AND auto_cashout_multiplier_x100 IS NOT NULL
+       AND auto_cashout_multiplier_x100 <= $2
+     FOR UPDATE`,
+    [round.id, reachedX100]
+  );
+
+  for (const bet of bets) {
+    const multiplierX100 = bet.auto_cashout_multiplier_x100 as number;
+    const payout = Math.floor((bet.bet_amount * multiplierX100) / 100);
+
+    await client.query(
+      `UPDATE crash_bets SET cashout_multiplier_x100 = $1, resolved_at = NOW() WHERE id = $2`,
+      [multiplierX100, bet.id]
+    );
+
+    const payoutTx = await spService.creditSP({
+      userId: bet.user_id,
+      amount: payout,
+      type: 'gambling_win',
+      seasonId: round.season_id,
+      relatedId: bet.id,
+      note: `Crash — Retrait auto à ${(multiplierX100 / 100).toFixed(2)}x (mise ${bet.bet_amount} SP)`,
+      client,
+    });
+    await client.query('UPDATE crash_bets SET payout_transaction_id = $1 WHERE id = $2', [
+      payoutTx.id,
+      bet.id,
+    ]);
+  }
+}
+
+/**
  * Avance l'état de la manche si le temps est écoulé : démarrage (betting -> running)
- * une fois `starts_at` dépassé, puis résolution (running -> crashed) dès que
- * `crashed_at` est dépassé. Appelée avec une manche déjà verrouillée (`FOR UPDATE`)
- * par l'appelant.
+ * une fois `starts_at` dépassé, puis retraits automatiques, puis résolution
+ * (running -> crashed) dès que `crashed_at` est dépassé. Appelée avec une manche
+ * déjà verrouillée (`FOR UPDATE`) par l'appelant.
  */
 async function advanceRound(client: PoolClient, round: CrashRoundRow): Promise<CrashRoundRow> {
   let current = round;
 
   if (current.status === 'betting' && current.starts_at && new Date(current.starts_at) <= new Date()) {
     current = await startRound(client, current);
+  }
+
+  if (current.status === 'running') {
+    await processAutoCashouts(client, current);
   }
 
   if (current.status === 'running' && current.crashed_at && new Date(current.crashed_at) <= new Date()) {
@@ -211,11 +267,21 @@ export async function getCurrentRoundView(
 export async function placeBet(
   userId: number,
   betAmount: number,
-  seasonId: number | null
+  seasonId: number | null,
+  autoCashoutMultiplierX100: number | null = null
 ): Promise<CrashActionResult> {
   const enabled = await isCrashEnabled();
   if (!enabled) {
     throw Object.assign(new Error('Le crash est désactivé par le MSP'), { status: 403 });
+  }
+  if (
+    autoCashoutMultiplierX100 !== null &&
+    (!Number.isInteger(autoCashoutMultiplierX100) || autoCashoutMultiplierX100 <= 100)
+  ) {
+    throw Object.assign(
+      new Error('Le retrait automatique doit être un multiplicateur supérieur à 1x'),
+      { status: 400 }
+    );
   }
   const maxWagerPerDay = await configService.getConfigNumber('gambling_max_wager_per_day', 50);
 
@@ -267,8 +333,9 @@ export async function placeBet(
     }
 
     const { rows: betRows } = await client.query<CrashBetRow>(
-      'INSERT INTO crash_bets (round_id, user_id, bet_amount) VALUES ($1, $2, $3) RETURNING *',
-      [round.id, userId, betAmount]
+      `INSERT INTO crash_bets (round_id, user_id, bet_amount, auto_cashout_multiplier_x100)
+       VALUES ($1, $2, $3, $4) RETURNING *`,
+      [round.id, userId, betAmount, autoCashoutMultiplierX100]
     );
     const bet = betRows[0] as CrashBetRow;
 
@@ -311,6 +378,92 @@ export async function placeBet(
   } finally {
     client.release();
   }
+}
+
+/**
+ * Fixe, modifie ou annule (`multiplierX100 = null`) le retrait automatique de la mise
+ * courante du joueur. Autorisé pendant `betting` (avant même que la manche démarre) et
+ * pendant `running` — dans ce dernier cas la cible doit être strictement supérieure au
+ * multiplicateur déjà atteint, sinon elle serait immédiatement (et silencieusement) sans
+ * effet. Verrouille la mise (`FOR UPDATE`) pour ne pas entrer en course avec
+ * `processAutoCashouts` : soit ce retrait automatique voit la mise déjà retirée et refuse,
+ * soit il pose la cible avant que `processAutoCashouts` ne la lise au prochain sondage.
+ */
+export async function setAutoCashout(
+  userId: number,
+  seasonId: number | null,
+  multiplierX100: number | null
+): Promise<CrashActionResult> {
+  if (multiplierX100 !== null && (!Number.isInteger(multiplierX100) || multiplierX100 <= 100)) {
+    throw Object.assign(
+      new Error('Le retrait automatique doit être un multiplicateur supérieur à 1x'),
+      { status: 400 }
+    );
+  }
+
+  const latestRow = await getLatestRoundRow(seasonId);
+  if (!latestRow) {
+    throw Object.assign(new Error('Aucune manche en cours'), { status: 404 });
+  }
+  const latest = await syncRound(latestRow.id);
+  const enabled = await isCrashEnabled();
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const { rows: roundRows } = await client.query<CrashRoundRow>(
+      'SELECT * FROM crash_rounds WHERE id = $1 FOR UPDATE',
+      [latest.id]
+    );
+    const round = roundRows[0];
+    if (!round || (round.status !== 'betting' && round.status !== 'running')) {
+      throw Object.assign(
+        new Error('Impossible de modifier le retrait automatique maintenant'),
+        { status: 409 }
+      );
+    }
+
+    const { rows: betRows } = await client.query<CrashBetRow>(
+      'SELECT * FROM crash_bets WHERE round_id = $1 AND user_id = $2 FOR UPDATE',
+      [round.id, userId]
+    );
+    const bet = betRows[0];
+    if (!bet) {
+      throw Object.assign(new Error("Tu n'as pas misé sur cette manche"), { status: 404 });
+    }
+    if (bet.cashout_multiplier_x100 !== null) {
+      throw Object.assign(new Error("Tu t'es déjà retiré"), { status: 409 });
+    }
+
+    if (round.status === 'running' && multiplierX100 !== null) {
+      const elapsedSeconds = (Date.now() - new Date(round.started_at as string).getTime()) / 1000;
+      const currentMultiplierX100 = Math.round(multiplierAt(elapsedSeconds) * 100);
+      if (multiplierX100 <= currentMultiplierX100) {
+        throw Object.assign(
+          new Error('Le multiplicateur cible doit être supérieur au multiplicateur actuel'),
+          { status: 400 }
+        );
+      }
+    }
+
+    await client.query('UPDATE crash_bets SET auto_cashout_multiplier_x100 = $1 WHERE id = $2', [
+      multiplierX100,
+      bet.id,
+    ]);
+
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+
+  const refreshed = await syncRound(latest.id);
+  const bets = await listBets(refreshed.id);
+  const balance = await getBalance(userId);
+  return { round: toPublicView(refreshed, bets), balance, enabled };
 }
 
 export async function cashOut(

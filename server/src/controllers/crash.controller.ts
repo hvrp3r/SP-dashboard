@@ -10,6 +10,7 @@ export async function getCurrent(req: Request, res: Response): Promise<void> {
 
 interface BetBody {
   betAmount?: number;
+  autoCashoutMultiplierX100?: number | null;
 }
 
 export async function bet(req: Request<{}, {}, BetBody>, res: Response): Promise<void> {
@@ -19,17 +20,67 @@ export async function bet(req: Request<{}, {}, BetBody>, res: Response): Promise
     return;
   }
 
+  const autoCashoutRaw = req.body?.autoCashoutMultiplierX100;
+  let autoCashoutMultiplierX100: number | null = null;
+  if (autoCashoutRaw !== undefined && autoCashoutRaw !== null) {
+    if (!Number.isInteger(autoCashoutRaw) || autoCashoutRaw <= 100) {
+      res
+        .status(400)
+        .json({ error: 'Le retrait automatique doit être un multiplicateur supérieur à 1x' });
+      return;
+    }
+    autoCashoutMultiplierX100 = autoCashoutRaw;
+  }
+
   const activeSeason = await seasonService.getActiveSeason();
 
   let result;
   try {
-    result = await crashService.placeBet(req.user!.id, betAmount as number, activeSeason?.id ?? null);
+    result = await crashService.placeBet(
+      req.user!.id,
+      betAmount as number,
+      activeSeason?.id ?? null,
+      autoCashoutMultiplierX100
+    );
   } catch (err) {
     const status = (err as { status?: number }).status ?? 500;
     res.status(status).json({ error: err instanceof Error ? err.message : 'Erreur serveur' });
     return;
   }
   res.status(201).json(result);
+}
+
+interface AutoCashoutBody {
+  multiplierX100?: number | null;
+}
+
+export async function setAutoCashout(
+  req: Request<{}, {}, AutoCashoutBody>,
+  res: Response
+): Promise<void> {
+  const raw = req.body?.multiplierX100;
+  let multiplierX100: number | null = null;
+  if (raw !== undefined && raw !== null) {
+    if (!Number.isInteger(raw) || raw <= 100) {
+      res
+        .status(400)
+        .json({ error: 'Le retrait automatique doit être un multiplicateur supérieur à 1x' });
+      return;
+    }
+    multiplierX100 = raw;
+  }
+
+  const activeSeason = await seasonService.getActiveSeason();
+
+  let result;
+  try {
+    result = await crashService.setAutoCashout(req.user!.id, activeSeason?.id ?? null, multiplierX100);
+  } catch (err) {
+    const status = (err as { status?: number }).status ?? 500;
+    res.status(status).json({ error: err instanceof Error ? err.message : 'Erreur serveur' });
+    return;
+  }
+  res.json(result);
 }
 
 export async function cashOut(req: Request, res: Response): Promise<void> {

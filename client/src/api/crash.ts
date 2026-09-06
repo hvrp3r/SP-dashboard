@@ -3,10 +3,13 @@ import type { CrashActionResult, CrashHistoryEntry } from '../types.js';
 
 export const getCurrentRound = () => apiClient.get<CrashActionResult>('/api/crash/current');
 
-export const bet = (betAmount: number) =>
-  apiClient.post<CrashActionResult>('/api/crash/bet', { betAmount });
+export const bet = (betAmount: number, autoCashoutMultiplierX100?: number | null) =>
+  apiClient.post<CrashActionResult>('/api/crash/bet', { betAmount, autoCashoutMultiplierX100 });
 
 export const cashOut = () => apiClient.post<CrashActionResult>('/api/crash/cashout');
+
+export const setAutoCashout = (multiplierX100: number | null) =>
+  apiClient.post<CrashActionResult>('/api/crash/auto-cashout', { multiplierX100 });
 
 export const getHistory = (limit?: number, mine?: boolean) => {
   const params = new URLSearchParams();

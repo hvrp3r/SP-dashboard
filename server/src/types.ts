@@ -666,6 +666,7 @@ export interface CrashBetRow {
   user_id: number;
   bet_amount: number;
   cashout_multiplier_x100: number | null;
+  auto_cashout_multiplier_x100: number | null;
   bet_transaction_id: number | null;
   payout_transaction_id: number | null;
   joined_at: string;
