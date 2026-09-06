@@ -1,0 +1,13 @@
+Symboles de la machine à sous : Twemoji (https://github.com/jdecked/twemoji)
+Licence CC-BY 4.0 (https://creativecommons.org/licenses/by/4.0/) — graphismes
+originaux Copyright 2020 Twitter, Inc et autres contributeurs.
+
+Fichiers repris tels quels depuis assets/svg/ du dépôt, renommés par symbole :
+straw.svg  <- 1f33e.svg (sheaf of rice)
+wood.svg   <- 1fab5.svg (wood)
+brick.svg  <- 1f9f1.svg (brick)
+pig.svg    <- 1f437.svg (pig face)
+wolf.svg   <- 1f43a.svg (wolf face)
+house.svg  <- 1f3e0.svg (house)
+wild.svg   <- 1f451.svg (crown)
+gem.svg    <- 1f48e.svg (gem stone)

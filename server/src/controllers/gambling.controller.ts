@@ -8,6 +8,7 @@ import * as notificationService from '../services/notification.service.js';
 import { BLACKJACK_RTP_PERCENT } from '../services/blackjack.service.js';
 import { CRASH_RTP_PERCENT } from '../services/crash.service.js';
 import { TOWER_RTP_PERCENT } from '../services/tower.service.js';
+import { SLOTS_RTP_PERCENT } from '../services/slots.service.js';
 import type {
   CosmeticRarity,
   CosmeticSlot,
@@ -485,11 +486,12 @@ export async function openCrate(req: Request<{ id: string }>, res: Response): Pr
  * pas bloqué en accès direct).
  */
 export async function listGames(req: Request, res: Response): Promise<void> {
-  const [cratesEnabled, blackjackEnabled, crashEnabled, towerEnabled] = await Promise.all([
+  const [cratesEnabled, blackjackEnabled, crashEnabled, towerEnabled, slotsEnabled] = await Promise.all([
     configService.getConfigBool('gambling_enabled', true),
     configService.getConfigBool('blackjack_enabled', false),
     configService.getConfigBool('crash_enabled', false),
     configService.getConfigBool('tower_enabled', false),
+    configService.getConfigBool('slots_enabled', false),
   ]);
   const games: GamblingGameInfo[] = [
     {
@@ -523,6 +525,14 @@ export async function listGames(req: Request, res: Response): Promise<void> {
       path: '/gambling/tower',
       enabled: towerEnabled,
       rtp: TOWER_RTP_PERCENT,
+    },
+    {
+      id: 'slots',
+      name: 'Machine à sous',
+      description: 'Trois rouleaux, un cochon, un loup — aligne les symboles pour empocher le pot.',
+      path: '/gambling/slots',
+      enabled: slotsEnabled,
+      rtp: SLOTS_RTP_PERCENT,
     },
   ];
   res.json(games);

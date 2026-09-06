@@ -612,7 +612,7 @@ export interface BlackjackHistoryEntry {
   equipped_cosmetics: EquippedCosmetic[];
 }
 
-export type GamblingGameId = 'crates' | 'blackjack' | 'crash' | 'tower';
+export type GamblingGameId = 'crates' | 'blackjack' | 'crash' | 'tower' | 'slots';
 
 export interface GamblingGameInfo {
   id: GamblingGameId;
@@ -726,6 +726,47 @@ export interface TowerDifficultyInfo {
   cells_per_floor: number;
   mines_per_floor: number;
   multipliers_x100: number[];
+}
+
+/**
+ * Machine à sous "Trois Petits Cochons" : 3 rouleaux, un seul payline. `wild`
+ * se substitue à n'importe quel symbole (y compris `gem`, le jackpot) pour
+ * compléter un triple.
+ */
+export type SlotSymbolKey = 'straw' | 'wood' | 'brick' | 'pig' | 'wolf' | 'house' | 'wild' | 'gem';
+export type SlotWinTier = 'double' | 'triple';
+
+export interface SlotSpinResult {
+  reels: SlotSymbolKey[];
+  win_symbol: SlotSymbolKey | null;
+  win_tier: SlotWinTier | null;
+  payout: number;
+  balance: number;
+  enabled: boolean;
+}
+
+/** Registre public de la paytable — poids et multiplicateurs (x100) par symbole. */
+export interface SlotSymbolInfo {
+  key: SlotSymbolKey;
+  weight: number;
+  probability: number;
+  mult3_x100: number;
+  /** null si ce symbole ne paie que sur un triple complet (loup/maison/wild/gem). */
+  mult2_x100: number | null;
+}
+
+export interface SlotHistoryEntry {
+  id: number;
+  user_id: number;
+  bet_amount: number;
+  reels: SlotSymbolKey[];
+  win_symbol: SlotSymbolKey | null;
+  win_tier: SlotWinTier | null;
+  payout: number;
+  created_at: string;
+  username: string;
+  avatar_url: string | null;
+  equipped_cosmetics: EquippedCosmetic[];
 }
 
 export type MotusLetterState = 'correct' | 'present' | 'absent';
