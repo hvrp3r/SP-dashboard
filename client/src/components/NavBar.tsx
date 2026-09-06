@@ -160,6 +160,7 @@ function JeuxMenu({ games }: { games: GamblingGameInfo[] }) {
   const ref = useRef<HTMLDivElement>(null);
   const isJeuxRouteActive =
     location.pathname.startsWith('/motus') ||
+    location.pathname.startsWith('/sudoku') ||
     location.pathname.startsWith('/mini-jeux') ||
     location.pathname.startsWith('/gambling');
 
@@ -205,6 +206,9 @@ function JeuxMenu({ games }: { games: GamblingGameInfo[] }) {
           <p className={dropdownSectionLabelClass}>Jeu du jour</p>
           <NavLink to="/motus" className={dropdownLinkClass}>
             <span>🟩</span> Motus
+          </NavLink>
+          <NavLink to="/sudoku" className={dropdownLinkClass}>
+            <span>🔢</span> Sudoku
           </NavLink>
 
           <p className={dropdownSectionLabelClass}>Casino</p>
@@ -309,10 +313,14 @@ export default function NavBar() {
 
   return (
     <nav
-      className="sticky top-0 z-40 bg-zinc-900/85 backdrop-blur-md border-b border-zinc-800 shadow-lg shadow-black/20"
+      className="sticky top-0 z-40 border-b border-zinc-800 shadow-lg shadow-black/20"
       style={{ animation: 'fadeSlideDown 0.3s ease-out' }}
       ref={mobileRef}
     >
+      {/* Fond flouté sur un calque séparé, jamais directement sur l'élément `sticky` : combiner
+          `backdrop-filter` et `position: sticky` sur le même élément fait disparaître son contenu
+          sur Chromium/Brave (bug documenté, indépendant de la version) — https://generatepress.com/forums/topic/sticky-navigation-not-working-on-edge-or-brave-chromium-browsers/ */}
+      <div className="absolute inset-0 -z-10 bg-zinc-900/85 backdrop-blur-md" />
       <div className="max-w-4xl mx-auto px-3 sm:px-4 py-2 flex items-center gap-2">
         <button
           onClick={() => setMobileOpen((v) => !v)}
@@ -368,6 +376,9 @@ export default function NavBar() {
           </p>
           <NavLink to="/motus" className={mobileLinkClass}>
             🟩 Motus
+          </NavLink>
+          <NavLink to="/sudoku" className={mobileLinkClass}>
+            🔢 Sudoku
           </NavLink>
 
           <p className="px-3 pt-3 pb-1 text-[10px] font-semibold text-zinc-500 uppercase tracking-wide">

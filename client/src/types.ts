@@ -789,6 +789,50 @@ export interface MotusAttemptHistoryEntry extends MotusAttempt {
   word: string;
 }
 
+export type SudokuDifficulty = 'easy' | 'medium' | 'hard';
+
+export type SudokuGameStatus = 'in_progress' | 'won' | 'lost';
+
+/** Vue tant qu'aucune difficulté n'a encore été choisie aujourd'hui — aucune grille n'est révélée. */
+export interface SudokuChoosingView {
+  status: 'choosing';
+  rewards: Record<SudokuDifficulty, number>;
+  maxAttempts: Record<SudokuDifficulty, number>;
+}
+
+/** Vue publique du puzzle du jour une fois la difficulté choisie : la solution n'est incluse qu'en fin de partie. */
+export interface SudokuGameView {
+  status: SudokuGameStatus;
+  puzzleDate: string;
+  difficulty: SudokuDifficulty;
+  givens: string;
+  maxAttempts: number;
+  attemptsUsed: number;
+  rewardSp: number;
+  solution: string | null;
+}
+
+export type SudokuTodayView = SudokuChoosingView | SudokuGameView;
+
+export interface SudokuCheckResult {
+  solved: boolean;
+  cellCorrect: boolean[];
+  status: SudokuGameStatus;
+  attemptsUsed: number;
+  maxAttempts: number;
+  rewardSp: number;
+  rewardGranted: boolean;
+  solution: string | null;
+}
+
+/** Vue MSP en lecture seule : un puzzle par difficulté, rien à créer (génération automatique). */
+export interface SudokuTodayAdminEntry {
+  difficulty: SudokuDifficulty;
+  puzzleDate: string;
+  clues: number;
+  completions: number;
+}
+
 export interface PlayerStats {
   rank: number | null;
   challenges: { wins: number; losses: number };
