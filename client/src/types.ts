@@ -605,7 +605,7 @@ export interface BlackjackHistoryEntry {
   dealer_cards: BlackjackCard[];
 }
 
-export type GamblingGameId = 'crates' | 'blackjack' | 'crash';
+export type GamblingGameId = 'crates' | 'blackjack' | 'crash' | 'tower';
 
 export interface GamblingGameInfo {
   id: GamblingGameId;
@@ -659,6 +659,58 @@ export interface CrashHistoryEntry {
   cashout_multiplier_x100: number | null;
   resolved_at: string;
   crash_point_x100: number;
+}
+
+export type TowerDifficulty = 'easy' | 'medium' | 'hard';
+export type TowerGameStatus = 'in_progress' | 'cashed_out' | 'busted';
+
+/** Multiplicateurs entiers × 100 — même convention que crash_point_x100. */
+export interface TowerGame {
+  id: number;
+  user_id: number;
+  season_id: number | null;
+  difficulty: TowerDifficulty;
+  bet_amount: number;
+  status: TowerGameStatus;
+  current_level: number;
+  /** Position(s) minée(s) par étage : `null` tant que l'étage n'a pas été franchi (ou la partie terminée). */
+  mine_positions: (number[] | null)[];
+  picks: number[];
+  total_floors: number;
+  cells_per_floor: number;
+  mines_per_floor: number[];
+  multipliers_x100: number[];
+  current_multiplier_x100: number;
+  next_multiplier_x100: number | null;
+  payout: number | null;
+  created_at: string;
+  resolved_at: string | null;
+}
+
+export interface TowerActionResult {
+  game: TowerGame | null;
+  balance: number;
+  enabled: boolean;
+}
+
+export interface TowerHistoryEntry {
+  id: number;
+  difficulty: TowerDifficulty;
+  bet_amount: number;
+  status: TowerGameStatus;
+  current_level: number;
+  total_floors: number;
+  final_multiplier_x100: number;
+  payout: number;
+  resolved_at: string;
+}
+
+export interface TowerDifficultyInfo {
+  difficulty: TowerDifficulty;
+  floors: number;
+  cells_per_floor: number;
+  mines_per_floor: number;
+  multipliers_x100: number[];
 }
 
 export interface PlayerStats {

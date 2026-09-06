@@ -12,6 +12,7 @@ import minigamesRoutes from './routes/minigames.routes.js';
 import gamblingRoutes from './routes/gambling.routes.js';
 import blackjackRoutes from './routes/blackjack.routes.js';
 import crashRoutes from './routes/crash.routes.js';
+import towerRoutes from './routes/tower.routes.js';
 import notificationsRoutes from './routes/notifications.routes.js';
 import subscriptionsRoutes from './routes/subscriptions.routes.js';
 import cosmeticsRoutes from './routes/cosmetics.routes.js';
@@ -46,6 +47,7 @@ export function createApp(): Express {
   app.use('/api/gambling', gamblingRoutes);
   app.use('/api/blackjack', blackjackRoutes);
   app.use('/api/crash', crashRoutes);
+  app.use('/api/tower', towerRoutes);
   app.use('/api/notifications', notificationsRoutes);
   app.use('/api/subscriptions', subscriptionsRoutes);
   app.use('/api/cosmetics', cosmeticsRoutes);

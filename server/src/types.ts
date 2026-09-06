@@ -560,7 +560,7 @@ export interface KofiWebhookPayload {
   tier_name: string | null;
 }
 
-export type GamblingGameId = 'crates' | 'blackjack' | 'crash';
+export type GamblingGameId = 'crates' | 'blackjack' | 'crash' | 'tower';
 
 export interface GamblingGameInfo {
   id: GamblingGameId;
@@ -688,6 +688,72 @@ export interface CrashHistoryEntry {
   cashout_multiplier_x100: number | null;
   resolved_at: string;
   crash_point_x100: number;
+}
+
+export type TowerDifficulty = 'easy' | 'medium' | 'hard';
+export type TowerGameStatus = 'in_progress' | 'cashed_out' | 'busted';
+
+/** Multiplicateurs entiers × 100 — même convention que crash_point_x100 (voir 041_tower.sql). */
+export interface TowerGameRow {
+  id: number;
+  user_id: number;
+  season_id: number | null;
+  difficulty: TowerDifficulty;
+  bet_amount: number;
+  status: TowerGameStatus;
+  current_level: number;
+  mine_positions: number[][];
+  picks: number[];
+  bet_transaction_id: number | null;
+  payout_transaction_id: number | null;
+  created_at: string;
+  resolved_at: string | null;
+}
+
+/**
+ * `mine_positions` masque tout étage non encore franchi tant que la partie
+ * est `in_progress` (position `null`) — un étage déjà franchi sans danger
+ * peut en revanche être révélé sans donner d'avantage stratégique (chaque
+ * étage est tiré indépendamment), et tout est révélé une fois la partie
+ * terminée (`busted`/`cashed_out`), pour l'animation de reveal complet.
+ */
+export interface TowerGamePublicView extends Omit<TowerGameRow, 'mine_positions'> {
+  mine_positions: (number[] | null)[];
+  total_floors: number;
+  cells_per_floor: number;
+  mines_per_floor: number[];
+  /** Multiplicateur cumulé (x100) atteint après avoir franchi k étages, pour k de 0 à total_floors. */
+  multipliers_x100: number[];
+  current_multiplier_x100: number;
+  next_multiplier_x100: number | null;
+  payout: number | null;
+}
+
+export interface TowerActionResult {
+  game: TowerGamePublicView | null;
+  balance: number;
+  enabled: boolean;
+}
+
+export interface TowerHistoryEntry {
+  id: number;
+  difficulty: TowerDifficulty;
+  bet_amount: number;
+  status: TowerGameStatus;
+  current_level: number;
+  total_floors: number;
+  final_multiplier_x100: number;
+  payout: number;
+  resolved_at: string;
+}
+
+/** Registre public des difficultés (barème + table de multiplicateurs), pour le sélecteur et l'aperçu avant mise. */
+export interface TowerDifficultyInfo {
+  difficulty: TowerDifficulty;
+  floors: number;
+  cells_per_floor: number;
+  mines_per_floor: number;
+  multipliers_x100: number[];
 }
 
 export interface NotificationRow {

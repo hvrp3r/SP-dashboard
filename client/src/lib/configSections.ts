@@ -14,7 +14,13 @@ export const CONFIG_SECTIONS: ConfigSection[] = [
   },
   {
     title: 'Gambling',
-    keys: ['gambling_enabled', 'blackjack_enabled', 'crash_enabled', 'gambling_max_wager_per_day'],
+    keys: [
+      'gambling_enabled',
+      'blackjack_enabled',
+      'crash_enabled',
+      'tower_enabled',
+      'gambling_max_wager_per_day',
+    ],
   },
   {
     title: 'Cosmétiques',
