@@ -491,6 +491,15 @@ export interface GamblingOpenEntry extends GamblingOpenRow {
   equipped_cosmetics: EquippedCosmetic[];
 }
 
+export type GamblingSpectatorRoom = 'crates' | 'blackjack' | 'crash' | 'tower';
+
+export interface GamblingSpectatorEntry {
+  user_id: number;
+  username: string;
+  avatar_url: string | null;
+  equipped_cosmetics: EquippedCosmetic[];
+}
+
 export interface GamblingInventoryEntry {
   id: number;
   user_id: number;

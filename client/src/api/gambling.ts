@@ -11,6 +11,8 @@ import type {
   GamblingOpenEntry,
   GamblingOpenResult,
   GamblingRewardType,
+  GamblingSpectatorEntry,
+  GamblingSpectatorRoom,
   GamblingStatus,
 } from '../types.js';
 
@@ -100,3 +102,14 @@ export const updateReward = (
 
 export const removeReward = (crateId: number, rewardId: number) =>
   apiClient.delete<void>(`/api/gambling/crates/${crateId}/rewards/${rewardId}`);
+
+export const heartbeatSpectator = (room: GamblingSpectatorRoom, roomKey?: string) =>
+  apiClient.post<void>('/api/gambling/spectators/heartbeat', { room, roomKey: roomKey ?? '' });
+
+export const getSpectators = (room: GamblingSpectatorRoom, roomKey?: string) => {
+  const params = new URLSearchParams({ room });
+  if (roomKey) params.set('roomKey', roomKey);
+  return apiClient
+    .get<{ spectators: GamblingSpectatorEntry[] }>(`/api/gambling/spectators?${params.toString()}`)
+    .then((res) => res.spectators);
+};

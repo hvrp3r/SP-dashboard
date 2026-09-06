@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth.jsx';
+import { useSpectators } from '../hooks/useSpectators.js';
 import * as crashApi from '../api/crash.js';
 import * as gamblingApi from '../api/gambling.js';
 import GamblingBudgetBar from '../components/GamblingBudgetBar.jsx';
 import VolumeSlider from '../components/VolumeSlider.jsx';
 import Avatar from '../components/Avatar.jsx';
 import UserNameTag from '../components/UserNameTag.jsx';
+import SpectatorsList from '../components/SpectatorsList.jsx';
 import HistoryScopeToggle, { type HistoryScope } from '../components/HistoryScopeToggle.jsx';
 import * as sound from '../lib/sound.js';
 import { syncServerClock, getServerNow } from '../lib/serverClock.js';
@@ -143,6 +145,7 @@ function clampPercent(value: number, margin: number): number {
 
 export default function Crash() {
   const { user, setUser } = useAuth();
+  const spectators = useSpectators('crash');
   const [round, setRound] = useState<CrashRound | null>(null);
   const [status, setStatus] = useState<GamblingStatus | null>(null);
   const [crashEnabled, setCrashEnabled] = useState(true);
@@ -496,6 +499,8 @@ export default function Crash() {
         </div>
 
         {error && <p className="mb-4 text-sm text-red-400">{error}</p>}
+
+        <SpectatorsList spectators={spectators} />
 
         {status && <GamblingBudgetBar status={{ ...status, enabled: crashEnabled }} />}
 

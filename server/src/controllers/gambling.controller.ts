@@ -15,11 +15,29 @@ import type {
   GamblingCrateRewardView,
   GamblingGameInfo,
   GamblingRewardType,
+  GamblingSpectatorRoom,
 } from '../types.js';
 
 const VALID_REWARD_TYPES: GamblingRewardType[] = ['sp', 'custom', 'cosmetic'];
 const VALID_COSMETIC_SLOTS: CosmeticSlot[] = ['avatar_frame', 'banner', 'name_color', 'title', 'name_font'];
 const VALID_COSMETIC_RARITIES: CosmeticRarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
+const VALID_SPECTATOR_ROOMS: GamblingSpectatorRoom[] = ['crates', 'blackjack', 'crash', 'tower'];
+
+/** roomKey n'a de sens que pour la room 'crates' (id de la caisse) — les jeux
+ * singleton partagent une seule table entre tous les joueurs. */
+function parseSpectatorRoom(
+  roomRaw: unknown,
+  roomKeyRaw: unknown
+): { room: GamblingSpectatorRoom; roomKey: string } | null {
+  if (typeof roomRaw !== 'string' || !VALID_SPECTATOR_ROOMS.includes(roomRaw as GamblingSpectatorRoom)) {
+    return null;
+  }
+  const room = roomRaw as GamblingSpectatorRoom;
+  if (room !== 'crates') return { room, roomKey: '' };
+  const roomKey = typeof roomKeyRaw === 'string' ? roomKeyRaw.slice(0, 50) : '';
+  if (!roomKey || !/^\d+$/.test(roomKey)) return null;
+  return { room, roomKey };
+}
 
 function withPercent(rewards: GamblingCrateRewardRow[]): GamblingCrateRewardView[] {
   const totalWeight = rewards.reduce((sum, r) => sum + r.weight, 0);
@@ -554,4 +572,27 @@ export async function listOpens(req: Request, res: Response): Promise<void> {
   const mine = req.query.mine === 'true';
   const opens = await gamblingService.listOpens(limit, mine ? req.user!.id : null);
   res.json(opens);
+}
+
+export async function spectatorHeartbeat(
+  req: Request<{}, {}, { room?: string; roomKey?: string }>,
+  res: Response
+): Promise<void> {
+  const parsed = parseSpectatorRoom(req.body?.room, req.body?.roomKey);
+  if (!parsed) {
+    res.status(400).json({ error: 'Room invalide' });
+    return;
+  }
+  await gamblingService.heartbeatSpectator(req.user!.id, parsed.room, parsed.roomKey);
+  res.status(204).end();
+}
+
+export async function listSpectators(req: Request, res: Response): Promise<void> {
+  const parsed = parseSpectatorRoom(req.query.room, req.query.roomKey);
+  if (!parsed) {
+    res.status(400).json({ error: 'Room invalide' });
+    return;
+  }
+  const spectators = await gamblingService.listSpectators(parsed.room, parsed.roomKey);
+  res.json({ spectators });
 }

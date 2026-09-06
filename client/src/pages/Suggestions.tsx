@@ -216,31 +216,33 @@ function SuggestionCard({
     <div className="flex gap-3 bg-zinc-900 border border-zinc-800 rounded-xl shadow-md p-4 hover:border-emerald-500/50 transition">
       <VoteControl userVote={s.user_vote} voteCount={s.vote_count} canVote={canVote} onVote={onVote} />
 
-      <Link to={`/suggestions/${s.id}`} className="min-w-0 flex-1">
-        <div className="flex items-center gap-2 mb-1 flex-wrap">
-          <span
-            className={`flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded font-medium uppercase tracking-wide ${
-              s.type === 'feature'
-                ? 'bg-violet-500/15 text-violet-400'
-                : 'bg-orange-500/15 text-orange-400'
-            }`}
-          >
-            {TYPE_LABELS[s.type]}
-          </span>
-          <span
-            className={`flex-shrink-0 text-xs px-2 py-0.5 rounded-full ${
-              s.status === 'open'
-                ? 'bg-emerald-500/15 text-emerald-400'
-                : 'bg-zinc-800 text-zinc-400'
-            }`}
-          >
-            {s.status === 'open' ? 'Ouverte' : 'Clôturée'}
-          </span>
-          <p className="font-medium text-zinc-100 truncate">{s.title}</p>
-        </div>
-        {s.description && (
-          <p className="text-sm text-zinc-500 line-clamp-2 mb-2">{s.description}</p>
-        )}
+      <div className="min-w-0 flex-1">
+        <Link to={`/suggestions/${s.id}`} className="block">
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
+            <span
+              className={`flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded font-medium uppercase tracking-wide ${
+                s.type === 'feature'
+                  ? 'bg-violet-500/15 text-violet-400'
+                  : 'bg-orange-500/15 text-orange-400'
+              }`}
+            >
+              {TYPE_LABELS[s.type]}
+            </span>
+            <span
+              className={`flex-shrink-0 text-xs px-2 py-0.5 rounded-full ${
+                s.status === 'open'
+                  ? 'bg-emerald-500/15 text-emerald-400'
+                  : 'bg-zinc-800 text-zinc-400'
+              }`}
+            >
+              {s.status === 'open' ? 'Ouverte' : 'Clôturée'}
+            </span>
+            <p className="font-medium text-zinc-100 truncate">{s.title}</p>
+          </div>
+          {s.description && (
+            <p className="text-sm text-zinc-500 line-clamp-2 mb-2">{s.description}</p>
+          )}
+        </Link>
         <div className="flex items-center gap-2 text-xs text-zinc-500">
           {s.author_username && (
             <span className="flex items-center gap-1.5">
@@ -261,7 +263,7 @@ function SuggestionCard({
           )}
           <span>· {s.comment_count} commentaire{s.comment_count !== 1 ? 's' : ''}</span>
         </div>
-      </Link>
+      </div>
     </div>
   );
 }

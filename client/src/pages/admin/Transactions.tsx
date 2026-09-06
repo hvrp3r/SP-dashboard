@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useState, type FormEvent } from 'react';
+import { Link } from 'react-router-dom';
 import * as transactionsApi from '../../api/transactions.js';
 import * as seasonsApi from '../../api/seasons.js';
 import * as usersApi from '../../api/users.js';
@@ -309,7 +310,9 @@ export default function AdminTransactions() {
                               {new Date(tx.created_at).toLocaleString('fr-FR')}
                             </td>
                             <td className="px-4 py-3 font-medium text-zinc-100 whitespace-nowrap">
-                              {tx.username}
+                              <Link to={`/joueurs/${encodeURIComponent(tx.username)}`} className="hover:underline">
+                                {tx.username}
+                              </Link>
                             </td>
                             <td className="px-4 py-3 text-zinc-300">
                               {TRANSACTION_TYPE_LABELS[tx.type]}

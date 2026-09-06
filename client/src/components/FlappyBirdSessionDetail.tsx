@@ -364,7 +364,9 @@ export default function FlappyBirdSessionDetail({
                   <tbody>
                     {attempts.map((a) => (
                       <tr key={a.id} className="border-t border-zinc-800">
-                        <td className="px-3 py-2 text-zinc-200">{a.username}</td>
+                        <td className="px-3 py-2 text-zinc-200">
+                          <UserNameTag username={a.username} />
+                        </td>
                         <td className="px-3 py-2 text-right font-medium text-zinc-100">{a.score}</td>
                         <td className="px-3 py-2 text-zinc-500 whitespace-nowrap">
                           {new Date(a.played_at).toLocaleString('fr-FR')}

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth.jsx';
+import { useSpectators } from '../hooks/useSpectators.js';
 import * as blackjackApi from '../api/blackjack.js';
 import * as gamblingApi from '../api/gambling.js';
 import GamblingBudgetBar from '../components/GamblingBudgetBar.jsx';
@@ -9,6 +10,7 @@ import BlackjackSeat from '../components/BlackjackSeat.jsx';
 import VolumeSlider from '../components/VolumeSlider.jsx';
 import Avatar from '../components/Avatar.jsx';
 import UserNameTag from '../components/UserNameTag.jsx';
+import SpectatorsList from '../components/SpectatorsList.jsx';
 import HistoryScopeToggle, { type HistoryScope } from '../components/HistoryScopeToggle.jsx';
 import * as sound from '../lib/sound.js';
 import type {
@@ -128,6 +130,7 @@ function netResult(hand: { bet_amount: number; outcome: BlackjackHand['outcome']
 
 export default function BlackjackTable() {
   const { user, setUser } = useAuth();
+  const spectators = useSpectators('blackjack');
   const [session, setSession] = useState<BlackjackSession | null>(null);
   const [status, setStatus] = useState<GamblingStatus | null>(null);
   const [blackjackEnabled, setBlackjackEnabled] = useState(true);
@@ -335,6 +338,8 @@ export default function BlackjackTable() {
         </div>
 
         {error && <p className="mb-4 text-sm text-red-400">{error}</p>}
+
+        <SpectatorsList spectators={spectators} />
 
         {status && <GamblingBudgetBar status={{ ...status, enabled: blackjackEnabled }} />}
 

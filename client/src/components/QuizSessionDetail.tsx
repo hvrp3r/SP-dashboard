@@ -440,7 +440,7 @@ export default function QuizSessionDetail({
                     return (
                       <tr key={p.id} className="border-t border-zinc-800">
                         <td className="px-4 py-3 font-medium text-zinc-100 whitespace-nowrap">
-                          {p.username}
+                          <UserNameTag username={p.username} />
                         </td>
                         <td className="px-4 py-3 text-right whitespace-nowrap">
                           {currentQuestion ? (

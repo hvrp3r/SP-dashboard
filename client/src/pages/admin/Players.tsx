@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth.jsx';
 import * as usersApi from '../../api/users.js';
 import { useConfirm } from '../../hooks/useConfirm.jsx';
@@ -82,7 +83,12 @@ export default function AdminPlayers() {
                       className={`border-t border-zinc-800 ${p.disabled_at ? 'opacity-60' : ''}`}
                     >
                       <td className="px-4 py-3 whitespace-nowrap">
-                        <span className="font-medium text-zinc-100">{p.username}</span>
+                        <Link
+                          to={`/joueurs/${encodeURIComponent(p.username)}`}
+                          className="font-medium text-zinc-100 hover:underline"
+                        >
+                          {p.username}
+                        </Link>
                         <span className="block text-xs text-zinc-500">{p.email}</span>
                       </td>
                       <td className="px-4 py-3 text-zinc-300 whitespace-nowrap">

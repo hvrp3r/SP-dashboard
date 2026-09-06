@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { extractFontName, loadGoogleFont } from '../lib/googleFonts.js';
 import type { EquippedCosmetic } from '../types.js';
 
@@ -6,10 +7,20 @@ interface UserNameTagProps {
   username: string;
   equipped?: EquippedCosmetic[];
   className?: string;
+  /** false pour désactiver le lien vers le profil (ex : texte d'un `<select>`, contrôle déjà interactif). Par défaut cliquable. */
+  linkable?: boolean;
 }
 
-/** Pseudo affiché avec la couleur, la police et le titre cosmétiques équipés (Leaderboard, Profil…). */
-export default function UserNameTag({ username, equipped = [], className = '' }: UserNameTagProps) {
+/** Pseudo affiché avec la couleur, la police et le titre cosmétiques équipés
+ * (Leaderboard, Profil…), et cliquable vers le profil public du joueur —
+ * `/profil` (le sien) quand l'appelant a substitué le pseudo par "Toi", sinon
+ * `/joueurs/:username`. */
+export default function UserNameTag({
+  username,
+  equipped = [],
+  className = '',
+  linkable = true,
+}: UserNameTagProps) {
   const color = equipped.find((c) => c.slot === 'name_color')?.color_value;
   const font = equipped.find((c) => c.slot === 'name_font')?.font_family;
   const title = equipped.find((c) => c.slot === 'title' && c.key !== 'title_none');
@@ -18,10 +29,10 @@ export default function UserNameTag({ username, equipped = [], className = '' }:
     loadGoogleFont(extractFontName(font));
   }, [font]);
 
-  return (
-    <span className="inline-flex items-center gap-1.5 min-w-0">
+  const content = (
+    <>
       <span
-        className={`font-medium whitespace-nowrap ${className}`}
+        className={`font-medium whitespace-nowrap ${linkable ? 'hover:underline' : ''} ${className}`}
         style={{ ...(color ? { color } : {}), ...(font ? { fontFamily: font } : {}) }}
       >
         {username}
@@ -43,6 +54,17 @@ export default function UserNameTag({ username, equipped = [], className = '' }:
             {title.name}
           </span>
         ))}
-    </span>
+    </>
+  );
+
+  if (!linkable) {
+    return <span className="inline-flex items-center gap-1.5 min-w-0">{content}</span>;
+  }
+
+  const href = username === 'Toi' ? '/profil' : `/joueurs/${encodeURIComponent(username)}`;
+  return (
+    <Link to={href} className="inline-flex items-center gap-1.5 min-w-0">
+      {content}
+    </Link>
   );
 }

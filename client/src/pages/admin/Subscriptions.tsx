@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import * as subscriptionsApi from '../../api/subscriptions.js';
 import * as usersApi from '../../api/users.js';
 import { useConfirm } from '../../hooks/useConfirm.jsx';
@@ -192,7 +193,11 @@ export default function AdminSubscriptions() {
                 return (
                   <li key={s.id} className="p-4 flex items-center gap-3 flex-wrap">
                     <div className="flex-1 min-w-[140px]">
-                      <p className="text-sm font-medium text-zinc-100">{s.username}</p>
+                      <p className="text-sm font-medium text-zinc-100">
+                        <Link to={`/joueurs/${encodeURIComponent(s.username)}`} className="hover:underline">
+                          {s.username}
+                        </Link>
+                      </p>
                       <p className="text-xs text-zinc-500">
                         {s.kofi_email ?? 'pas encore payé'} · dernier paiement{' '}
                         {formatDate(s.last_payment_at)}

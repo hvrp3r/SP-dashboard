@@ -9,6 +9,9 @@ router.get('/status', requireAuth, gamblingController.getStatus);
 router.get('/inventory/me', requireAuth, gamblingController.listMyInventory);
 router.get('/opens', requireAuth, gamblingController.listOpens);
 
+router.post('/spectators/heartbeat', requireAuth, gamblingController.spectatorHeartbeat);
+router.get('/spectators', requireAuth, gamblingController.listSpectators);
+
 router.get('/crates', requireAuth, gamblingController.listCrates);
 router.get('/crates/:id', requireAuth, gamblingController.getCrate);
 router.post('/crates', requireAuth, requireAdmin, gamblingController.createCrate);

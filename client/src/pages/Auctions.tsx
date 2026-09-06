@@ -260,30 +260,29 @@ export default function Auctions() {
 
 function AuctionCard({ auction: a, now }: { auction: AuctionEntry; now: number }) {
   return (
-    <Link
-      to={`/encheres/${a.id}`}
-      className="flex items-center gap-3 bg-zinc-900 border border-zinc-800 rounded-xl shadow-md p-4 hover:border-zinc-700 transition"
-    >
-      <CosmeticPreview cosmetic={a.cosmetic} />
-      <div className="min-w-0 flex-1">
-        <p className="font-medium text-zinc-100 truncate">{a.cosmetic.name}</p>
-        <p className="text-xs text-zinc-500">
-          Vendeur : <UserNameTag username={a.seller_username} equipped={a.seller_equipped_cosmetics} />
-        </p>
-        <p className="text-sm text-zinc-300 mt-0.5">
-          {a.current_bid ?? a.starting_price} SP
-          {a.bid_count > 0 && (
-            <span className="text-zinc-500">
-              {' '}
-              · {a.bid_count} offre{a.bid_count > 1 ? 's' : ''}
-            </span>
-          )}
-        </p>
-      </div>
-      <span className="flex-shrink-0 text-xs font-medium text-zinc-400">
-        {formatTimeRemaining(a.ends_at, now)}
-      </span>
-    </Link>
+    <div className="bg-zinc-900 border border-zinc-800 rounded-xl shadow-md p-4 hover:border-zinc-700 transition">
+      <Link to={`/encheres/${a.id}`} className="flex items-center gap-3">
+        <CosmeticPreview cosmetic={a.cosmetic} />
+        <div className="min-w-0 flex-1">
+          <p className="font-medium text-zinc-100 truncate">{a.cosmetic.name}</p>
+          <p className="text-sm text-zinc-300 mt-0.5">
+            {a.current_bid ?? a.starting_price} SP
+            {a.bid_count > 0 && (
+              <span className="text-zinc-500">
+                {' '}
+                · {a.bid_count} offre{a.bid_count > 1 ? 's' : ''}
+              </span>
+            )}
+          </p>
+        </div>
+        <span className="flex-shrink-0 text-xs font-medium text-zinc-400">
+          {formatTimeRemaining(a.ends_at, now)}
+        </span>
+      </Link>
+      <p className="text-xs text-zinc-500 mt-2 ml-[68px]">
+        Vendeur : <UserNameTag username={a.seller_username} equipped={a.seller_equipped_cosmetics} />
+      </p>
+    </div>
   );
 }
 

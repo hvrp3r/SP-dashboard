@@ -550,6 +550,15 @@ export interface GamblingOpenEntry {
   sp_amount: number | null;
 }
 
+export type GamblingSpectatorRoom = 'crates' | 'blackjack' | 'crash' | 'tower';
+
+export interface GamblingSpectatorEntry {
+  user_id: number;
+  username: string;
+  avatar_url: string | null;
+  equipped_cosmetics: EquippedCosmetic[];
+}
+
 export type BlackjackSessionStatus = 'waiting' | 'active' | 'finished';
 export type BlackjackHandStatus = 'playing' | 'stood' | 'busted';
 export type BlackjackOutcome = 'win' | 'blackjack' | 'push' | 'lose';
