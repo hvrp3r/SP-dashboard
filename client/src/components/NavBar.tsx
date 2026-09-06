@@ -309,10 +309,14 @@ export default function NavBar() {
 
   return (
     <nav
-      className="sticky top-0 z-40 bg-zinc-900/85 backdrop-blur-md border-b border-zinc-800 shadow-lg shadow-black/20"
+      className="sticky top-0 z-40 border-b border-zinc-800 shadow-lg shadow-black/20"
       style={{ animation: 'fadeSlideDown 0.3s ease-out' }}
       ref={mobileRef}
     >
+      {/* Fond flouté sur un calque séparé, jamais directement sur l'élément `sticky` : combiner
+          `backdrop-filter` et `position: sticky` sur le même élément fait disparaître son contenu
+          sur Chromium/Brave (bug documenté, indépendant de la version) — https://generatepress.com/forums/topic/sticky-navigation-not-working-on-edge-or-brave-chromium-browsers/ */}
+      <div className="absolute inset-0 -z-10 bg-zinc-900/85 backdrop-blur-md" />
       <div className="max-w-4xl mx-auto px-3 sm:px-4 py-2 flex items-center gap-2">
         <button
           onClick={() => setMobileOpen((v) => !v)}
