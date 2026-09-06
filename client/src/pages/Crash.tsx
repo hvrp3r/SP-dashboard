@@ -9,6 +9,7 @@ import Avatar from '../components/Avatar.jsx';
 import UserNameTag from '../components/UserNameTag.jsx';
 import HistoryScopeToggle, { type HistoryScope } from '../components/HistoryScopeToggle.jsx';
 import * as sound from '../lib/sound.js';
+import { syncServerClock, getServerNow } from '../lib/serverClock.js';
 import type { CrashBet, CrashHistoryEntry, CrashRound, GamblingStatus } from '../types.js';
 
 const POLL_INTERVAL_MS = 1000;
@@ -147,7 +148,7 @@ export default function Crash() {
   const [crashEnabled, setCrashEnabled] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [now, setNow] = useState(Date.now());
+  const [now, setNow] = useState(getServerNow);
   const [shaking, setShaking] = useState(false);
   const [cashoutPopup, setCashoutPopup] = useState<{ key: number; amount: number } | null>(null);
   // Coupe-circuit du détecteur de retrait automatique pendant un retrait manuel en
@@ -211,7 +212,19 @@ export default function Crash() {
   }, [load, round?.status]);
 
   useEffect(() => {
-    const interval = setInterval(() => setNow(Date.now()), TICK_INTERVAL_MS);
+    const interval = setInterval(() => setNow(getServerNow()), TICK_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Calage sur l'horloge serveur (voir lib/serverClock.ts) : une horloge client qui
+  // dérive de quelques centaines de ms suffit à afficher un multiplicateur visuellement
+  // faux par rapport à `started_at`/`crashed_at`, qui sont des instants serveur. Un
+  // premier calage précis au montage (plusieurs essais, meilleur round-trip), puis un
+  // recalage léger périodique pour suivre une éventuelle dérive/changement de réseau
+  // tant que la page reste ouverte.
+  useEffect(() => {
+    syncServerClock().then(() => setNow(getServerNow()));
+    const interval = setInterval(syncServerClock, 30_000);
     return () => clearInterval(interval);
   }, []);
 

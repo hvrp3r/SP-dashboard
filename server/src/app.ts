@@ -37,7 +37,11 @@ export function createApp(): Express {
 
   app.use('/uploads', express.static(UPLOADS_DIR));
 
-  app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
+  // `now` (epoch ms) sert de référence pour la synchronisation d'horloge côté
+  // client (voir client/src/lib/serverClock.ts) — endpoint public (pas de
+  // requireAuth) pour ne pas ajouter la latence variable d'une vérification JWT
+  // à une mesure d'aller-retour réseau.
+  app.get('/api/health', (req, res) => res.json({ status: 'ok', now: Date.now() }));
   app.use('/api/auth', authRoutes);
   app.use('/api/users', usersRoutes);
   app.use('/api/seasons', seasonsRoutes);
