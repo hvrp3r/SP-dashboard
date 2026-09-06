@@ -713,6 +713,67 @@ export interface TowerDifficultyInfo {
   multipliers_x100: number[];
 }
 
+export type MotusLetterState = 'correct' | 'present' | 'absent';
+
+export interface MotusAttempt {
+  id: number;
+  daily_word_id: number;
+  user_id: number;
+  attempt_number: number;
+  guess: string;
+  result: MotusLetterState[];
+  is_correct: boolean;
+  created_at: string;
+}
+
+export type MotusGameStatus = 'in_progress' | 'won' | 'lost';
+
+export interface MotusGame {
+  wordDate: string;
+  wordLength: number;
+  maxAttempts: number;
+  rewardSp: number;
+  status: MotusGameStatus;
+  attempts: MotusAttempt[];
+  word: string | null;
+}
+
+export interface MotusQueueWord {
+  id: number;
+  word: string;
+  added_by: number | null;
+  position: number;
+  used_at: string | null;
+  created_at: string;
+}
+
+export type MotusWordSource = 'queue' | 'random' | 'manual';
+
+export interface MotusHistoryEntry {
+  id: number;
+  word_date: string;
+  word: string;
+  queue_id: number | null;
+  season_id: number | null;
+  source: MotusWordSource;
+  created_at: string;
+}
+
+/** Vue MSP du mot du jour, indépendante de la partie de l'admin (jamais masquée) — sert l'édition. */
+export interface MotusTodayAdminView {
+  wordDate: string;
+  word: string;
+  source: MotusWordSource;
+  attemptCount: number;
+}
+
+/** Vue MSP : une soumission d'un joueur, tous jours confondus. */
+export interface MotusAttemptHistoryEntry extends MotusAttempt {
+  username: string;
+  word_date: string;
+  word: string;
+}
+
 export interface PlayerStats {
   rank: number | null;
   challenges: { wins: number; losses: number };

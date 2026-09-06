@@ -13,6 +13,10 @@ export const CONFIG_SECTIONS: ConfigSection[] = [
     keys: ['max_wager_amount', 'max_challenges_per_day'],
   },
   {
+    title: 'Motus',
+    keys: ['motus_reward_sp', 'motus_max_attempts'],
+  },
+  {
     title: 'Gambling',
     keys: [
       'gambling_enabled',

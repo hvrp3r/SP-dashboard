@@ -12,6 +12,7 @@ const NAV_LINKS = [
   { to: '/classement', end: false, label: 'Classement' },
   { to: '/defis', end: false, label: 'Défis' },
   { to: '/mini-jeux', end: false, label: 'Mini-jeux' },
+  { to: '/motus', end: false, label: 'Motus' },
   { to: '/encheres', end: false, label: 'Enchères' },
 ];
 
