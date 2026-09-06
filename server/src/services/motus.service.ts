@@ -2,6 +2,7 @@ import { pool } from '../db/pool.js';
 import * as spService from './sp.service.js';
 import * as configService from './config.service.js';
 import { todayLocal } from '../utils/localDate.js';
+import { isDictionaryWord } from '../utils/frenchDictionary.js';
 import type {
   MotusAttemptHistoryEntry,
   MotusAttemptRow,
@@ -48,6 +49,24 @@ function normalizeWord(raw: string): string {
 
 function isValidWord(word: string): boolean {
   return /^[A-Z]{3,12}$/.test(word);
+}
+
+/**
+ * Validation appliquée aux mots saisis par le MSP (file d'attente + override
+ * du mot du jour) : même dictionnaire que les propositions des joueurs
+ * (`submitGuess`), sans l'exception qui laisse passer le mot du jour lui-même
+ * (elle n'a pas de sens ici, puisque c'est justement CE mot qu'on valide).
+ */
+function assertRealWord(word: string): void {
+  if (!isValidWord(word)) {
+    throw Object.assign(
+      new Error('Le mot doit contenir entre 3 et 12 lettres, sans accents ni espaces'),
+      { status: 400 }
+    );
+  }
+  if (!isDictionaryWord(word)) {
+    throw Object.assign(new Error('Ce mot n’existe pas dans le dictionnaire'), { status: 400 });
+  }
 }
 
 function pickRandomWord(): string {
@@ -224,6 +243,13 @@ export async function submitGuess(
       throw Object.assign(new Error(`Le mot du jour fait ${currentWord.length} lettres`), { status: 400 });
     }
 
+    // Le mot du jour lui-même est toujours accepté même s'il n'est pas dans le
+    // dictionnaire standard (ex : mot ajouté par le MSP via la file/override) —
+    // sinon une partie deviendrait improuvable.
+    if (guess !== currentWord && !isDictionaryWord(guess)) {
+      throw Object.assign(new Error('Ce mot n’existe pas dans le dictionnaire'), { status: 400 });
+    }
+
     const { rows: existingAttempts } = await client.query<MotusAttemptRow>(
       `SELECT * FROM motus_attempts WHERE daily_word_id = $1 AND user_id = $2 ORDER BY attempt_number ASC`,
       [daily.id, userId]
@@ -283,12 +309,7 @@ export async function listPendingQueue(): Promise<MotusWordQueueRow[]> {
 
 export async function addQueueWord(rawWord: string, addedBy: number): Promise<MotusWordQueueRow> {
   const word = normalizeWord(rawWord);
-  if (!isValidWord(word)) {
-    throw Object.assign(
-      new Error('Le mot doit contenir entre 3 et 12 lettres, sans accents ni espaces'),
-      { status: 400 }
-    );
-  }
+  assertRealWord(word);
   // Ajouté en fin de file : la prochaine position libre parmi les mots en
   // attente (le MAX ignore les mots déjà consommés, qui gardent leur ancienne
   // position sans jamais entrer en collision avec les nouvelles puisqu'ils
@@ -415,12 +436,7 @@ export async function overrideTodayWord(
   seasonId: number | null
 ): Promise<MotusDailyWordRow> {
   const word = normalizeWord(rawWord);
-  if (!isValidWord(word)) {
-    throw Object.assign(
-      new Error('Le mot doit contenir entre 3 et 12 lettres, sans accents ni espaces'),
-      { status: 400 }
-    );
-  }
+  assertRealWord(word);
 
   const daily = await getOrCreateDailyWord(seasonId);
 
