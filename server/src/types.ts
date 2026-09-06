@@ -132,7 +132,8 @@ export type SpTransactionType =
   | 'gambling_win'
   | 'auction_bid_hold'
   | 'auction_bid_refund'
-  | 'auction_sale';
+  | 'auction_sale'
+  | 'motus_reward';
 
 export interface SpTransactionRow {
   id: number;
@@ -755,6 +756,71 @@ export interface TowerDifficultyInfo {
   mines_per_floor: number;
   multipliers_x100: number[];
 }
+
+export type MotusLetterState = 'correct' | 'present' | 'absent';
+
+export interface MotusWordQueueRow {
+  id: number;
+  word: string;
+  added_by: number | null;
+  position: number;
+  used_at: string | null;
+  created_at: string;
+}
+
+export type MotusWordSource = 'queue' | 'random' | 'manual';
+
+export interface MotusDailyWordRow {
+  id: number;
+  word_date: string;
+  word: string;
+  queue_id: number | null;
+  season_id: number | null;
+  source: MotusWordSource;
+  created_at: string;
+}
+
+/** Vue MSP du mot du jour, indépendante du statut de partie de l'admin (jamais masquée) — sert l'édition. */
+export interface MotusTodayAdminView {
+  wordDate: string;
+  word: string;
+  source: MotusWordSource;
+  attemptCount: number;
+}
+
+export interface MotusAttemptRow {
+  id: number;
+  daily_word_id: number;
+  user_id: number;
+  attempt_number: number;
+  guess: string;
+  result: MotusLetterState[];
+  is_correct: boolean;
+  created_at: string;
+}
+
+/** Vue MSP (toutes les soumissions, tous joueurs confondus) — même principe que les réponses de mini-jeu, réservé à l'admin. */
+export interface MotusAttemptHistoryEntry extends MotusAttemptRow {
+  username: string;
+  word_date: string;
+  word: string;
+}
+
+export type MotusGameStatus = 'in_progress' | 'won' | 'lost';
+
+/** Vue publique du mot du jour pour un joueur : ses tentatives seulement, mot révélé une fois la partie terminée. */
+export interface MotusGameView {
+  wordDate: string;
+  wordLength: number;
+  maxAttempts: number;
+  rewardSp: number;
+  status: MotusGameStatus;
+  attempts: MotusAttemptRow[];
+  word: string | null;
+}
+
+/** Historique MSP : mots des jours passés, `source` indique déjà leur provenance. */
+export type MotusHistoryEntry = MotusDailyWordRow;
 
 export interface NotificationRow {
   id: number;

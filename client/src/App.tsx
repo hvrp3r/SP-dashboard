@@ -19,6 +19,7 @@ import GamblingCrateDetail from './pages/GamblingCrateDetail.jsx';
 import BlackjackTable from './pages/BlackjackTable.jsx';
 import Crash from './pages/Crash.jsx';
 import Tower from './pages/Tower.jsx';
+import Motus from './pages/Motus.jsx';
 import PlayerStats from './pages/PlayerStats.jsx';
 import AdminSeasons from './pages/admin/Seasons.jsx';
 import AdminConfig from './pages/admin/Config.jsx';
@@ -104,6 +105,14 @@ export default function App() {
           element={
             <PrivateRoute>
               <MinigameDetail />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/motus"
+          element={
+            <PrivateRoute>
+              <Motus />
             </PrivateRoute>
           }
         />
