@@ -11,32 +11,49 @@ const DIFFICULTIES: { value: SudokuDifficulty; label: string }[] = [
   { value: 'hard', label: 'Difficile' },
 ];
 
+interface SavedProgress {
+  grid: string;
+  notes: string[];
+}
+
+function emptyNotes(): string[] {
+  return new Array(81).fill('');
+}
+
 function progressKey(puzzleDate: string, difficulty: SudokuDifficulty): string {
   return `sp_sudoku_progress_${puzzleDate}_${difficulty}`;
 }
 
-// La progression n'est qu'un confort local (survit à un rechargement de page) —
-// jamais lue par le serveur, qui ne fait confiance qu'à la grille soumise à la
-// vérification. On revalide contre `givens` avant de faire confiance à la
-// valeur stockée : une grille sauvegardée pour une autre difficulté ne peut
-// normalement pas atterrir ici (le choix du jour est verrouillé côté serveur),
-// mais un joueur peut avoir une progression obsolète d'un ancien format —
-// mieux vaut repartir des indices fournis que d'afficher une grille incohérente.
-function loadProgress(puzzleDate: string, difficulty: SudokuDifficulty, givens: string): string {
+// La progression (grille + annotations) n'est qu'un confort local (survit à un
+// rechargement de page) — jamais lue par le serveur, qui ne fait confiance qu'à
+// la grille soumise à la vérification (les annotations n'y sont jamais envoyées,
+// ce sont de simples brouillons du joueur). On revalide la grille stockée contre
+// `givens` avant de lui faire confiance : un ancien format ou une progression
+// incohérente retombe simplement sur les indices fournis plutôt que de planter.
+function loadProgress(puzzleDate: string, difficulty: SudokuDifficulty, givens: string): SavedProgress {
   try {
     const raw = window.localStorage.getItem(progressKey(puzzleDate, difficulty));
-    if (raw && /^[0-9]{81}$/.test(raw) && [...givens].every((g, i) => g === '0' || g === raw[i])) {
-      return raw;
+    if (raw) {
+      const parsed = JSON.parse(raw) as { grid?: unknown; notes?: unknown };
+      const { grid, notes } = parsed;
+      const validGrid =
+        typeof grid === 'string' &&
+        /^[0-9]{81}$/.test(grid) &&
+        [...givens].every((g, i) => g === '0' || g === grid[i]);
+      const validNotes = Array.isArray(notes) && notes.length === 81 && notes.every((n) => typeof n === 'string');
+      if (validGrid) {
+        return { grid: grid as string, notes: validNotes ? (notes as string[]) : emptyNotes() };
+      }
     }
   } catch {
-    // localStorage indisponible (navigation privée…) — on repart des indices fournis
+    // JSON invalide ou localStorage indisponible (navigation privée…) — on repart des indices fournis
   }
-  return givens;
+  return { grid: givens, notes: emptyNotes() };
 }
 
-function saveProgress(puzzleDate: string, difficulty: SudokuDifficulty, grid: string): void {
+function saveProgress(puzzleDate: string, difficulty: SudokuDifficulty, grid: string, notes: string[]): void {
   try {
-    window.localStorage.setItem(progressKey(puzzleDate, difficulty), grid);
+    window.localStorage.setItem(progressKey(puzzleDate, difficulty), JSON.stringify({ grid, notes }));
   } catch {
     // silencieux : purement un confort, pas une garantie
   }
@@ -47,6 +64,9 @@ export default function Sudoku() {
 
   const [view, setView] = useState<SudokuTodayView | null>(null);
   const [grid, setGrid] = useState('');
+  const [notes, setNotes] = useState<string[]>(emptyNotes());
+  const [selected, setSelected] = useState<number | null>(null);
+  const [notesMode, setNotesMode] = useState(false);
   const [cellCorrect, setCellCorrect] = useState<boolean[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [choosing, setChoosing] = useState(false);
@@ -61,15 +81,17 @@ export default function Sudoku() {
     setError(null);
     setCellCorrect(null);
     setMessage(null);
+    setSelected(null);
     try {
       const result = await sudokuApi.getToday();
       setView(result);
-      if (result.status !== 'choosing') {
-        setGrid(
-          result.status === 'in_progress'
-            ? loadProgress(result.puzzleDate, result.difficulty, result.givens)
-            : (result.solution as string)
-        );
+      if (result.status === 'in_progress') {
+        const saved = loadProgress(result.puzzleDate, result.difficulty, result.givens);
+        setGrid(saved.grid);
+        setNotes(saved.notes);
+      } else if (result.status !== 'choosing') {
+        setGrid(result.solution as string);
+        setNotes(emptyNotes());
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur inconnue');
@@ -102,7 +124,10 @@ export default function Sudoku() {
     try {
       const result = await sudokuApi.chooseDifficulty(difficulty);
       setView(result);
-      setGrid(loadProgress(result.puzzleDate, result.difficulty, result.givens));
+      const saved = loadProgress(result.puzzleDate, result.difficulty, result.givens);
+      setGrid(saved.grid);
+      setNotes(saved.notes);
+      setSelected(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur inconnue');
     } finally {
@@ -110,14 +135,64 @@ export default function Sudoku() {
     }
   }
 
-  function handleCellChange(index: number, raw: string) {
+  function selectCell(index: number) {
     if (!view || view.status !== 'in_progress' || view.givens[index] !== '0') return;
-    const digit = raw.replace(/[^1-9]/g, '').slice(-1);
-    const next = grid.slice(0, index) + (digit || '0') + grid.slice(index + 1);
-    setGrid(next);
-    setCellCorrect(null);
-    saveProgress(view.puzzleDate, view.difficulty, next);
+    setSelected(index);
   }
+
+  // Une case pleine ne peut pas porter d'annotation (pas de sens à noter des
+  // candidats sur une case déjà remplie) ; taper le même chiffre efface la
+  // case plutôt que de la resaisir — pratique pour corriger sans passer par
+  // le bouton Effacer.
+  function applyDigit(digit: number) {
+    if (!view || view.status !== 'in_progress' || selected === null) return;
+    const ch = String(digit);
+
+    if (notesMode) {
+      if (grid[selected] !== '0') return;
+      const current = notes[selected] ?? '';
+      const nextCell = current.includes(ch) ? current.replace(ch, '') : [...current, ch].sort().join('');
+      const nextNotes = notes.slice();
+      nextNotes[selected] = nextCell;
+      setNotes(nextNotes);
+      saveProgress(view.puzzleDate, view.difficulty, grid, nextNotes);
+      return;
+    }
+
+    const nextChar = grid[selected] === ch ? '0' : ch;
+    const nextGrid = grid.slice(0, selected) + nextChar + grid.slice(selected + 1);
+    // Remplir une case efface ses annotations (elles n'ont plus de raison d'être) ;
+    // l'effacer les laisse intactes, au cas où le joueur les reprendrait ensuite.
+    const nextNotes = nextChar === '0' ? notes : setAt(notes, selected, '');
+    setGrid(nextGrid);
+    setNotes(nextNotes);
+    setCellCorrect(null);
+    saveProgress(view.puzzleDate, view.difficulty, nextGrid, nextNotes);
+  }
+
+  function handleErase() {
+    if (!view || view.status !== 'in_progress' || selected === null) return;
+    const nextGrid = grid.slice(0, selected) + '0' + grid.slice(selected + 1);
+    const nextNotes = setAt(notes, selected, '');
+    setGrid(nextGrid);
+    setNotes(nextNotes);
+    setCellCorrect(null);
+    saveProgress(view.puzzleDate, view.difficulty, nextGrid, nextNotes);
+  }
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (!view || view.status !== 'in_progress' || selected === null) return;
+      if (e.key >= '1' && e.key <= '9') {
+        applyDigit(Number(e.key));
+      } else if (e.key === 'Backspace' || e.key === 'Delete' || e.key === '0') {
+        handleErase();
+      }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, selected, grid, notes, notesMode]);
 
   async function handleCheck() {
     if (!view || view.status !== 'in_progress' || checking) return;
@@ -144,7 +219,9 @@ export default function Sudoku() {
         // "Perdu" laisserait ses mauvaises réponses affichées alors que le
         // message annonce la solution juste au-dessus.
         setGrid(result.solution);
+        setNotes(emptyNotes());
         setCellCorrect(null);
+        setSelected(null);
       } else {
         setCellCorrect(result.cellCorrect);
       }
@@ -159,7 +236,7 @@ export default function Sudoku() {
         sound.playLose();
       } else {
         sound.playChip();
-        saveProgress(view.puzzleDate, view.difficulty, grid);
+        saveProgress(view.puzzleDate, view.difficulty, grid, notes);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur inconnue');
@@ -221,35 +298,89 @@ export default function Sudoku() {
             </p>
 
             <div
-              className="grid gap-0.5 bg-zinc-700 border-2 border-zinc-600 rounded-md overflow-hidden mb-4"
+              className="grid gap-0.5 bg-zinc-700 border-2 border-zinc-600 rounded-md overflow-hidden mb-3"
               style={{ gridTemplateColumns: 'repeat(9, minmax(0, 1fr))' }}
             >
               {Array.from({ length: 81 }, (_, i) => {
                 const isGiven = view.givens[i] !== '0';
-                const value = grid[i] === '0' ? '' : grid[i];
-                const wrong = cellCorrect !== null && grid[i] !== '0' && !cellCorrect[i];
+                const hasValue = grid[i] !== '0';
+                const wrong = cellCorrect !== null && hasValue && !cellCorrect[i];
+                const isSelected = selected === i;
                 const col = i % 9;
                 const row = Math.floor(i / 9);
                 const thickRight = col % 3 === 2 && col !== 8;
                 const thickBottom = row % 3 === 2 && row !== 8;
+                const cellNotes = notes[i] ?? '';
+
                 return (
-                  <input
+                  <button
                     key={i}
-                    value={value ?? ''}
+                    type="button"
+                    onClick={() => selectCell(i)}
                     disabled={isGiven || view.status !== 'in_progress'}
-                    onChange={(e) => handleCellChange(i, e.target.value)}
-                    inputMode="numeric"
-                    maxLength={1}
                     aria-label={`Case ${row + 1}-${col + 1}`}
-                    className={`aspect-square text-center font-semibold text-sm sm:text-base focus:outline-none focus:ring-1 focus:ring-emerald-500 disabled:cursor-default ${
+                    className={`aspect-square flex items-center justify-center font-semibold text-sm sm:text-base disabled:cursor-default ${
                       isGiven ? 'bg-zinc-800 text-zinc-300' : 'bg-zinc-900 text-emerald-400'
                     } ${wrong ? '!bg-red-500/20 !text-red-400' : ''} ${
-                      thickRight ? 'border-r-2 border-r-zinc-500' : ''
-                    } ${thickBottom ? 'border-b-2 border-b-zinc-500' : ''}`}
-                  />
+                      isSelected ? '!bg-emerald-500/20 ring-1 ring-inset ring-emerald-500' : ''
+                    } ${thickRight ? 'border-r-2 border-r-zinc-500' : ''} ${
+                      thickBottom ? 'border-b-2 border-b-zinc-500' : ''
+                    }`}
+                  >
+                    {hasValue ? (
+                      grid[i]
+                    ) : cellNotes ? (
+                      <span className="grid grid-cols-3 grid-rows-3 w-full h-full text-[9px] sm:text-[10px] font-semibold leading-none text-zinc-400 p-0.5">
+                        {Array.from({ length: 9 }, (_, n) => (
+                          <span key={n} className="flex items-center justify-center">
+                            {cellNotes.includes(String(n + 1)) ? n + 1 : ''}
+                          </span>
+                        ))}
+                      </span>
+                    ) : null}
+                  </button>
                 );
               })}
             </div>
+
+            {view.status === 'in_progress' && (
+              <div className="mb-3">
+                <div className="grid grid-cols-9 gap-1 mb-2">
+                  {Array.from({ length: 9 }, (_, n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      onClick={() => applyDigit(n + 1)}
+                      disabled={selected === null}
+                      className="aspect-square bg-zinc-900 border border-zinc-800 rounded-md text-zinc-100 font-semibold text-sm hover:border-emerald-500/50 transition disabled:opacity-30 disabled:cursor-not-allowed"
+                    >
+                      {n + 1}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setNotesMode((v) => !v)}
+                    className={`flex-1 rounded-md px-3 py-2 text-sm font-medium transition ${
+                      notesMode
+                        ? 'bg-emerald-500 text-zinc-950'
+                        : 'bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-zinc-100'
+                    }`}
+                  >
+                    ✏️ Annotations {notesMode ? 'activées' : 'désactivées'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleErase}
+                    disabled={selected === null}
+                    className="flex-1 bg-zinc-900 border border-zinc-800 rounded-md px-3 py-2 text-sm font-medium text-zinc-400 hover:text-zinc-100 transition disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    Effacer
+                  </button>
+                </div>
+              </div>
+            )}
 
             {view.status === 'won' && (
               <p className="text-center text-emerald-400 font-semibold">{message ?? 'Résolu aujourd’hui ✓'}</p>
@@ -310,4 +441,10 @@ export default function Sudoku() {
       </div>
     </div>
   );
+}
+
+function setAt(arr: string[], index: number, value: string): string[] {
+  const next = arr.slice();
+  next[index] = value;
+  return next;
 }
