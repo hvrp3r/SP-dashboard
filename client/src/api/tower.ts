@@ -18,5 +18,10 @@ export const pick = (cell: number) => apiClient.post<TowerActionResult>('/api/to
 
 export const cashOut = () => apiClient.post<TowerActionResult>('/api/tower/cashout');
 
-export const getMyHistory = (limit?: number) =>
-  apiClient.get<TowerHistoryEntry[]>(`/api/tower/history/me${limit ? `?limit=${limit}` : ''}`);
+export const getHistory = (limit?: number, mine?: boolean) => {
+  const params = new URLSearchParams();
+  if (limit) params.set('limit', String(limit));
+  if (mine) params.set('mine', 'true');
+  const qs = params.toString();
+  return apiClient.get<TowerHistoryEntry[]>(`/api/tower/history${qs ? `?${qs}` : ''}`);
+};

@@ -563,16 +563,30 @@ export async function stand(
   }
 }
 
-export async function listMyHistory(userId: number, limit: number): Promise<BlackjackHistoryEntry[]> {
-  const { rows } = await pool.query<BlackjackHistoryEntry>(
-    `SELECT h.id, h.session_id, h.bet_amount, h.cards, h.status, h.outcome, h.resolved_at,
-            s.dealer_cards
+/**
+ * Historique des mains résolues — toutes les mains de tous les joueurs par
+ * défaut (`userId = null`), ou filtré sur un seul joueur. Toujours joint
+ * username/avatar/cosmétiques équipés, même en mode "un seul joueur" — même
+ * convention que crash/tower `listHistory`, pour un composant client unique.
+ */
+export async function listHistory(
+  limit: number,
+  userId: number | null = null
+): Promise<BlackjackHistoryEntry[]> {
+  const { rows } = await pool.query<Omit<BlackjackHistoryEntry, 'equipped_cosmetics'>>(
+    `SELECT h.id, h.session_id, h.user_id, h.bet_amount, h.cards, h.status, h.outcome, h.resolved_at,
+            s.dealer_cards, u.username, u.avatar_url
      FROM blackjack_hands h
      JOIN blackjack_sessions s ON s.id = h.session_id
-     WHERE h.user_id = $1 AND h.outcome IS NOT NULL
+     JOIN users u ON u.id = h.user_id
+     WHERE h.outcome IS NOT NULL AND ($1::int IS NULL OR h.user_id = $1)
      ORDER BY h.resolved_at DESC
      LIMIT $2`,
     [userId, limit]
   );
-  return rows;
+  const equippedByUser = await cosmeticsService.getEquippedForUsers(rows.map((r) => r.user_id));
+  return rows.map((row) => ({
+    ...row,
+    equipped_cosmetics: equippedByUser.get(row.user_id) ?? [],
+  }));
 }

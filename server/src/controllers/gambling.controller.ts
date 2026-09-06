@@ -548,9 +548,10 @@ export async function listMyInventory(req: Request, res: Response): Promise<void
   res.json(inventory);
 }
 
-export async function listMyOpens(req: Request, res: Response): Promise<void> {
+export async function listOpens(req: Request, res: Response): Promise<void> {
   const limitRaw = Number(req.query.limit);
   const limit = Number.isInteger(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 100) : 20;
-  const opens = await gamblingService.listMyOpens(req.user!.id, limit);
+  const mine = req.query.mine === 'true';
+  const opens = await gamblingService.listOpens(limit, mine ? req.user!.id : null);
   res.json(opens);
 }

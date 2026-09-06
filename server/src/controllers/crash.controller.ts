@@ -46,9 +46,10 @@ export async function cashOut(req: Request, res: Response): Promise<void> {
   res.json(result);
 }
 
-export async function listMyHistory(req: Request, res: Response): Promise<void> {
+export async function listHistory(req: Request, res: Response): Promise<void> {
   const limitRaw = Number(req.query.limit);
   const limit = Number.isInteger(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 100) : 20;
-  const history = await crashService.listMyHistory(req.user!.id, limit);
+  const mine = req.query.mine === 'true';
+  const history = await crashService.listHistory(limit, mine ? req.user!.id : null);
   res.json(history);
 }

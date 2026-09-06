@@ -2,6 +2,7 @@ import type { PoolClient } from 'pg';
 import { pool } from '../db/pool.js';
 import * as spService from './sp.service.js';
 import * as configService from './config.service.js';
+import * as cosmeticsService from './cosmetics.service.js';
 import { startOfDayLocalAsUTC } from '../utils/localDate.js';
 import type {
   TowerActionResult,
@@ -26,6 +27,15 @@ const HOUSE_EDGE = 0.04;
 export const TOWER_RTP_PERCENT = 96;
 
 /**
+ * Même hauteur pour toutes les difficultés (décision explicite de
+ * l'utilisateur — la tour ne doit pas paraître plus courte ou plus haute
+ * selon la difficulté choisie) : seuls le nombre de cases/mines par étage
+ * changent, ce qui fait varier le multiplicateur au sommet plutôt que le
+ * nombre d'étages à franchir.
+ */
+const TOWER_FLOORS = 8;
+
+/**
  * Nombre de cases et de mines par étage, fixes pour toute la hauteur d'une
  * difficulté donnée (`cells`/`mines` publics dès la création de la partie —
  * seule la position exacte des mines à chaque étage reste secrète). Le
@@ -39,9 +49,9 @@ interface TowerDifficultyConfig {
 }
 
 const TOWER_DIFFICULTIES: Record<TowerDifficulty, TowerDifficultyConfig> = {
-  easy: { cells: 3, mines: 1, floors: 9 },
-  medium: { cells: 2, mines: 1, floors: 8 },
-  hard: { cells: 3, mines: 2, floors: 6 },
+  easy: { cells: 3, mines: 1, floors: TOWER_FLOORS },
+  medium: { cells: 2, mines: 1, floors: TOWER_FLOORS },
+  hard: { cells: 3, mines: 2, floors: TOWER_FLOORS },
 };
 
 function perLevelMultiplierX100(cfg: TowerDifficultyConfig): number {
@@ -380,20 +390,33 @@ export async function cashOut(userId: number): Promise<TowerActionResult> {
   }
 }
 
-export async function listMyHistory(userId: number, limit: number): Promise<TowerHistoryEntry[]> {
-  const { rows } = await pool.query<TowerGameRow>(
-    `SELECT * FROM tower_games
-     WHERE user_id = $1 AND status != 'in_progress'
-     ORDER BY resolved_at DESC
+/**
+ * Historique des parties terminées — toutes les parties de tous les joueurs
+ * par défaut (`userId = null`), ou filtré sur un seul joueur. Toujours joint
+ * username/avatar/cosmétiques équipés, même en mode "un seul joueur" — même
+ * convention que blackjack/crash `listHistory`, pour un composant client unique.
+ */
+export async function listHistory(
+  limit: number,
+  userId: number | null = null
+): Promise<TowerHistoryEntry[]> {
+  const { rows } = await pool.query<TowerGameRow & { username: string; avatar_url: string | null }>(
+    `SELECT g.*, u.username, u.avatar_url
+     FROM tower_games g
+     JOIN users u ON u.id = g.user_id
+     WHERE g.status != 'in_progress' AND ($1::int IS NULL OR g.user_id = $1)
+     ORDER BY g.resolved_at DESC
      LIMIT $2`,
     [userId, limit]
   );
+  const equippedByUser = await cosmeticsService.getEquippedForUsers(rows.map((r) => r.user_id));
   return rows.map((game) => {
     const cfg = TOWER_DIFFICULTIES[game.difficulty];
     const cumulative = CUMULATIVE_MULTIPLIERS_X100[game.difficulty] as number[];
     const finalMultiplierX100 = cumulative[game.current_level] as number;
     return {
       id: game.id,
+      user_id: game.user_id,
       difficulty: game.difficulty,
       bet_amount: game.bet_amount,
       status: game.status,
@@ -403,6 +426,9 @@ export async function listMyHistory(userId: number, limit: number): Promise<Towe
       payout:
         game.status === 'cashed_out' ? Math.floor((game.bet_amount * finalMultiplierX100) / 100) : 0,
       resolved_at: game.resolved_at as string,
+      username: game.username,
+      avatar_url: game.avatar_url,
+      equipped_cosmetics: equippedByUser.get(game.user_id) ?? [],
     };
   });
 }

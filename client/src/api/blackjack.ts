@@ -11,7 +11,10 @@ export const hit = () => apiClient.post<BlackjackActionResult>('/api/blackjack/h
 
 export const stand = () => apiClient.post<BlackjackActionResult>('/api/blackjack/stand');
 
-export const getMyHistory = (limit?: number) =>
-  apiClient.get<BlackjackHistoryEntry[]>(
-    `/api/blackjack/history/me${limit ? `?limit=${limit}` : ''}`
-  );
+export const getHistory = (limit?: number, mine?: boolean) => {
+  const params = new URLSearchParams();
+  if (limit) params.set('limit', String(limit));
+  if (mine) params.set('mine', 'true');
+  const qs = params.toString();
+  return apiClient.get<BlackjackHistoryEntry[]>(`/api/blackjack/history${qs ? `?${qs}` : ''}`);
+};
