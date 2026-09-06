@@ -5,16 +5,23 @@ import NotificationBell from './NotificationBell.jsx';
 import Avatar from './Avatar.jsx';
 import UserNameTag from './UserNameTag.jsx';
 import * as gamblingApi from '../api/gambling.js';
-import type { GamblingGameInfo } from '../types.js';
+import type { GamblingGameId, GamblingGameInfo } from '../types.js';
 
 const NAV_LINKS = [
   { to: '/', end: true, label: 'Accueil' },
   { to: '/classement', end: false, label: 'Classement' },
   { to: '/defis', end: false, label: 'Défis' },
-  { to: '/mini-jeux', end: false, label: 'Mini-jeux' },
-  { to: '/motus', end: false, label: 'Motus' },
-  { to: '/encheres', end: false, label: 'Enchères' },
 ];
+
+const CASINO_ICONS: Record<GamblingGameId, string> = {
+  crates: '📦',
+  blackjack: '🃏',
+  crash: '📈',
+  tower: '🗼',
+};
+
+const dropdownSectionLabelClass =
+  'px-4 pt-2 pb-1 text-[10px] font-semibold text-zinc-500 uppercase tracking-wide';
 
 const linkClass = ({ isActive }: { isActive: boolean }) =>
   `relative px-3 py-2 text-sm font-medium rounded-md whitespace-nowrap transition-all duration-200 ease-out transform hover:scale-105 active:scale-95 ${
@@ -24,7 +31,7 @@ const linkClass = ({ isActive }: { isActive: boolean }) =>
   }`;
 
 const dropdownLinkClass = ({ isActive }: { isActive: boolean }) =>
-  `block px-4 py-2.5 text-sm transition-colors duration-150 ${
+  `flex items-center gap-2 px-4 py-2.5 text-sm transition-colors duration-150 ${
     isActive
       ? 'bg-emerald-500/15 text-emerald-400 font-medium'
       : 'text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100'
@@ -45,7 +52,6 @@ function ProfileMenu() {
   const ref = useRef<HTMLDivElement>(null);
   const isProfileRouteActive =
     location.pathname.startsWith('/profil') ||
-    location.pathname.startsWith('/cosmetiques') ||
     location.pathname.startsWith('/suggestions') ||
     location.pathname.startsWith('/admin');
 
@@ -109,9 +115,6 @@ function ProfileMenu() {
             <NavLink to="/profil" className={dropdownLinkClass}>
               Mon profil
             </NavLink>
-            <NavLink to="/cosmetiques" className={dropdownLinkClass}>
-              Cosmétiques
-            </NavLink>
             <NavLink to="/suggestions" className={dropdownLinkClass}>
               Suggestions
             </NavLink>
@@ -151,11 +154,14 @@ function ProfileMenu() {
   );
 }
 
-function GamblingMenu({ games }: { games: GamblingGameInfo[] }) {
+function JeuxMenu({ games }: { games: GamblingGameInfo[] }) {
   const location = useLocation();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  const isGamblingRouteActive = location.pathname.startsWith('/gambling');
+  const isJeuxRouteActive =
+    location.pathname.startsWith('/motus') ||
+    location.pathname.startsWith('/mini-jeux') ||
+    location.pathname.startsWith('/gambling');
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -178,12 +184,76 @@ function GamblingMenu({ games }: { games: GamblingGameInfo[] }) {
       <button
         onClick={() => setOpen((v) => !v)}
         className={`px-3 py-2 text-sm font-medium rounded-md whitespace-nowrap transition-all duration-200 ease-out transform hover:scale-105 active:scale-95 ${
-          isGamblingRouteActive
+          isJeuxRouteActive
             ? 'bg-emerald-500 text-zinc-950 shadow-md shadow-emerald-500/30'
             : 'text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100'
         }`}
       >
-        Gambling{' '}
+        Jeux <span className={`inline-block transition-transform ${open ? 'rotate-180' : ''}`}>▾</span>
+      </button>
+
+      {open && (
+        <div
+          className="absolute left-0 mt-2 w-48 bg-zinc-900 border border-zinc-800 rounded-xl shadow-lg shadow-black/30 z-50 overflow-hidden origin-top-left py-1"
+          style={{ animation: 'fadeSlideIn 0.18s ease-out' }}
+        >
+          <NavLink to="/mini-jeux" className={dropdownLinkClass}>
+            <span>🧠</span> Mini-jeux
+          </NavLink>
+
+          <div className="my-1 border-t border-zinc-800" />
+          <p className={dropdownSectionLabelClass}>Jeu du jour</p>
+          <NavLink to="/motus" className={dropdownLinkClass}>
+            <span>🟩</span> Motus
+          </NavLink>
+
+          <p className={dropdownSectionLabelClass}>Casino</p>
+          <NavLink to="/gambling" end className={dropdownLinkClass}>
+            <span>🎰</span> Tous les jeux
+          </NavLink>
+          {activeGames.map((g) => (
+            <NavLink key={g.id} to={g.path} className={dropdownLinkClass}>
+              <span>{CASINO_ICONS[g.id]}</span> {g.name}
+            </NavLink>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CosmetiquesMenu() {
+  const location = useLocation();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const isCosmetiquesRouteActive =
+    location.pathname.startsWith('/cosmetiques') || location.pathname.startsWith('/encheres');
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    setOpen(false);
+  }, [location.pathname]);
+
+  return (
+    <div className="relative flex-shrink-0" ref={ref}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className={`px-3 py-2 text-sm font-medium rounded-md whitespace-nowrap transition-all duration-200 ease-out transform hover:scale-105 active:scale-95 ${
+          isCosmetiquesRouteActive
+            ? 'bg-emerald-500 text-zinc-950 shadow-md shadow-emerald-500/30'
+            : 'text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100'
+        }`}
+      >
+        Cosmétiques{' '}
         <span className={`inline-block transition-transform ${open ? 'rotate-180' : ''}`}>▾</span>
       </button>
 
@@ -192,14 +262,12 @@ function GamblingMenu({ games }: { games: GamblingGameInfo[] }) {
           className="absolute left-0 mt-2 w-44 bg-zinc-900 border border-zinc-800 rounded-xl shadow-lg shadow-black/30 z-50 overflow-hidden origin-top-left py-1"
           style={{ animation: 'fadeSlideIn 0.18s ease-out' }}
         >
-          <NavLink to="/gambling" end className={dropdownLinkClass}>
-            Tous les jeux
+          <NavLink to="/cosmetiques" className={dropdownLinkClass}>
+            <span>✨</span> Ma collection
           </NavLink>
-          {activeGames.map((g) => (
-            <NavLink key={g.id} to={g.path} className={dropdownLinkClass}>
-              {g.name}
-            </NavLink>
-          ))}
+          <NavLink to="/encheres" className={dropdownLinkClass}>
+            <span>🔨</span> Enchères
+          </NavLink>
         </div>
       )}
     </div>
@@ -255,14 +323,15 @@ export default function NavBar() {
           {mobileOpen ? '✕' : '☰'}
         </button>
 
-        <div className="flex-1 min-w-0 flex items-center gap-1">
+        <div className="flex-1 min-w-0 flex items-center gap-1 sm:justify-center">
           <div className="hidden sm:flex items-center gap-1">
             {NAV_LINKS.map((link) => (
               <NavLink key={link.to} to={link.to} end={link.end} className={linkClass}>
                 {link.label}
               </NavLink>
             ))}
-            <GamblingMenu games={games} />
+            <JeuxMenu games={games} />
+            <CosmetiquesMenu />
           </div>
           <NavLink
             to="/"
@@ -289,17 +358,39 @@ export default function NavBar() {
               {link.label}
             </NavLink>
           ))}
+
+          <NavLink to="/mini-jeux" className={mobileLinkClass}>
+            🧠 Mini-jeux
+          </NavLink>
+
           <p className="px-3 pt-3 pb-1 text-[10px] font-semibold text-zinc-500 uppercase tracking-wide">
-            Gambling
+            Jeu du jour
+          </p>
+          <NavLink to="/motus" className={mobileLinkClass}>
+            🟩 Motus
+          </NavLink>
+
+          <p className="px-3 pt-3 pb-1 text-[10px] font-semibold text-zinc-500 uppercase tracking-wide">
+            Casino
           </p>
           <NavLink to="/gambling" end className={mobileLinkClass}>
-            Tous les jeux
+            🎰 Tous les jeux
           </NavLink>
           {activeGames.map((g) => (
             <NavLink key={g.id} to={g.path} className={mobileLinkClass}>
-              {g.name}
+              {CASINO_ICONS[g.id]} {g.name}
             </NavLink>
           ))}
+
+          <p className="px-3 pt-3 pb-1 text-[10px] font-semibold text-zinc-500 uppercase tracking-wide">
+            Cosmétiques
+          </p>
+          <NavLink to="/cosmetiques" className={mobileLinkClass}>
+            ✨ Ma collection
+          </NavLink>
+          <NavLink to="/encheres" className={mobileLinkClass}>
+            🔨 Enchères
+          </NavLink>
         </div>
       )}
     </nav>

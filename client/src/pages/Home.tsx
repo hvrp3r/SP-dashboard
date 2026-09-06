@@ -4,10 +4,24 @@ import { useAuth } from '../hooks/useAuth.jsx';
 import UserNameTag from '../components/UserNameTag.jsx';
 import * as usersApi from '../api/users.js';
 import * as seasonsApi from '../api/seasons.js';
-import type { Season } from '../types.js';
+import * as motusApi from '../api/motus.js';
+import * as minigamesApi from '../api/minigames.js';
+import { gameTypeIcon, gameTypeLabel } from '../lib/minigameLabels.js';
+import type { MinigameSession, MotusGame, Season } from '../types.js';
 
 function todayLocal(): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris' }).format(new Date());
+}
+
+function motusStatusText(motus: MotusGame): string {
+  if (motus.status === 'in_progress') {
+    const n = motus.attempts.length;
+    return `${n}/${motus.maxAttempts} tentative${n > 1 ? 's' : ''} utilisée${n > 1 ? 's' : ''}`;
+  }
+  if (motus.status === 'won') {
+    return `Gagné ! +${motus.rewardSp} SP`;
+  }
+  return motus.word ? `Perdu — le mot était "${motus.word.toUpperCase()}"` : 'Perdu pour aujourd\'hui';
 }
 
 interface NavCard {
@@ -33,10 +47,21 @@ export default function Home() {
   const [claimingBonus, setClaimingBonus] = useState(false);
   const [bonusError, setBonusError] = useState<string | null>(null);
   const [bonusAmount, setBonusAmount] = useState<number | null>(null);
+  const [motus, setMotus] = useState<MotusGame | null>(null);
+  const [openMinigames, setOpenMinigames] = useState<MinigameSession[]>([]);
 
   useEffect(() => {
     seasonsApi.getActiveSeason().then(setActiveSeason).catch(() => setActiveSeason(null));
   }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    motusApi.getToday().then(setMotus).catch(() => setMotus(null));
+    minigamesApi
+      .listSessions('open')
+      .then(setOpenMinigames)
+      .catch(() => setOpenMinigames([]));
+  }, [user?.username]);
 
   useEffect(() => {
     if (!user) return;
@@ -118,6 +143,48 @@ export default function Home() {
             <p className="text-2xl font-bold text-zinc-100">{rank ? `#${rank}` : '—'}</p>
           </div>
         </div>
+
+        {motus && (
+          <div className="flex items-center justify-between gap-4 bg-zinc-900 border border-zinc-800 rounded-xl shadow-md p-4 mb-4">
+            <div className="flex items-center gap-3 min-w-0">
+              <span className="text-2xl flex-shrink-0">🟩</span>
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-zinc-100">Motus du jour</p>
+                <p className="text-xs text-zinc-500 truncate">{motusStatusText(motus)}</p>
+              </div>
+            </div>
+            <Link
+              to="/motus"
+              className="flex-shrink-0 bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-semibold px-4 py-2 rounded-md transition text-sm"
+            >
+              {motus.status === 'in_progress' ? 'Jouer' : 'Revoir'}
+            </Link>
+          </div>
+        )}
+
+        {openMinigames.length > 0 && (
+          <>
+            <h2 className="text-sm font-semibold text-zinc-300 uppercase mb-3">Mini-jeux en cours</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
+              {openMinigames.map((s) => (
+                <Link
+                  key={s.id}
+                  to={`/mini-jeux/${s.id}`}
+                  className="flex items-center gap-3 bg-zinc-900 border border-zinc-800 rounded-xl shadow-md p-4 hover:border-emerald-500/50 transition"
+                >
+                  <span className="text-2xl flex-shrink-0">{gameTypeIcon(s.game_type)}</span>
+                  <div className="min-w-0">
+                    <p className="font-medium text-zinc-100 truncate">{s.title ?? gameTypeLabel(s.game_type)}</p>
+                    <p className="text-xs text-zinc-500 truncate">
+                      {gameTypeLabel(s.game_type)}
+                      {s.entry_fee ? ` · ${s.entry_fee} SP` : ''}
+                    </p>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </>
+        )}
 
         <h2 className="text-sm font-semibold text-zinc-300 uppercase mb-3">Accès rapide</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
