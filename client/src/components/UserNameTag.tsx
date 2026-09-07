@@ -1,5 +1,6 @@
-import { useEffect } from 'react';
+import { useEffect, type CSSProperties } from 'react';
 import { Link } from 'react-router-dom';
+import { colorAnimationClass } from '../lib/cosmeticsLabels.js';
 import { extractFontName, loadGoogleFont } from '../lib/googleFonts.js';
 import type { EquippedCosmetic } from '../types.js';
 
@@ -21,7 +22,8 @@ export default function UserNameTag({
   className = '',
   linkable = true,
 }: UserNameTagProps) {
-  const color = equipped.find((c) => c.slot === 'name_color')?.color_value;
+  const nameColor = equipped.find((c) => c.slot === 'name_color');
+  const color = nameColor?.color_value;
   const font = equipped.find((c) => c.slot === 'name_font')?.font_family;
   const title = equipped.find((c) => c.slot === 'title' && c.key !== 'title_none');
 
@@ -32,19 +34,37 @@ export default function UserNameTag({
   const content = (
     <>
       <span
-        className={`font-medium whitespace-nowrap ${linkable ? 'hover:underline' : ''} ${className}`}
-        style={{ ...(color ? { color } : {}), ...(font ? { fontFamily: font } : {}) }}
+        className={`font-medium whitespace-nowrap ${linkable ? 'hover:underline' : ''} ${colorAnimationClass(nameColor?.color_animation)} ${className}`}
+        style={{
+          // .cosmetic-anim-shimmer met color: transparent (dégradé + background-clip:text,
+          // voir index.css) — un inline `color` gagnerait toujours sur cette règle de classe,
+          // donc on ne le pose pas dans ce cas, seulement --cosmetic-color pour le dégradé.
+          ...(color
+            ? nameColor?.color_animation === 'shimmer'
+              ? ({ '--cosmetic-color': color } as CSSProperties)
+              : { color }
+            : {}),
+          // --cosmetic-color-2 : accent de glitch/lightning/shimmer (voir index.css) — ignoré
+          // par les autres animations, donc rien à conditionner ici.
+          ...(nameColor?.color_secondary
+            ? ({ '--cosmetic-color-2': nameColor.color_secondary } as CSSProperties)
+            : {}),
+          ...(font ? { fontFamily: font } : {}),
+        }}
       >
         {username}
       </span>
       {title &&
         (title.color_value ? (
           <span
-            className="text-[10px] px-2 py-0.5 rounded-full border font-semibold whitespace-nowrap"
+            className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold whitespace-nowrap ${colorAnimationClass(title.color_animation)}`}
             style={{
               borderColor: `${title.color_value}66`,
               backgroundColor: `${title.color_value}1a`,
               color: title.color_value,
+              ...(title.color_secondary
+                ? ({ '--cosmetic-color-2': title.color_secondary } as CSSProperties)
+                : {}),
             }}
           >
             {title.name}

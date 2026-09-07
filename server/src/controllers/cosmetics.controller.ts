@@ -1,10 +1,21 @@
 import type { Request, Response } from 'express';
 import * as cosmeticsService from '../services/cosmetics.service.js';
 import * as notificationService from '../services/notification.service.js';
-import type { CosmeticRarity, CosmeticSlot } from '../types.js';
+import type { CosmeticColorAnimation, CosmeticRarity, CosmeticSlot } from '../types.js';
 
 const VALID_SLOTS: CosmeticSlot[] = ['avatar_frame', 'banner', 'name_color', 'title', 'name_font'];
 const VALID_RARITIES: CosmeticRarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
+const VALID_COLOR_ANIMATIONS: CosmeticColorAnimation[] = [
+  'rainbow',
+  'pulse',
+  'neon',
+  'fire',
+  'ice',
+  'disco',
+  'glitch',
+  'lightning',
+  'shimmer',
+];
 /**
  * Le MSP peut saisir n'importe quel nom de police Google Fonts au runtime
  * (chargée dynamiquement côté client, voir client/src/lib/googleFonts.ts) —
@@ -79,6 +90,8 @@ interface CreateCosmeticBody {
   description?: string;
   imageUrl?: string;
   colorValue?: string;
+  colorAnimation?: CosmeticColorAnimation | '';
+  colorSecondary?: string;
   fontFamily?: string;
   rarity?: CosmeticRarity;
 }
@@ -93,6 +106,8 @@ export async function createCosmetic(
   const description = req.body?.description?.trim();
   const imageUrl = req.body?.imageUrl?.trim();
   const colorValue = req.body?.colorValue?.trim();
+  const colorAnimation = req.body?.colorAnimation || undefined;
+  const colorSecondary = req.body?.colorSecondary?.trim();
   const fontFamily = req.body?.fontFamily?.trim();
   const rarity = req.body?.rarity ?? 'common';
 
@@ -112,6 +127,10 @@ export async function createCosmetic(
     res.status(400).json({ error: 'Rareté invalide' });
     return;
   }
+  if (colorAnimation && !VALID_COLOR_ANIMATIONS.includes(colorAnimation)) {
+    res.status(400).json({ error: 'Animation de couleur invalide' });
+    return;
+  }
   if (fontFamily && !FONT_FAMILY_PATTERN.test(fontFamily)) {
     res.status(400).json({ error: 'Police invalide' });
     return;
@@ -126,6 +145,8 @@ export async function createCosmetic(
       description: description || null,
       imageUrl: imageUrl || null,
       colorValue: colorValue || null,
+      colorAnimation: colorAnimation || null,
+      colorSecondary: colorSecondary || null,
       fontFamily: fontFamily || null,
       rarity,
       createdBy: req.user!.id,
@@ -143,6 +164,8 @@ interface UpdateCosmeticBody {
   description?: string | null;
   imageUrl?: string | null;
   colorValue?: string | null;
+  colorAnimation?: CosmeticColorAnimation | null;
+  colorSecondary?: string | null;
   fontFamily?: string | null;
   rarity?: CosmeticRarity;
 }
@@ -161,6 +184,10 @@ export async function updateCosmetic(
     res.status(400).json({ error: 'Rareté invalide' });
     return;
   }
+  if (body.colorAnimation && !VALID_COLOR_ANIMATIONS.includes(body.colorAnimation)) {
+    res.status(400).json({ error: 'Animation de couleur invalide' });
+    return;
+  }
   if (body.fontFamily && !FONT_FAMILY_PATTERN.test(body.fontFamily)) {
     res.status(400).json({ error: 'Police invalide' });
     return;
@@ -171,6 +198,9 @@ export async function updateCosmetic(
     description: body.description !== undefined ? body.description?.trim() || null : undefined,
     imageUrl: body.imageUrl !== undefined ? body.imageUrl?.trim() || null : undefined,
     colorValue: body.colorValue !== undefined ? body.colorValue?.trim() || null : undefined,
+    colorAnimation: body.colorAnimation !== undefined ? body.colorAnimation || null : undefined,
+    colorSecondary:
+      body.colorSecondary !== undefined ? body.colorSecondary?.trim() || null : undefined,
     fontFamily: body.fontFamily !== undefined ? body.fontFamily?.trim() || null : undefined,
     rarity: body.rarity,
   });

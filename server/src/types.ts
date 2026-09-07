@@ -336,6 +336,17 @@ export type NotificationType =
 
 export type CosmeticSlot = 'avatar_frame' | 'banner' | 'name_color' | 'title' | 'name_font';
 export type CosmeticRarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
+/** Effet visuel animé appliqué par-dessus color_value (name_color/title uniquement) — purement client (voir index.css), le serveur ne fait que le stocker/valider. 'shimmer' est restreint à name_color côté client (voir cosmeticsLabels.ts). */
+export type CosmeticColorAnimation =
+  | 'rainbow'
+  | 'pulse'
+  | 'neon'
+  | 'fire'
+  | 'ice'
+  | 'disco'
+  | 'glitch'
+  | 'lightning'
+  | 'shimmer';
 /** Comment un joueur a obtenu un cosmétique — miroir de sp_transactions.type mais scoping propre à ce système. */
 export type CosmeticObtainedSource = 'gambling' | 'admin_grant' | 'auction';
 
@@ -347,6 +358,9 @@ export interface CosmeticRow {
   description: string | null;
   image_url: string | null;
   color_value: string | null;
+  color_animation: CosmeticColorAnimation | null;
+  /** Accent d'une animation à deux couleurs (glitch/lightning/shimmer uniquement — voir cosmeticsLabels.ts côté client). Nul = repli CSS par défaut. */
+  color_secondary: string | null;
   font_family: string | null;
   rarity: CosmeticRarity;
   is_default: boolean;
@@ -376,6 +390,8 @@ export interface EquippedCosmetic {
   name: string;
   image_url: string | null;
   color_value: string | null;
+  color_animation: CosmeticColorAnimation | null;
+  color_secondary: string | null;
   font_family: string | null;
 }
 
@@ -1140,4 +1156,13 @@ export interface SuggestionCommentEntry extends SuggestionCommentRow {
 
 export interface SuggestionDetail extends SuggestionListEntry {
   comments: SuggestionCommentEntry[];
+}
+
+export type ProfileReactionValue = 1 | -1;
+
+export interface ProfileReactionSummary {
+  likeCount: number;
+  dislikeCount: number;
+  /** 1 = liké, -1 = disliké, 0 = pas de réaction du viewer courant. */
+  userReaction: ProfileReactionValue | 0;
 }

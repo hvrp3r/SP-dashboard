@@ -1,5 +1,67 @@
-import type { CosmeticRarity, CosmeticSlot } from '../types.js';
+import type { CosmeticColorAnimation, CosmeticRarity, CosmeticSlot } from '../types.js';
 import type { FontFallback } from './googleFonts.js';
+
+/** Tous les effets animés proposés pour une couleur de pseudo/titre (name_color, title). */
+export const COLOR_ANIMATIONS: CosmeticColorAnimation[] = [
+  'rainbow',
+  'pulse',
+  'neon',
+  'fire',
+  'ice',
+  'disco',
+  'glitch',
+  'lightning',
+  'shimmer',
+];
+
+export const COLOR_ANIMATION_LABELS: Record<CosmeticColorAnimation, string> = {
+  rainbow: 'Arc-en-ciel',
+  pulse: 'Pulsation',
+  neon: 'Néon',
+  fire: 'Feu',
+  ice: 'Glace',
+  disco: 'Disco',
+  glitch: 'Glitch',
+  lightning: 'Éclair',
+  shimmer: 'Chatoyant',
+};
+
+/**
+ * Animations disponibles pour un emplacement donné — 'shimmer' est un
+ * dégradé + background-clip (voir index.css), pas un simple filter comme les
+ * autres : appliqué au badge de titre (fond + bordure teintés), il effacerait
+ * ce fond en le clippant à la forme du texte. Restreint à name_color, pur
+ * texte sans fond propre, où l'effet marche sans casser d'autre visuel.
+ */
+export function colorAnimationsForSlot(slot: CosmeticSlot): CosmeticColorAnimation[] {
+  return slot === 'title' ? COLOR_ANIMATIONS.filter((a) => a !== 'shimmer') : COLOR_ANIMATIONS;
+}
+
+/** Classe CSS (voir index.css) appliquée sur l'élément coloré pour jouer l'effet. */
+export function colorAnimationClass(animation: CosmeticColorAnimation | null | undefined): string {
+  return animation ? `cosmetic-anim-${animation}` : '';
+}
+
+/**
+ * Animations à deux couleurs — les seules qui ont un vrai accent distinct de
+ * color_value (le flash d'éclair, le reflet du chatoyant, le halo du glitch).
+ * Les autres (néon/feu/glace/disco/arc-en-ciel/pulsation) ne sont que des
+ * variations filter d'UNE seule couleur, pas de deuxième pastille pour elles.
+ */
+export const ANIMATIONS_WITH_SECONDARY_COLOR: CosmeticColorAnimation[] = ['glitch', 'lightning', 'shimmer'];
+
+export function animationHasSecondaryColor(
+  animation: CosmeticColorAnimation | null | undefined
+): boolean {
+  return !!animation && ANIMATIONS_WITH_SECONDARY_COLOR.includes(animation);
+}
+
+/** Valeur pré-remplie du sélecteur de couleur secondaire — reste purement une suggestion, le CSS a son propre repli si le MSP laisse color_secondary vide. */
+export const SECONDARY_COLOR_DEFAULTS: Partial<Record<CosmeticColorAnimation, string>> = {
+  glitch: '#ff00ff',
+  lightning: '#ffffff',
+  shimmer: '#ffffff',
+};
 
 export const SLOT_LABELS: Record<CosmeticSlot, string> = {
   avatar_frame: 'Cadre d\'avatar',

@@ -4,7 +4,10 @@ import type { Request, Response } from 'express';
 import * as userService from '../services/user.service.js';
 import * as statsService from '../services/stats.service.js';
 import * as loginBonusService from '../services/loginBonus.service.js';
+import * as transactionService from '../services/transaction.service.js';
+import * as profileReactionService from '../services/profileReaction.service.js';
 import { AVATARS_DIR } from '../middleware/upload.js';
+import { parsePagination } from './transactions.controller.js';
 
 export async function getMe(req: Request, res: Response): Promise<void> {
   const profile = await userService.getPrivateProfile(req.user!.id);
@@ -53,6 +56,64 @@ export async function getStats(req: Request<{ username: string }>, res: Response
   }
   const stats = await statsService.getPlayerStats(profile.id);
   res.json(stats);
+}
+
+export async function getPublicTransactions(
+  req: Request<{ username: string }>,
+  res: Response
+): Promise<void> {
+  const profile = await userService.getPublicProfile(req.params.username);
+  if (!profile) {
+    res.status(404).json({ error: 'Utilisateur introuvable' });
+    return;
+  }
+  const { limit, offset } = parsePagination(req);
+  const transactions = await transactionService.listUserTransactions({
+    userId: profile.id,
+    limit,
+    offset,
+  });
+  res.json(transactions);
+}
+
+export async function getProfileReactions(
+  req: Request<{ username: string }>,
+  res: Response
+): Promise<void> {
+  const profile = await userService.getPublicProfile(req.params.username);
+  if (!profile) {
+    res.status(404).json({ error: 'Utilisateur introuvable' });
+    return;
+  }
+  const summary = await profileReactionService.getSummary(profile.id, req.user!.id);
+  res.json(summary);
+}
+
+interface CastProfileReactionBody {
+  value?: number;
+}
+
+export async function castProfileReaction(
+  req: Request<{ username: string }, {}, CastProfileReactionBody>,
+  res: Response
+): Promise<void> {
+  const profile = await userService.getPublicProfile(req.params.username);
+  if (!profile) {
+    res.status(404).json({ error: 'Utilisateur introuvable' });
+    return;
+  }
+  if (profile.id === req.user!.id) {
+    res.status(400).json({ error: 'Impossible de réagir à son propre profil' });
+    return;
+  }
+  const value = req.body?.value;
+  if (value !== 1 && value !== -1) {
+    res.status(400).json({ error: 'La valeur doit être 1 (like) ou -1 (dislike)' });
+    return;
+  }
+
+  const summary = await profileReactionService.castReaction(profile.id, req.user!.id, value);
+  res.json(summary);
 }
 
 interface SetLeaderboardVisibilityBody {

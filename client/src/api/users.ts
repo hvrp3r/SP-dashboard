@@ -1,8 +1,21 @@
 import { apiClient } from './client.js';
-import type { AdminUserSummary, DailyBonusClaimResult, PlayerStats, User } from '../types.js';
+import type {
+  AdminUserSummary,
+  DailyBonusClaimResult,
+  PlayerStats,
+  ProfileReactionSummary,
+  ProfileReactionValue,
+  User,
+} from '../types.js';
 
 export const getPublicProfile = (username: string) =>
   apiClient.get<User>(`/api/users/${username}`);
+
+export const getProfileReactions = (username: string) =>
+  apiClient.get<ProfileReactionSummary>(`/api/users/${username}/reactions`);
+
+export const castProfileReaction = (username: string, value: ProfileReactionValue) =>
+  apiClient.post<ProfileReactionSummary>(`/api/users/${username}/reactions`, { value });
 
 export const claimDailyBonus = () =>
   apiClient.post<DailyBonusClaimResult>('/api/users/me/claim-daily-bonus');

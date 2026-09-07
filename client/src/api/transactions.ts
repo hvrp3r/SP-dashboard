@@ -4,6 +4,11 @@ import type { SpTransaction, SpTransactionEntry, SpTransactionType } from '../ty
 export const getMyTransactions = (limit = 20, offset = 0) =>
   apiClient.get<SpTransaction[]>(`/api/users/me/transactions?limit=${limit}&offset=${offset}`);
 
+export const getTransactionsForUsername = (username: string, limit = 20, offset = 0) =>
+  apiClient.get<SpTransaction[]>(
+    `/api/users/${encodeURIComponent(username)}/transactions?limit=${limit}&offset=${offset}`
+  );
+
 interface AllTransactionsFilter {
   type?: SpTransactionType;
   userId?: number;

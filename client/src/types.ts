@@ -74,6 +74,17 @@ export type LeaderboardSort = 'sp_balance' | 'sp_total_earned';
 
 export type CosmeticSlot = 'avatar_frame' | 'banner' | 'name_color' | 'title' | 'name_font';
 export type CosmeticRarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
+/** Effet visuel animé appliqué par-dessus color_value (name_color/title uniquement) — voir index.css. 'shimmer' est restreint à name_color (voir cosmeticsLabels.ts). */
+export type CosmeticColorAnimation =
+  | 'rainbow'
+  | 'pulse'
+  | 'neon'
+  | 'fire'
+  | 'ice'
+  | 'disco'
+  | 'glitch'
+  | 'lightning'
+  | 'shimmer';
 export type CosmeticObtainedSource = 'gambling' | 'admin_grant' | 'auction';
 
 export interface Cosmetic {
@@ -84,6 +95,9 @@ export interface Cosmetic {
   description: string | null;
   image_url: string | null;
   color_value: string | null;
+  color_animation: CosmeticColorAnimation | null;
+  /** Accent d'une animation à deux couleurs (glitch/lightning/shimmer — voir cosmeticsLabels.ts). Nul = repli CSS par défaut. */
+  color_secondary: string | null;
   font_family: string | null;
   rarity: CosmeticRarity;
   is_default: boolean;
@@ -109,6 +123,8 @@ export interface EquippedCosmetic {
   name: string;
   image_url: string | null;
   color_value: string | null;
+  color_animation: CosmeticColorAnimation | null;
+  color_secondary: string | null;
   font_family: string | null;
 }
 
@@ -138,7 +154,12 @@ export type SpTransactionType =
   | 'admin_deduct'
   | 'gambling_spend'
   | 'gambling_win'
-  | 'gambling_refund';
+  | 'gambling_refund'
+  | 'auction_bid_hold'
+  | 'auction_bid_refund'
+  | 'auction_sale'
+  | 'motus_reward'
+  | 'sudoku_reward';
 
 export interface SpTransaction {
   id: number;
@@ -371,6 +392,15 @@ export interface SuggestionComment {
 
 export interface SuggestionDetail extends Suggestion {
   comments: SuggestionComment[];
+}
+
+export type ProfileReactionValue = 1 | -1;
+
+export interface ProfileReactionSummary {
+  likeCount: number;
+  dislikeCount: number;
+  /** 1 = liké, -1 = disliké, 0 = pas de réaction du viewer courant. */
+  userReaction: ProfileReactionValue | 0;
 }
 
 export type GamblingRewardType = 'sp' | 'custom' | 'cosmetic';

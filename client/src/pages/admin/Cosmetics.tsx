@@ -1,12 +1,17 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState, type CSSProperties, type FormEvent } from 'react';
 import { useConfirm } from '../../hooks/useConfirm.jsx';
 import * as cosmeticsApi from '../../api/cosmetics.js';
 import * as usersApi from '../../api/users.js';
 import CosmeticPreview from '../../components/CosmeticPreview.jsx';
 import {
+  animationHasSecondaryColor,
+  COLOR_ANIMATION_LABELS,
+  colorAnimationClass,
+  colorAnimationsForSlot,
   FONT_FALLBACK_LABELS,
   RARITIES,
   RARITY_LABELS,
+  SECONDARY_COLOR_DEFAULTS,
   SLOT_LABELS,
   SUGGESTED_FONTS,
 } from '../../lib/cosmeticsLabels.js';
@@ -17,7 +22,13 @@ import {
   parseFontFamilyValue,
   type FontFallback,
 } from '../../lib/googleFonts.js';
-import type { AdminUserSummary, Cosmetic, CosmeticRarity, CosmeticSlot } from '../../types.js';
+import type {
+  AdminUserSummary,
+  Cosmetic,
+  CosmeticColorAnimation,
+  CosmeticRarity,
+  CosmeticSlot,
+} from '../../types.js';
 
 const SLOTS: CosmeticSlot[] = ['avatar_frame', 'banner', 'name_color', 'title', 'name_font'];
 const FONT_FALLBACKS: FontFallback[] = ['sans-serif', 'serif', 'monospace', 'cursive'];
@@ -27,6 +38,8 @@ interface CatalogDraft {
   description: string;
   imageUrl: string;
   colorValue: string;
+  colorAnimation: CosmeticColorAnimation | '';
+  colorSecondary: string;
   fontFamily: string;
   rarity: CosmeticRarity;
 }
@@ -37,6 +50,11 @@ function draftFromCosmetic(c: Cosmetic): CatalogDraft {
     description: c.description ?? '',
     imageUrl: c.image_url ?? '',
     colorValue: c.color_value ?? '#60a5fa',
+    colorAnimation: c.color_animation ?? '',
+    colorSecondary:
+      c.color_secondary ??
+      (c.color_animation ? SECONDARY_COLOR_DEFAULTS[c.color_animation] : undefined) ??
+      '#ffffff',
     fontFamily: c.font_family ?? '',
     rarity: c.rarity,
   };
@@ -60,6 +78,8 @@ export default function AdminCosmetics() {
   const [newDescription, setNewDescription] = useState('');
   const [newImageUrl, setNewImageUrl] = useState('');
   const [newColorValue, setNewColorValue] = useState('#60a5fa');
+  const [newColorAnimation, setNewColorAnimation] = useState<CosmeticColorAnimation | ''>('');
+  const [newColorSecondary, setNewColorSecondary] = useState('#ffffff');
   const [newFontName, setNewFontName] = useState('');
   const [newFontFallback, setNewFontFallback] = useState<FontFallback>('sans-serif');
   const [newRarity, setNewRarity] = useState<CosmeticRarity>('common');
@@ -122,6 +142,15 @@ export default function AdminCosmetics() {
             ? newImageUrl.trim() || undefined
             : undefined,
         colorValue: newSlot === 'name_color' || newSlot === 'title' ? newColorValue : undefined,
+        colorAnimation:
+          (newSlot === 'name_color' || newSlot === 'title') && newColorAnimation
+            ? newColorAnimation
+            : undefined,
+        colorSecondary:
+          (newSlot === 'name_color' || newSlot === 'title') &&
+          animationHasSecondaryColor(newColorAnimation || null)
+            ? newColorSecondary
+            : undefined,
         fontFamily:
           newSlot === 'name_font' ? buildFontFamilyValue(newFontName, newFontFallback) : undefined,
         rarity: newRarity,
@@ -131,6 +160,8 @@ export default function AdminCosmetics() {
       setNewDescription('');
       setNewImageUrl('');
       setNewFontName('');
+      setNewColorAnimation('');
+      setNewColorSecondary('#ffffff');
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur inconnue');
@@ -154,6 +185,15 @@ export default function AdminCosmetics() {
             : undefined,
         colorValue:
           cosmetic.slot === 'name_color' || cosmetic.slot === 'title' ? draft.colorValue : undefined,
+        colorAnimation:
+          cosmetic.slot === 'name_color' || cosmetic.slot === 'title'
+            ? draft.colorAnimation || null
+            : undefined,
+        colorSecondary:
+          (cosmetic.slot === 'name_color' || cosmetic.slot === 'title') &&
+          animationHasSecondaryColor(draft.colorAnimation || null)
+            ? draft.colorSecondary
+            : null,
         fontFamily: cosmetic.slot === 'name_font' ? draft.fontFamily : undefined,
         rarity: draft.rarity,
       });
@@ -278,7 +318,7 @@ export default function AdminCosmetics() {
             />
             {newSlot === 'name_color' || newSlot === 'title' ? (
               <div className="space-y-2">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <input
                     type="color"
                     value={newColorValue}
@@ -286,15 +326,69 @@ export default function AdminCosmetics() {
                     className="h-10 w-14 rounded-md border border-zinc-700 bg-zinc-950"
                   />
                   <span className="text-sm text-zinc-400">{newColorValue}</span>
+                  <select
+                    value={newColorAnimation}
+                    onChange={(e) => {
+                      const anim = e.target.value as CosmeticColorAnimation | '';
+                      setNewColorAnimation(anim);
+                      if (anim && SECONDARY_COLOR_DEFAULTS[anim]) {
+                        setNewColorSecondary(SECONDARY_COLOR_DEFAULTS[anim]!);
+                      }
+                    }}
+                    className="rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  >
+                    <option value="">Couleur fixe</option>
+                    {colorAnimationsForSlot(newSlot).map((a) => (
+                      <option key={a} value={a}>
+                        {COLOR_ANIMATION_LABELS[a]}
+                      </option>
+                    ))}
+                  </select>
+                  {animationHasSecondaryColor(newColorAnimation || null) && (
+                    <>
+                      <input
+                        type="color"
+                        value={newColorSecondary}
+                        onChange={(e) => setNewColorSecondary(e.target.value)}
+                        title="Couleur secondaire (flash/reflet)"
+                        className="h-10 w-14 rounded-md border border-zinc-700 bg-zinc-950"
+                      />
+                      <span className="text-sm text-zinc-400">{newColorSecondary}</span>
+                    </>
+                  )}
                 </div>
+                {newSlot === 'name_color' && newName.trim() && (
+                  <span
+                    className={`inline-block font-medium ${colorAnimationClass(newColorAnimation || null)}`}
+                    style={
+                      // .cosmetic-anim-shimmer met color: transparent — un inline `color`
+                      // gagnerait toujours sur cette règle de classe (voir UserNameTag.tsx).
+                      {
+                        ...(newColorAnimation === 'shimmer'
+                          ? { '--cosmetic-color': newColorValue }
+                          : { color: newColorValue }),
+                        ...(animationHasSecondaryColor(newColorAnimation || null)
+                          ? { '--cosmetic-color-2': newColorSecondary }
+                          : {}),
+                      } as CSSProperties
+                    }
+                  >
+                    {newName.trim()}
+                  </span>
+                )}
                 {newSlot === 'title' && newName.trim() && (
                   <span
-                    className="inline-block text-[10px] px-2 py-0.5 rounded-full border font-semibold"
-                    style={{
-                      borderColor: `${newColorValue}66`,
-                      backgroundColor: `${newColorValue}1a`,
-                      color: newColorValue,
-                    }}
+                    className={`inline-block text-[10px] px-2 py-0.5 rounded-full border font-semibold ${colorAnimationClass(newColorAnimation || null)}`}
+                    style={
+                      {
+                        borderColor: `${newColorValue}66`,
+                        backgroundColor: `${newColorValue}1a`,
+                        color: newColorValue,
+                        ...(animationHasSecondaryColor(newColorAnimation || null)
+                          ? { '--cosmetic-color-2': newColorSecondary }
+                          : {}),
+                      } as CSSProperties
+                    }
                   >
                     {newName.trim()}
                   </span>
@@ -444,6 +538,10 @@ export default function AdminCosmetics() {
                             name: draft.name,
                             rarity: draft.rarity,
                             color_value: draft.colorValue,
+                            color_animation: draft.colorAnimation || null,
+                            color_secondary: animationHasSecondaryColor(draft.colorAnimation || null)
+                              ? draft.colorSecondary
+                              : null,
                             image_url: draft.imageUrl || null,
                             font_family: draft.fontFamily || null,
                           }}
@@ -499,14 +597,77 @@ export default function AdminCosmetics() {
                               }
                               className="h-9 w-12 rounded-md border border-zinc-700 bg-zinc-950"
                             />
+                            <select
+                              value={draft.colorAnimation}
+                              onChange={(e) => {
+                                const anim = e.target.value as CosmeticColorAnimation | '';
+                                setCatalogDrafts((prev) => ({
+                                  ...prev,
+                                  [c.id]: {
+                                    ...draft,
+                                    colorAnimation: anim,
+                                    colorSecondary:
+                                      anim && SECONDARY_COLOR_DEFAULTS[anim]
+                                        ? SECONDARY_COLOR_DEFAULTS[anim]!
+                                        : draft.colorSecondary,
+                                  },
+                                }));
+                              }}
+                              className="rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                            >
+                              <option value="">Couleur fixe</option>
+                              {colorAnimationsForSlot(c.slot).map((a) => (
+                                <option key={a} value={a}>
+                                  {COLOR_ANIMATION_LABELS[a]}
+                                </option>
+                              ))}
+                            </select>
+                            {animationHasSecondaryColor(draft.colorAnimation || null) && (
+                              <input
+                                type="color"
+                                value={draft.colorSecondary}
+                                onChange={(e) =>
+                                  setCatalogDrafts((prev) => ({
+                                    ...prev,
+                                    [c.id]: { ...draft, colorSecondary: e.target.value },
+                                  }))
+                                }
+                                title="Couleur secondaire (flash/reflet)"
+                                className="h-9 w-12 rounded-md border border-zinc-700 bg-zinc-950"
+                              />
+                            )}
+                            {c.slot === 'name_color' && (
+                              <span
+                                className={`font-medium ${colorAnimationClass(draft.colorAnimation || null)}`}
+                                style={
+                                  // .cosmetic-anim-shimmer met color: transparent — un inline
+                                  // `color` gagnerait toujours sur cette règle de classe.
+                                  {
+                                    ...(draft.colorAnimation === 'shimmer'
+                                      ? { '--cosmetic-color': draft.colorValue }
+                                      : { color: draft.colorValue }),
+                                    ...(animationHasSecondaryColor(draft.colorAnimation || null)
+                                      ? { '--cosmetic-color-2': draft.colorSecondary }
+                                      : {}),
+                                  } as CSSProperties
+                                }
+                              >
+                                {draft.name}
+                              </span>
+                            )}
                             {c.slot === 'title' && (
                               <span
-                                className="text-[10px] px-2 py-0.5 rounded-full border font-semibold"
-                                style={{
-                                  borderColor: `${draft.colorValue}66`,
-                                  backgroundColor: `${draft.colorValue}1a`,
-                                  color: draft.colorValue,
-                                }}
+                                className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold ${colorAnimationClass(draft.colorAnimation || null)}`}
+                                style={
+                                  {
+                                    borderColor: `${draft.colorValue}66`,
+                                    backgroundColor: `${draft.colorValue}1a`,
+                                    color: draft.colorValue,
+                                    ...(animationHasSecondaryColor(draft.colorAnimation || null)
+                                      ? { '--cosmetic-color-2': draft.colorSecondary }
+                                      : {}),
+                                  } as CSSProperties
+                                }
                               >
                                 {draft.name}
                               </span>

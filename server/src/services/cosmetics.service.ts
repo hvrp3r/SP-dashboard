@@ -2,6 +2,7 @@ import type { Pool, PoolClient } from 'pg';
 import { pool } from '../db/pool.js';
 import * as configService from './config.service.js';
 import type {
+  CosmeticColorAnimation,
   CosmeticObtainedSource,
   CosmeticRarity,
   CosmeticRow,
@@ -163,9 +164,11 @@ export async function getEquippedForUsers(userIds: number[]): Promise<Map<number
     name: string;
     image_url: string | null;
     color_value: string | null;
+    color_animation: EquippedCosmetic['color_animation'];
+    color_secondary: string | null;
     font_family: string | null;
   }>(
-    `SELECT uc.user_id, c.slot, c.key, c.name, c.image_url, c.color_value, c.font_family
+    `SELECT uc.user_id, c.slot, c.key, c.name, c.image_url, c.color_value, c.color_animation, c.color_secondary, c.font_family
      FROM user_cosmetics uc
      JOIN cosmetics c ON c.id = uc.cosmetic_id
      WHERE uc.user_id = ANY($1::int[]) AND uc.equipped = true`,
@@ -181,6 +184,8 @@ export async function getEquippedForUsers(userIds: number[]): Promise<Map<number
       name: row.name,
       image_url: row.image_url,
       color_value: row.color_value,
+      color_animation: row.color_animation,
+      color_secondary: row.color_secondary,
       font_family: row.font_family,
     });
     equippedByUser.set(row.user_id, bySlot);
@@ -199,6 +204,8 @@ export async function getEquippedForUsers(userIds: number[]): Promise<Map<number
           name: fallback.name,
           image_url: fallback.image_url,
           color_value: fallback.color_value,
+          color_animation: fallback.color_animation,
+          color_secondary: fallback.color_secondary,
           font_family: fallback.font_family,
         }
       );
@@ -323,6 +330,8 @@ interface CreateCosmeticInput {
   description: string | null;
   imageUrl: string | null;
   colorValue: string | null;
+  colorAnimation: CosmeticColorAnimation | null;
+  colorSecondary: string | null;
   fontFamily: string | null;
   rarity: CosmeticRarity;
   createdBy: number;
@@ -330,8 +339,8 @@ interface CreateCosmeticInput {
 
 export async function createCosmetic(input: CreateCosmeticInput): Promise<CosmeticRow> {
   const { rows } = await pool.query<CosmeticRow>(
-    `INSERT INTO cosmetics (slot, key, name, description, image_url, color_value, font_family, rarity, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    `INSERT INTO cosmetics (slot, key, name, description, image_url, color_value, color_animation, color_secondary, font_family, rarity, created_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
      RETURNING *`,
     [
       input.slot,
@@ -340,6 +349,8 @@ export async function createCosmetic(input: CreateCosmeticInput): Promise<Cosmet
       input.description,
       input.imageUrl,
       input.colorValue,
+      input.colorAnimation,
+      input.colorSecondary,
       input.fontFamily,
       input.rarity,
       input.createdBy,
@@ -353,6 +364,8 @@ interface UpdateCosmeticInput {
   description?: string | null;
   imageUrl?: string | null;
   colorValue?: string | null;
+  colorAnimation?: CosmeticColorAnimation | null;
+  colorSecondary?: string | null;
   fontFamily?: string | null;
   rarity?: CosmeticRarity;
 }
@@ -369,15 +382,29 @@ export async function updateCosmetic(
     description: patch.description !== undefined ? patch.description : current.description,
     image_url: patch.imageUrl !== undefined ? patch.imageUrl : current.image_url,
     color_value: patch.colorValue !== undefined ? patch.colorValue : current.color_value,
+    color_animation:
+      patch.colorAnimation !== undefined ? patch.colorAnimation : current.color_animation,
+    color_secondary:
+      patch.colorSecondary !== undefined ? patch.colorSecondary : current.color_secondary,
     font_family: patch.fontFamily !== undefined ? patch.fontFamily : current.font_family,
     rarity: patch.rarity ?? current.rarity,
   };
 
   const { rows } = await pool.query<CosmeticRow>(
-    `UPDATE cosmetics SET name = $1, description = $2, image_url = $3, color_value = $4, font_family = $5, rarity = $6
-     WHERE id = $7
+    `UPDATE cosmetics SET name = $1, description = $2, image_url = $3, color_value = $4, color_animation = $5, color_secondary = $6, font_family = $7, rarity = $8
+     WHERE id = $9
      RETURNING *`,
-    [next.name, next.description, next.image_url, next.color_value, next.font_family, next.rarity, id]
+    [
+      next.name,
+      next.description,
+      next.image_url,
+      next.color_value,
+      next.color_animation,
+      next.color_secondary,
+      next.font_family,
+      next.rarity,
+      id,
+    ]
   );
   return rows[0] ?? null;
 }
