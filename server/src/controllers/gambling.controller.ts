@@ -519,6 +519,20 @@ export async function listGames(req: Request, res: Response): Promise<void> {
       rtp: null,
     },
     {
+      // Réutilise le même interrupteur que les caisses (`gambling_enabled`) plutôt
+      // qu'un `battles_enabled` dédié : une bataille n'est qu'une autre façon
+      // d'ouvrir les caisses déjà configurées par le MSP, pas un jeu séparé.
+      id: 'battles',
+      name: 'Case Battle',
+      description: 'Affronte d\'autres joueurs sur les mêmes caisses — le plus gros total rafle tout.',
+      path: '/gambling/battles',
+      enabled: cratesEnabled,
+      // Pas de RTP unique affichable : dépend entièrement des caisses choisies
+      // pour chaque bataille (même RTP que ces caisses en solo, juste redistribué
+      // différemment entre les participants).
+      rtp: null,
+    },
+    {
       id: 'blackjack',
       name: 'Blackjack',
       description: 'Affronte le croupier en multijoueur, mise ce que tu veux.',

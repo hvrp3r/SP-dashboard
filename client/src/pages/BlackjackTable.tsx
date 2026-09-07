@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties, type Form
 import { Link } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth.jsx';
 import { useSpectators } from '../hooks/useSpectators.js';
+import { useAnnounceChatRoom } from '../hooks/useChatGameRoom.jsx';
 import * as blackjackApi from '../api/blackjack.js';
 import * as gamblingApi from '../api/gambling.js';
 import GamblingBudgetBar from '../components/GamblingBudgetBar.jsx';
@@ -131,6 +132,7 @@ function netResult(hand: { bet_amount: number; outcome: BlackjackHand['outcome']
 export default function BlackjackTable() {
   const { user, setUser } = useAuth();
   const spectators = useSpectators('blackjack');
+  useAnnounceChatRoom({ room: 'blackjack', roomKey: '', label: 'Blackjack', icon: '🃏' });
   const [session, setSession] = useState<BlackjackSession | null>(null);
   const [status, setStatus] = useState<GamblingStatus | null>(null);
   const [blackjackEnabled, setBlackjackEnabled] = useState(true);

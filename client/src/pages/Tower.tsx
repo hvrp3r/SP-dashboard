@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react
 import { Link } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth.jsx';
 import { useSpectators } from '../hooks/useSpectators.js';
+import { useAnnounceChatRoom } from '../hooks/useChatGameRoom.jsx';
 import * as towerApi from '../api/tower.js';
 import * as gamblingApi from '../api/gambling.js';
 import GamblingBudgetBar from '../components/GamblingBudgetBar.jsx';
@@ -86,6 +87,7 @@ function pluralize(count: number, word: string): string {
 export default function Tower() {
   const { user, setUser } = useAuth();
   const spectators = useSpectators('tower');
+  useAnnounceChatRoom({ room: 'tower', roomKey: '', label: 'Tower', icon: '🗼' });
   const [game, setGame] = useState<TowerGame | null>(null);
   const [difficulties, setDifficulties] = useState<TowerDifficultyInfo[]>([]);
   const [towerEnabled, setTowerEnabled] = useState(true);

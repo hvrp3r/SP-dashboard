@@ -3,7 +3,12 @@
 @tailwind utilities;
 
 body {
-  @apply bg-zinc-950 text-zinc-100;
+  /* overflow-x-hidden : évite la barre de défilement horizontale quand ChatDock
+     glisse hors-écran vers la droite (translate-x au-delà du viewport, voir
+     ChatDock.tsx) — n'affecte pas position:sticky, qui reste calé sur le scroll du
+     document tant que ce n'est pas un ancêtre direct de l'élément sticky qui a
+     overflow non-visible. */
+  @apply bg-zinc-950 text-zinc-100 overflow-x-hidden;
 }
 
 @keyframes fadeSlideDown {

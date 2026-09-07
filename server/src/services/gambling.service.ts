@@ -181,13 +181,16 @@ export async function updateCrate(
  */
 export async function removeCrate(id: number): Promise<void> {
   const { rows } = await pool.query<{ count: string }>(
-    'SELECT COUNT(*) FROM gambling_opens WHERE crate_id = $1',
+    `SELECT (
+       (SELECT COUNT(*) FROM gambling_opens WHERE crate_id = $1)
+       + (SELECT COUNT(*) FROM gambling_battle_crates WHERE crate_id = $1)
+     ) AS count`,
     [id]
   );
   if (Number(rows[0]?.count ?? 0) > 0) {
     throw Object.assign(
       new Error(
-        'Cette caisse a déjà été ouverte, elle ne peut plus être supprimée — archive-la plutôt'
+        'Cette caisse a déjà été ouverte (ou utilisée dans une bataille de caisses), elle ne peut plus être supprimée — archive-la plutôt'
       ),
       { status: 409 }
     );
@@ -333,7 +336,10 @@ export async function updateReward(
 
 export async function removeReward(id: number): Promise<void> {
   const { rows } = await pool.query<{ count: string }>(
-    'SELECT COUNT(*) FROM gambling_opens WHERE reward_id = $1',
+    `SELECT (
+       (SELECT COUNT(*) FROM gambling_opens WHERE reward_id = $1)
+       + (SELECT COUNT(*) FROM gambling_battle_opens WHERE reward_id = $1)
+     ) AS count`,
     [id]
   );
   if (Number(rows[0]?.count ?? 0) > 0) {
@@ -348,9 +354,13 @@ export async function removeReward(id: number): Promise<void> {
  * Compte les ouvertures d'une caisse par un joueur — sur toute la période
  * (reset_interval_days = null) ou seulement depuis le début de la période de
  * reset en cours (voir gambling_period_start() dans la migration 022).
+ * Additionne les ouvertures solo (gambling_opens) ET les tirages effectués au
+ * sein d'une bataille de caisses (gambling_battle_opens, voir
+ * gamblingBattle.service.ts) — une caisse tirée pendant une bataille compte
+ * comme une ouverture pour cette limite, au même titre qu'une ouverture solo.
  * Accepte `pool` ou un `PoolClient` d'une transaction déjà ouverte (résolution
- * d'ouverture dans openCrate) pour lire un compte cohérent avec le verrou de
- * ligne posé sur l'utilisateur.
+ * d'ouverture dans openCrate/gamblingBattle.service) pour lire un compte
+ * cohérent avec le verrou de ligne posé sur l'utilisateur.
  */
 export async function getUserOpenCount(
   userId: number,
@@ -359,9 +369,17 @@ export async function getUserOpenCount(
   db: Pool | PoolClient = pool
 ): Promise<number> {
   const { rows } = await db.query<{ count: string }>(
-    `SELECT COUNT(*) FROM gambling_opens
-     WHERE user_id = $1 AND crate_id = $2
-     AND ($3::int IS NULL OR opened_at >= gambling_period_start($3::int))`,
+    `SELECT (
+       (SELECT COUNT(*) FROM gambling_opens
+        WHERE user_id = $1 AND crate_id = $2
+        AND ($3::int IS NULL OR opened_at >= gambling_period_start($3::int)))
+       +
+       (SELECT COUNT(*) FROM gambling_battle_opens bo
+        JOIN gambling_battle_participants bp ON bp.id = bo.participant_id
+        JOIN gambling_battle_crates bc ON bc.id = bo.battle_crate_id
+        WHERE bp.user_id = $1 AND bc.crate_id = $2
+        AND ($3::int IS NULL OR bo.opened_at >= gambling_period_start($3::int)))
+     ) AS count`,
     [userId, crateId, resetIntervalDays]
   );
   return Number(rows[0]?.count ?? 0);
@@ -376,7 +394,8 @@ export async function getTodaySpend(userId: number): Promise<number> {
   return Number(rows[0]?.spent ?? 0);
 }
 
-function drawReward(rewards: GamblingCrateRewardRow[]): GamblingCrateRewardRow {
+/** Exporté pour être réutilisé par gamblingBattle.service.ts (même tirage pondéré, un par participant/caisse). */
+export function drawReward(rewards: GamblingCrateRewardRow[]): GamblingCrateRewardRow {
   const totalWeight = rewards.reduce((sum, r) => sum + r.weight, 0);
   let roll = Math.random() * totalWeight;
   for (const reward of rewards) {

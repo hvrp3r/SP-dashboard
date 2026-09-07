@@ -137,7 +137,8 @@ export type SpTransactionType =
   | 'admin_grant'
   | 'admin_deduct'
   | 'gambling_spend'
-  | 'gambling_win';
+  | 'gambling_win'
+  | 'gambling_refund';
 
 export interface SpTransaction {
   id: number;
@@ -550,10 +551,106 @@ export interface GamblingOpenEntry {
   sp_amount: number | null;
 }
 
+export type GamblingBattleStatus = 'waiting' | 'in_progress' | 'completed' | 'cancelled';
+
+export interface GamblingBattle {
+  id: number;
+  season_id: number | null;
+  created_by: number;
+  max_players: number;
+  status: GamblingBattleStatus;
+  cost_sp: number;
+  started_at: string | null;
+  completed_at: string | null;
+  cancelled_at: string | null;
+  cancelled_by: number | null;
+  created_at: string;
+}
+
+export interface GamblingBattleCrateEntry {
+  id: number;
+  battle_id: number;
+  crate_id: number;
+  position: number;
+  crate_name: string;
+  crate_image_url: string | null;
+  crate_cost_sp: number;
+}
+
+export interface GamblingBattleParticipantEntry {
+  id: number;
+  battle_id: number;
+  user_id: number;
+  is_creator: boolean;
+  entry_transaction_id: number | null;
+  joined_at: string;
+  username: string;
+  avatar_url: string | null;
+  equipped_cosmetics: EquippedCosmetic[];
+  revealed_sp_total: number;
+}
+
+export interface GamblingBattleOpenEntry {
+  participant_id: number;
+  position: number;
+  reward_id: number;
+  reward_title: string;
+  reward_type: GamblingRewardType;
+  reward_image_url: string | null;
+  sp_amount: number | null;
+  resolved_cosmetic: Cosmetic | null;
+}
+
+export interface GamblingBattleWinnerEntry {
+  id: number;
+  battle_id: number;
+  user_id: number;
+  share_amount: number;
+  payout_transaction_id: number | null;
+  username: string;
+  avatar_url: string | null;
+  equipped_cosmetics: EquippedCosmetic[];
+}
+
+export interface GamblingBattlePublicView extends GamblingBattle {
+  crates: GamblingBattleCrateEntry[];
+  participants: GamblingBattleParticipantEntry[];
+  opens: GamblingBattleOpenEntry[];
+  revealedCount: number;
+  stepDurationMs: number;
+  winners: GamblingBattleWinnerEntry[];
+}
+
+export interface GamblingBattleActionResult {
+  battle: GamblingBattlePublicView;
+  balance: number;
+  enabled: boolean;
+}
+
+export interface GamblingBattleListEntry extends GamblingBattle {
+  crates: GamblingBattleCrateEntry[];
+  participantCount: number;
+  winners: GamblingBattleWinnerEntry[];
+}
+
 export type GamblingSpectatorRoom = 'crates' | 'blackjack' | 'crash' | 'tower';
 
 export interface GamblingSpectatorEntry {
   user_id: number;
+  username: string;
+  avatar_url: string | null;
+  equipped_cosmetics: EquippedCosmetic[];
+}
+
+export type ChatRoom = 'global' | 'crates' | 'blackjack' | 'crash' | 'tower' | 'minigame';
+
+export interface ChatMessage {
+  id: number;
+  room: ChatRoom;
+  room_key: string;
+  user_id: number;
+  body: string;
+  created_at: string;
   username: string;
   avatar_url: string | null;
   equipped_cosmetics: EquippedCosmetic[];
@@ -621,7 +718,7 @@ export interface BlackjackHistoryEntry {
   equipped_cosmetics: EquippedCosmetic[];
 }
 
-export type GamblingGameId = 'crates' | 'blackjack' | 'crash' | 'tower';
+export type GamblingGameId = 'crates' | 'blackjack' | 'crash' | 'tower' | 'battles';
 
 export interface GamblingGameInfo {
   id: GamblingGameId;

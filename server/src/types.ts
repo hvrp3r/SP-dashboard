@@ -130,6 +130,7 @@ export type SpTransactionType =
   | 'admin_deduct'
   | 'gambling_spend'
   | 'gambling_win'
+  | 'gambling_refund'
   | 'auction_bid_hold'
   | 'auction_bid_refund'
   | 'auction_sale'
@@ -500,6 +501,23 @@ export interface GamblingSpectatorEntry {
   equipped_cosmetics: EquippedCosmetic[];
 }
 
+export type ChatRoom = 'global' | 'crates' | 'blackjack' | 'crash' | 'tower' | 'minigame';
+
+export interface ChatMessageRow {
+  id: number;
+  room: ChatRoom;
+  room_key: string;
+  user_id: number;
+  body: string;
+  created_at: string;
+}
+
+export interface ChatMessageEntry extends ChatMessageRow {
+  username: string;
+  avatar_url: string | null;
+  equipped_cosmetics: EquippedCosmetic[];
+}
+
 export interface GamblingInventoryEntry {
   id: number;
   user_id: number;
@@ -574,7 +592,119 @@ export interface KofiWebhookPayload {
   tier_name: string | null;
 }
 
-export type GamblingGameId = 'crates' | 'blackjack' | 'crash' | 'tower';
+export type GamblingBattleStatus = 'waiting' | 'in_progress' | 'completed' | 'cancelled';
+
+export interface GamblingBattleRow {
+  id: number;
+  season_id: number | null;
+  created_by: number;
+  max_players: number;
+  status: GamblingBattleStatus;
+  cost_sp: number;
+  started_at: string | null;
+  completed_at: string | null;
+  cancelled_at: string | null;
+  cancelled_by: number | null;
+  created_at: string;
+}
+
+export interface GamblingBattleCrateRow {
+  id: number;
+  battle_id: number;
+  crate_id: number;
+  position: number;
+}
+
+/** Une entrée du multiset de caisses d'une bataille, avec les infos d'affichage de la caisse. */
+export interface GamblingBattleCrateEntry extends GamblingBattleCrateRow {
+  crate_name: string;
+  crate_image_url: string | null;
+  crate_cost_sp: number;
+}
+
+export interface GamblingBattleParticipantRow {
+  id: number;
+  battle_id: number;
+  user_id: number;
+  is_creator: boolean;
+  entry_transaction_id: number | null;
+  joined_at: string;
+}
+
+export interface GamblingBattleParticipantEntry extends GamblingBattleParticipantRow {
+  username: string;
+  avatar_url: string | null;
+  equipped_cosmetics: EquippedCosmetic[];
+  /** Somme des sp_amount des tirages révélés jusqu'ici — recalculé à chaque lecture, jamais dénormalisé. */
+  revealed_sp_total: number;
+}
+
+export interface GamblingBattleOpenRow {
+  id: number;
+  battle_crate_id: number;
+  participant_id: number;
+  reward_id: number;
+  resolved_cosmetic_id: number | null;
+  opened_at: string;
+}
+
+/** Un tirage révélé, avec les infos d'affichage du gain — masqué côté vue publique tant que non révélé (voir toBattlePublicView). */
+export interface GamblingBattleOpenEntry {
+  participant_id: number;
+  position: number;
+  reward_id: number;
+  reward_title: string;
+  reward_type: GamblingRewardType;
+  reward_image_url: string | null;
+  sp_amount: number | null;
+  resolved_cosmetic: CosmeticRow | null;
+}
+
+export interface GamblingBattleWinnerRow {
+  id: number;
+  battle_id: number;
+  user_id: number;
+  share_amount: number;
+  payout_transaction_id: number | null;
+}
+
+export interface GamblingBattleWinnerEntry extends GamblingBattleWinnerRow {
+  username: string;
+  avatar_url: string | null;
+  equipped_cosmetics: EquippedCosmetic[];
+}
+
+/**
+ * Vue publique d'une bataille : `opens` ne contient que les tirages déjà
+ * révélés (position <= currentStep, calculé côté serveur à partir du temps
+ * écoulé depuis `started_at`) — jamais les tirages futurs, même si déjà tirés
+ * en base, pour ne pas gâcher le suspense de l'animation (même philosophie que
+ * `crash_point_x100` masqué avant le crash).
+ */
+export interface GamblingBattlePublicView extends GamblingBattleRow {
+  crates: GamblingBattleCrateEntry[];
+  participants: GamblingBattleParticipantEntry[];
+  opens: GamblingBattleOpenEntry[];
+  /** Nb de caisses déjà révélées (0..crates.length). */
+  revealedCount: number;
+  /** Durée d'un rouleau (ms), dupliquée côté client pour l'animation — voir GamblingBattleReel.tsx. */
+  stepDurationMs: number;
+  winners: GamblingBattleWinnerEntry[];
+}
+
+export interface GamblingBattleActionResult {
+  battle: GamblingBattlePublicView;
+  balance: number;
+  enabled: boolean;
+}
+
+export interface GamblingBattleListEntry extends GamblingBattleRow {
+  crates: GamblingBattleCrateEntry[];
+  participantCount: number;
+  winners: GamblingBattleWinnerEntry[];
+}
+
+export type GamblingGameId = 'crates' | 'blackjack' | 'crash' | 'tower' | 'battles';
 
 export interface GamblingGameInfo {
   id: GamblingGameId;

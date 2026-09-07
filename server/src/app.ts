@@ -10,6 +10,7 @@ import transactionsRoutes from './routes/transactions.routes.js';
 import challengesRoutes from './routes/challenges.routes.js';
 import minigamesRoutes from './routes/minigames.routes.js';
 import gamblingRoutes from './routes/gambling.routes.js';
+import gamblingBattlesRoutes from './routes/gamblingBattles.routes.js';
 import blackjackRoutes from './routes/blackjack.routes.js';
 import crashRoutes from './routes/crash.routes.js';
 import towerRoutes from './routes/tower.routes.js';
@@ -20,6 +21,7 @@ import subscriptionsRoutes from './routes/subscriptions.routes.js';
 import cosmeticsRoutes from './routes/cosmetics.routes.js';
 import auctionsRoutes from './routes/auctions.routes.js';
 import suggestionsRoutes from './routes/suggestions.routes.js';
+import chatRoutes from './routes/chat.routes.js';
 import { UPLOADS_DIR } from './middleware/upload.js';
 import { notFoundHandler, errorHandler } from './middleware/errorHandler.js';
 
@@ -50,6 +52,7 @@ export function createApp(): Express {
   app.use('/api/transactions', transactionsRoutes);
   app.use('/api/challenges', challengesRoutes);
   app.use('/api/minigames', minigamesRoutes);
+  app.use('/api/gambling/battles', gamblingBattlesRoutes);
   app.use('/api/gambling', gamblingRoutes);
   app.use('/api/blackjack', blackjackRoutes);
   app.use('/api/crash', crashRoutes);
@@ -61,6 +64,7 @@ export function createApp(): Express {
   app.use('/api/cosmetics', cosmeticsRoutes);
   app.use('/api/auctions', auctionsRoutes);
   app.use('/api/suggestions', suggestionsRoutes);
+  app.use('/api/chat', chatRoutes);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

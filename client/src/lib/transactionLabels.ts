@@ -10,4 +10,5 @@ export const TRANSACTION_TYPE_LABELS: Record<SpTransactionType, string> = {
   admin_deduct: 'Ajustement MSP',
   gambling_spend: 'Mise gambling',
   gambling_win: 'Gain gambling',
+  gambling_refund: 'Remboursement gambling',
 };

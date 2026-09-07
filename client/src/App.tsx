@@ -16,6 +16,8 @@ import Auctions from './pages/Auctions.jsx';
 import AuctionDetail from './pages/AuctionDetail.jsx';
 import Gambling from './pages/Gambling.jsx';
 import GamblingCrateDetail from './pages/GamblingCrateDetail.jsx';
+import GamblingBattles from './pages/GamblingBattles.jsx';
+import GamblingBattleDetail from './pages/GamblingBattleDetail.jsx';
 import BlackjackTable from './pages/BlackjackTable.jsx';
 import Crash from './pages/Crash.jsx';
 import Tower from './pages/Tower.jsx';
@@ -30,6 +32,7 @@ import AdminPlayers from './pages/admin/Players.jsx';
 import AdminSubscriptions from './pages/admin/Subscriptions.jsx';
 import AdminCosmetics from './pages/admin/Cosmetics.jsx';
 import NavBar from './components/NavBar.jsx';
+import ChatDock from './components/ChatDock.jsx';
 import { useAuth } from './hooks/useAuth.jsx';
 
 function PrivateRoute({ children }: { children: ReactNode }) {
@@ -49,6 +52,12 @@ export default function App() {
   return (
     <>
       <NavBar />
+      {/* Pas de wrapper grid/flex autour des routes : certaines pages ont besoin de
+          rendre plein cadre (ex. ProfileBackdrop, bannière de profil en `absolute
+          inset-0` sur toute la largeur du viewport) — les contraindre dans une
+          colonne (même à 896px) les coupait sur les côtés. ChatDock (voir ce fichier)
+          est un pur survol en `position: fixed` par-dessus la page à 2xl+, jamais un
+          élément de mise en page qui redimensionne ou décale le contenu. */}
       <Routes>
         <Route path="/connexion" element={<Login />} />
         <Route path="/inscription" element={<Register />} />
@@ -190,6 +199,22 @@ export default function App() {
           }
         />
         <Route
+          path="/gambling/battles"
+          element={
+            <PrivateRoute>
+              <GamblingBattles />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/gambling/battles/:id"
+          element={
+            <PrivateRoute>
+              <GamblingBattleDetail />
+            </PrivateRoute>
+          }
+        />
+        <Route
           path="/gambling/blackjack"
           element={
             <PrivateRoute>
@@ -271,6 +296,7 @@ export default function App() {
         />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      <ChatDock />
     </>
   );
 }

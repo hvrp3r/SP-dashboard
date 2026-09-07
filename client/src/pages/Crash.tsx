@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import { Link } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth.jsx';
 import { useSpectators } from '../hooks/useSpectators.js';
+import { useAnnounceChatRoom } from '../hooks/useChatGameRoom.jsx';
 import * as crashApi from '../api/crash.js';
 import * as gamblingApi from '../api/gambling.js';
 import GamblingBudgetBar from '../components/GamblingBudgetBar.jsx';
@@ -146,6 +147,7 @@ function clampPercent(value: number, margin: number): number {
 export default function Crash() {
   const { user, setUser } = useAuth();
   const spectators = useSpectators('crash');
+  useAnnounceChatRoom({ room: 'crash', roomKey: '', label: 'Crash', icon: '📈' });
   const [round, setRound] = useState<CrashRound | null>(null);
   const [status, setStatus] = useState<GamblingStatus | null>(null);
   const [crashEnabled, setCrashEnabled] = useState(true);
