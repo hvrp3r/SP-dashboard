@@ -559,6 +559,20 @@ export interface GamblingSpectatorEntry {
   equipped_cosmetics: EquippedCosmetic[];
 }
 
+export type ChatRoom = 'global' | 'crates' | 'blackjack' | 'crash' | 'tower' | 'minigame';
+
+export interface ChatMessage {
+  id: number;
+  room: ChatRoom;
+  room_key: string;
+  user_id: number;
+  body: string;
+  created_at: string;
+  username: string;
+  avatar_url: string | null;
+  equipped_cosmetics: EquippedCosmetic[];
+}
+
 export type BlackjackSessionStatus = 'waiting' | 'active' | 'finished';
 export type BlackjackHandStatus = 'playing' | 'stood' | 'busted';
 export type BlackjackOutcome = 'win' | 'blackjack' | 'push' | 'lose';

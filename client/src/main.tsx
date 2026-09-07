@@ -4,6 +4,7 @@ import { BrowserRouter } from 'react-router-dom';
 import App from './App.jsx';
 import { AuthProvider } from './hooks/useAuth.jsx';
 import { ConfirmProvider } from './hooks/useConfirm.jsx';
+import { ChatGameRoomProvider } from './hooks/useChatGameRoom.jsx';
 import './index.css';
 
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
@@ -11,7 +12,9 @@ ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
     <BrowserRouter>
       <AuthProvider>
         <ConfirmProvider>
-          <App />
+          <ChatGameRoomProvider>
+            <App />
+          </ChatGameRoomProvider>
         </ConfirmProvider>
       </AuthProvider>
     </BrowserRouter>

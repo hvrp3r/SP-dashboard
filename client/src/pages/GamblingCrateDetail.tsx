@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth.jsx';
 import { useConfirm } from '../hooks/useConfirm.jsx';
 import { useSpectators } from '../hooks/useSpectators.js';
+import { useAnnounceChatRoom } from '../hooks/useChatGameRoom.jsx';
 import * as gamblingApi from '../api/gambling.js';
 import * as cosmeticsApi from '../api/cosmetics.js';
 import {
@@ -130,6 +131,10 @@ export default function GamblingCrateDetail() {
   const confirm = useConfirm();
   const isAdmin = user?.role === 'admin';
   const spectators = useSpectators('crates', id);
+  // Salon de chat partagé par toutes les caisses (contrairement aux spectateurs,
+  // suivis caisse par caisse) — une seule discussion "Caisses" plutôt qu'un salon
+  // par caisse, vu le faible nombre de joueurs simultanés sur une caisse donnée.
+  useAnnounceChatRoom({ room: 'crates', roomKey: '', label: 'Caisses', icon: '📦' });
 
   const [crate, setCrate] = useState<CrateDetail | null>(null);
   const [status, setStatus] = useState<GamblingStatus | null>(null);

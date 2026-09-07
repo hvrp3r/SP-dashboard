@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth.jsx';
+import { useAnnounceChatRoom } from '../hooks/useChatGameRoom.jsx';
 import * as minigamesApi from '../api/minigames.js';
 import { gameTypeLabel } from '../lib/minigameLabels.js';
 import QuizSessionDetail from '../components/QuizSessionDetail.jsx';
@@ -19,6 +20,12 @@ export default function MinigameDetail() {
   const [questions, setQuestions] = useState<MinigameQuestionView[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  useAnnounceChatRoom(
+    session
+      ? { room: 'minigame', roomKey: String(sessionId), label: session.title || 'Mini-jeu', icon: '🧠' }
+      : null
+  );
 
   const load = useCallback(async () => {
     try {

@@ -500,6 +500,23 @@ export interface GamblingSpectatorEntry {
   equipped_cosmetics: EquippedCosmetic[];
 }
 
+export type ChatRoom = 'global' | 'crates' | 'blackjack' | 'crash' | 'tower' | 'minigame';
+
+export interface ChatMessageRow {
+  id: number;
+  room: ChatRoom;
+  room_key: string;
+  user_id: number;
+  body: string;
+  created_at: string;
+}
+
+export interface ChatMessageEntry extends ChatMessageRow {
+  username: string;
+  avatar_url: string | null;
+  equipped_cosmetics: EquippedCosmetic[];
+}
+
 export interface GamblingInventoryEntry {
   id: number;
   user_id: number;
