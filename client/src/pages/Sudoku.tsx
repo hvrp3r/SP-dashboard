@@ -3,7 +3,7 @@ import { useAuth } from '../hooks/useAuth.jsx';
 import VolumeSlider from '../components/VolumeSlider.jsx';
 import * as sound from '../lib/sound.js';
 import * as sudokuApi from '../api/sudoku.js';
-import type { SudokuDifficulty, SudokuTodayAdminEntry, SudokuTodayView } from '../types.js';
+import type { SudokuAttemptHistoryEntry, SudokuDifficulty, SudokuTodayAdminEntry, SudokuTodayView } from '../types.js';
 
 const DIFFICULTIES: { value: SudokuDifficulty; label: string }[] = [
   { value: 'easy', label: 'Facile' },
@@ -59,6 +59,38 @@ function saveProgress(puzzleDate: string, difficulty: SudokuDifficulty, grid: st
   }
 }
 
+/** Aperçu en lecture seule d'une grille soumise passée — mêmes couleurs que la grille jouable, sans interaction. */
+function AttemptGridPreview({ givens, guess, cellCorrect }: { givens: string; guess: string; cellCorrect: boolean[] }) {
+  return (
+    <div
+      className="grid gap-0.5 bg-zinc-700 border-2 border-zinc-600 rounded-md overflow-hidden mt-2"
+      style={{ gridTemplateColumns: 'repeat(9, minmax(0, 1fr))' }}
+    >
+      {Array.from({ length: 81 }, (_, i) => {
+        const isGiven = givens[i] !== '0';
+        const value = guess[i] === '0' ? '' : guess[i];
+        const wrong = guess[i] !== '0' && !cellCorrect[i];
+        const col = i % 9;
+        const row = Math.floor(i / 9);
+        const thickRight = col % 3 === 2 && col !== 8;
+        const thickBottom = row % 3 === 2 && row !== 8;
+        return (
+          <div
+            key={i}
+            className={`aspect-square flex items-center justify-center font-semibold text-xs ${
+              isGiven ? 'bg-zinc-800 text-zinc-300' : 'bg-zinc-900 text-emerald-400'
+            } ${wrong ? '!bg-red-500/20 !text-red-400' : ''} ${
+              thickRight ? 'border-r-2 border-r-zinc-500' : ''
+            } ${thickBottom ? 'border-b-2 border-b-zinc-500' : ''}`}
+          >
+            {value}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function Sudoku() {
   const { user, setUser } = useAuth();
 
@@ -75,6 +107,8 @@ export default function Sudoku() {
   const [message, setMessage] = useState<string | null>(null);
 
   const [adminOverview, setAdminOverview] = useState<SudokuTodayAdminEntry[]>([]);
+  const [attemptsHistory, setAttemptsHistory] = useState<SudokuAttemptHistoryEntry[]>([]);
+  const [expandedAttempt, setExpandedAttempt] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -82,6 +116,7 @@ export default function Sudoku() {
     setCellCorrect(null);
     setMessage(null);
     setSelected(null);
+    setExpandedAttempt(null);
     try {
       const result = await sudokuApi.getToday();
       setView(result);
@@ -107,7 +142,9 @@ export default function Sudoku() {
   const loadAdminOverview = useCallback(async () => {
     if (user?.role !== 'admin') return;
     try {
-      setAdminOverview(await sudokuApi.getTodayAdmin());
+      const [overview, history] = await Promise.all([sudokuApi.getTodayAdmin(), sudokuApi.listAttempts(30)]);
+      setAdminOverview(overview);
+      setAttemptsHistory(history);
     } catch {
       // silencieux : panneau MSP secondaire, ne bloque pas la partie du joueur
     }
@@ -209,6 +246,7 @@ export default function Sudoku() {
         givens: view.givens,
         maxAttempts: result.maxAttempts,
         attemptsUsed: result.attemptsUsed,
+        attempts: result.attempts,
         rewardSp: result.rewardSp,
         solution: result.solution,
       });
@@ -410,6 +448,45 @@ export default function Sudoku() {
                 </>
               );
             })()}
+
+            {view.attempts.length > 0 && (
+              <div className="mt-6">
+                <h2 className="text-xs font-semibold text-zinc-400 uppercase mb-2">Mes tentatives</h2>
+                <ul className="space-y-1">
+                  {view.attempts.map((a) => {
+                    const expanded = expandedAttempt === a.attemptNumber;
+                    return (
+                      <li key={a.attemptNumber} className="bg-zinc-900 border border-zinc-800 rounded-md overflow-hidden">
+                        <button
+                          type="button"
+                          onClick={() => setExpandedAttempt(expanded ? null : a.attemptNumber)}
+                          className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-zinc-800/60 transition"
+                        >
+                          <span className={a.isCorrect ? 'text-emerald-400' : 'text-zinc-500'}>
+                            {a.isCorrect ? '✅' : '❌'}
+                          </span>
+                          <span className="text-zinc-400 flex-1 text-left">Tentative #{a.attemptNumber}</span>
+                          <span className="text-zinc-600">
+                            {new Date(a.createdAt).toLocaleString('fr-FR', {
+                              day: '2-digit',
+                              month: '2-digit',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </span>
+                          <span className="text-zinc-600">{expanded ? '▲' : '▼'}</span>
+                        </button>
+                        {expanded && (
+                          <div className="px-3 pb-3">
+                            <AttemptGridPreview givens={view.givens} guess={a.guess} cellCorrect={a.cellCorrect} />
+                          </div>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
           </>
         )}
 
@@ -436,6 +513,39 @@ export default function Sudoku() {
                 </li>
               ))}
             </ul>
+
+            <h2 className="text-sm font-semibold text-zinc-300 uppercase mt-6 mb-3">
+              MSP — Soumissions récentes
+            </h2>
+            {attemptsHistory.length === 0 ? (
+              <p className="text-sm text-zinc-500">Aucune soumission pour le moment.</p>
+            ) : (
+              <ul className="space-y-1">
+                {attemptsHistory.map((a) => (
+                  <li
+                    key={a.id}
+                    className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 rounded-md px-3 py-2 text-xs"
+                  >
+                    <span className={a.is_correct ? 'text-emerald-400' : 'text-zinc-500'}>
+                      {a.is_correct ? '✅' : '❌'}
+                    </span>
+                    <span className="text-zinc-200 font-medium flex-shrink-0">{a.username}</span>
+                    <span className="text-zinc-400 flex-1 truncate">
+                      {DIFFICULTIES.find((d) => d.value === a.difficulty)?.label ?? a.difficulty}
+                    </span>
+                    <span className="text-zinc-600 flex-shrink-0">#{a.attempt_number}</span>
+                    <span className="text-zinc-600 flex-shrink-0">
+                      {new Date(a.created_at).toLocaleString('fr-FR', {
+                        day: '2-digit',
+                        month: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         )}
       </div>

@@ -79,3 +79,10 @@ export async function getTodayAdmin(_req: Request, res: Response): Promise<void>
   const view = await sudokuService.getTodayAdminView(activeSeason?.id ?? null);
   res.json(view);
 }
+
+export async function listAttempts(req: Request, res: Response): Promise<void> {
+  const limitRaw = Number(req.query.limit);
+  const limit = Number.isInteger(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 200) : 50;
+  const attempts = await sudokuService.listRecentAttempts(limit);
+  res.json(attempts);
+}

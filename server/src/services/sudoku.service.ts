@@ -4,7 +4,9 @@ import * as configService from './config.service.js';
 import { todayLocal } from '../utils/localDate.js';
 import { generatePuzzle, gridToString, type SudokuDifficulty } from '../utils/sudoku.js';
 import type {
+  SudokuAttemptHistoryEntry,
   SudokuAttemptRow,
+  SudokuAttemptSummary,
   SudokuCheckResult,
   SudokuDailyPuzzleRow,
   SudokuGameStatus,
@@ -126,6 +128,21 @@ async function getMyAttempts(puzzleId: number, userId: number): Promise<SudokuAt
   return rows;
 }
 
+/** Ne révèle jamais les chiffres de la solution — seulement si chaque case remplie était juste. */
+function computeCellCorrect(guess: string, solution: string): boolean[] {
+  return guess.split('').map((ch, i) => ch !== '0' && ch === solution[i]);
+}
+
+function toAttemptSummaries(attempts: SudokuAttemptRow[], solution: string): SudokuAttemptSummary[] {
+  return attempts.map((a) => ({
+    attemptNumber: a.attempt_number,
+    isCorrect: a.is_correct,
+    createdAt: a.created_at,
+    guess: a.guess,
+    cellCorrect: computeCellCorrect(a.guess, solution),
+  }));
+}
+
 function buildGameView(
   puzzle: SudokuDailyPuzzleRow,
   attempts: SudokuAttemptRow[],
@@ -141,6 +158,7 @@ function buildGameView(
     givens: puzzle.givens,
     maxAttempts,
     attemptsUsed: attempts.length,
+    attempts: toAttemptSummaries(attempts, puzzle.solution),
     rewardSp,
     solution: status === 'in_progress' ? null : puzzle.solution,
   };
@@ -272,15 +290,16 @@ export async function checkGrid(
       throw Object.assign(new Error('Plus de tentatives disponibles aujourd’hui'), { status: 400 });
     }
 
-    const cellCorrect = guess.split('').map((ch, i) => ch !== '0' && ch === puzzle.solution[i]);
+    const cellCorrect = computeCellCorrect(guess, puzzle.solution);
     const isCorrect = cellCorrect.every(Boolean);
     const attemptNumber = existingAttempts.length + 1;
 
-    await client.query(
+    const { rows: insertedRows } = await client.query<{ created_at: string }>(
       `INSERT INTO sudoku_attempts (puzzle_id, user_id, attempt_number, guess, is_correct)
-       VALUES ($1, $2, $3, $4, $5)`,
+       VALUES ($1, $2, $3, $4, $5) RETURNING created_at`,
       [puzzle.id, userId, attemptNumber, guess, isCorrect]
     );
+    const insertedAt = insertedRows[0]?.created_at as string;
 
     if (isCorrect && rewardSp > 0) {
       await spService.creditSP({
@@ -297,6 +316,10 @@ export async function checkGrid(
     await client.query('COMMIT');
 
     const status: SudokuGameStatus = isCorrect ? 'won' : attemptNumber >= maxAttempts ? 'lost' : 'in_progress';
+    const attempts = [
+      ...toAttemptSummaries(existingAttempts, puzzle.solution),
+      { attemptNumber, isCorrect, createdAt: insertedAt, guess, cellCorrect },
+    ];
 
     return {
       solved: isCorrect,
@@ -304,6 +327,7 @@ export async function checkGrid(
       status,
       attemptsUsed: attemptNumber,
       maxAttempts,
+      attempts,
       rewardSp,
       rewardGranted: isCorrect && rewardSp > 0,
       solution: status === 'in_progress' ? null : puzzle.solution,
@@ -314,6 +338,25 @@ export async function checkGrid(
   } finally {
     client.release();
   }
+}
+
+/**
+ * Vue MSP : toutes les soumissions de tous les joueurs, tous jours et
+ * difficultés confondus, les plus récentes d'abord — même principe que
+ * motusService.listRecentAttempts.
+ */
+export async function listRecentAttempts(limit: number): Promise<SudokuAttemptHistoryEntry[]> {
+  const { rows } = await pool.query<SudokuAttemptHistoryEntry>(
+    `SELECT a.id, a.user_id, a.puzzle_id, a.attempt_number, a.is_correct, a.created_at,
+            u.username, p.puzzle_date, p.difficulty
+     FROM sudoku_attempts a
+     JOIN users u ON u.id = a.user_id
+     JOIN sudoku_daily_puzzles p ON p.id = a.puzzle_id
+     ORDER BY a.created_at DESC
+     LIMIT $1`,
+    [limit]
+  );
+  return rows;
 }
 
 /** Vue MSP en lecture seule : rien à créer (génération automatique), juste un aperçu du jour. */

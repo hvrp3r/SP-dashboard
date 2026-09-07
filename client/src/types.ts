@@ -907,6 +907,15 @@ export interface SudokuChoosingView {
   maxAttempts: Record<SudokuDifficulty, number>;
 }
 
+/** Une tentative passée du joueur — pas de détail cellule par cellule ici (déjà vu au moment du check), juste de quoi tracer l'historique. */
+export interface SudokuAttemptSummary {
+  attemptNumber: number;
+  isCorrect: boolean;
+  createdAt: string;
+  guess: string;
+  cellCorrect: boolean[];
+}
+
 /** Vue publique du puzzle du jour une fois la difficulté choisie : la solution n'est incluse qu'en fin de partie. */
 export interface SudokuGameView {
   status: SudokuGameStatus;
@@ -915,6 +924,7 @@ export interface SudokuGameView {
   givens: string;
   maxAttempts: number;
   attemptsUsed: number;
+  attempts: SudokuAttemptSummary[];
   rewardSp: number;
   solution: string | null;
 }
@@ -927,6 +937,7 @@ export interface SudokuCheckResult {
   status: SudokuGameStatus;
   attemptsUsed: number;
   maxAttempts: number;
+  attempts: SudokuAttemptSummary[];
   rewardSp: number;
   rewardGranted: boolean;
   solution: string | null;
@@ -938,6 +949,19 @@ export interface SudokuTodayAdminEntry {
   puzzleDate: string;
   clues: number;
   completions: number;
+}
+
+/** Vue MSP : une soumission d'un joueur, tous jours et difficultés confondus. */
+export interface SudokuAttemptHistoryEntry {
+  id: number;
+  user_id: number;
+  username: string;
+  puzzle_id: number;
+  puzzle_date: string;
+  difficulty: SudokuDifficulty;
+  attempt_number: number;
+  is_correct: boolean;
+  created_at: string;
 }
 
 export interface PlayerStats {
