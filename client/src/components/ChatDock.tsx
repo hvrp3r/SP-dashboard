@@ -18,18 +18,18 @@ function formatTime(iso: string): string {
  * Chat en direct : un salon 'Global' toujours présent + un second onglet pour le
  * salon du jeu courant, annoncé par la page visitée via useAnnounceChatRoom (voir
  * useChatGameRoom.tsx) — Crash/Tower/Blackjack/caisse/session de mini-jeu.
- * Sur très grand écran (2xl+, ≥1536px) : carte arrondie dans la gouttière de droite
- * de la grille 3 colonnes définie par App.tsx (`[1fr | min(896px,100%) | 1fr]`) —
- * les deux gouttières font toujours la même largeur, donc le contenu central reste
- * centré sur le viewport que ChatDock soit affiché ou non. App centre ChatDock
- * horizontalement dans cette gouttière (`justify-center`) ; ici, `position: sticky;
- * top: 50%` + `-translate-y-1/2` la centre verticalement dans le viewport et la
- * garde ainsi visible pendant que le joueur scrolle la page, au lieu de défiler avec
- * elle comme un bloc normal (elle ne "décroche" qu'en haut/bas de la colonne de
- * contenu, une fois celle-ci épuisée). En dessous de 2xl, la gouttière ne suffirait
- * pas à la loger sans chevaucher le contenu centré, donc elle retombe sur une bulle
- * flottante ouvrable (comportement mobile classique, indépendant de `collapsed`
- * ci-dessous).
+ * Sur très grand écran (2xl+, ≥1536px) : carte arrondie en pur survol, `position:
+ * fixed` — ChatDock n'est jamais un élément de mise en page (pas de colonne grid/flex
+ * qui contraindrait la largeur des pages, ce qui coupait les fonds plein cadre comme
+ * ProfileBackdrop) : elle flotte simplement par-dessus, centrée dans la marge libre à
+ * droite du contenu centré `max-w-4xl` (896px) des pages via un `right` calculé en
+ * fonction du viewport (`calc(25vw - 24rem)`, voir desktopPositionClass — approximatif
+ * de quelques px selon la barre de défilement, sans conséquence pour un simple survol).
+ * `top: 50%` + `-translate-y-1/2` la centre verticalement ; étant `fixed`, elle reste
+ * de toute façon visible en permanence pendant le scroll, sans dépendre du flux de la
+ * page. En dessous de 2xl, la marge ne suffirait pas à la loger sans chevaucher le
+ * contenu, donc elle retombe sur une bulle flottante ouvrable (comportement mobile
+ * classique, indépendant de `collapsed` ci-dessous).
  * Sur desktop, `collapsed` fait glisser la carte hors-écran vers la droite
  * (`translate-x`, voir `desktopSlideClass`) plutôt que de la démonter — un onglet
  * fin `‹` reste alors collé au bord droit du viewport (`position: fixed`) pour la
@@ -132,15 +132,21 @@ export default function ChatDock() {
     ? 'fixed flex bottom-20 right-4 w-[calc(100vw-2rem)] max-w-sm h-[70vh]'
     : 'hidden';
   // Réduit = glisse hors-écran vers la droite (translate-x), plutôt que d'être
-  // démonté/masqué — garde sa place dans la gouttière (pas de saut de mise en page)
-  // et permet l'animation. body a overflow-x-hidden (index.css) pour éviter toute
-  // barre de défilement horizontale pendant que la carte dépasse du viewport.
+  // démonté/masqué — permet l'animation. body a overflow-x-hidden (index.css) pour
+  // éviter toute barre de défilement horizontale pendant que la carte dépasse du
+  // viewport.
   const desktopSlideClass = collapsed ? '2xl:translate-x-[130%]' : '2xl:translate-x-0';
+  // `right` calculé plutôt qu'une valeur fixe : centre la carte dans la marge libre
+  // à droite du contenu `max-w-4xl` (896px = 56rem, donc bord à 50vw + 28rem) plutôt
+  // que de la coller au bord — voir le calcul détaillé dans le commentaire au-dessus
+  // du composant. Tailwind exige `_` à la place des espaces dans les valeurs
+  // arbitraires contenant calc().
+  const desktopPositionClass = '2xl:fixed 2xl:top-1/2 2xl:-translate-y-1/2 2xl:right-[calc(25vw_-_24rem)]';
 
   return (
     <>
       <div
-        className={`z-30 flex-col bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl shadow-black/40 overflow-hidden ${mobileOpenClasses} 2xl:flex 2xl:sticky 2xl:top-1/2 2xl:-translate-y-1/2 ${desktopSlideClass} 2xl:transition-transform 2xl:duration-300 2xl:ease-in-out 2xl:right-auto 2xl:bottom-auto 2xl:left-auto 2xl:w-80 2xl:h-[32rem] 2xl:max-w-none`}
+        className={`z-30 flex-col bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl shadow-black/40 overflow-hidden ${mobileOpenClasses} 2xl:flex ${desktopPositionClass} 2xl:bottom-auto 2xl:left-auto ${desktopSlideClass} 2xl:transition-transform 2xl:duration-300 2xl:ease-in-out 2xl:w-80 2xl:h-[32rem] 2xl:max-w-none`}
         style={open ? { animation: 'fadeSlideIn 0.18s ease-out' } : undefined}
       >
         <div className="flex items-center border-b border-zinc-800 flex-shrink-0">

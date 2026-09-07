@@ -16,6 +16,8 @@ import Auctions from './pages/Auctions.jsx';
 import AuctionDetail from './pages/AuctionDetail.jsx';
 import Gambling from './pages/Gambling.jsx';
 import GamblingCrateDetail from './pages/GamblingCrateDetail.jsx';
+import GamblingBattles from './pages/GamblingBattles.jsx';
+import GamblingBattleDetail from './pages/GamblingBattleDetail.jsx';
 import BlackjackTable from './pages/BlackjackTable.jsx';
 import Crash from './pages/Crash.jsx';
 import Tower from './pages/Tower.jsx';
@@ -50,243 +52,251 @@ export default function App() {
   return (
     <>
       <NavBar />
-      {/* Sur très grand écran (2xl+, voir ChatDock.tsx) : grille à 3 colonnes
-          [1fr | min(896px,100%) | 1fr] — les deux gouttières valent toujours
-          exactement la même largeur (`1fr` de chaque côté), donc le contenu au
-          centre reste centré sur le viewport pile comme sans ChatDock, qu'il y ait
-          quelque chose dans la gouttière de droite ou non (contrairement à un
-          `flex-1` qui rétrécirait la colonne de contenu et la décalerait à gauche).
-          Sous 2xl, pas de grille (ChatDock retombe sur sa bulle flottante) : ces
-          wrappers redeviennent de simples blocs sans effet sur la mise en page. */}
-      <div className="2xl:grid 2xl:grid-cols-[1fr_min(896px,100%)_1fr]">
-        <div className="2xl:col-start-2 2xl:min-w-0">
-          <Routes>
-            <Route path="/connexion" element={<Login />} />
-            <Route path="/inscription" element={<Register />} />
-            <Route
-              path="/"
-              element={
-                <PrivateRoute>
-                  <Home />
-                </PrivateRoute>
-              }
-            />
-            <Route
-              path="/profil"
-              element={
-                <PrivateRoute>
-                  <Profile />
-                </PrivateRoute>
-              }
-            />
-            <Route
-              path="/classement"
-              element={
-                <PrivateRoute>
-                  <Leaderboard />
-                </PrivateRoute>
-              }
-            />
-            <Route path="/archives" element={<Navigate to="/classement" replace />} />
-            <Route
-              path="/joueurs/:username"
-              element={
-                <PrivateRoute>
-                  <PlayerStats />
-                </PrivateRoute>
-              }
-            />
-            <Route
-              path="/defis"
-              element={
-                <PrivateRoute>
-                  <Challenges />
-                </PrivateRoute>
-              }
-            />
-            <Route
-              path="/mini-jeux"
-              element={
-                <PrivateRoute>
-                  <Minigames />
-                </PrivateRoute>
-              }
-            />
-            <Route
-              path="/mini-jeux/:id"
-              element={
-                <PrivateRoute>
-                  <MinigameDetail />
-                </PrivateRoute>
-              }
-            />
-            <Route
-              path="/motus"
-              element={
-                <PrivateRoute>
-                  <Motus />
-                </PrivateRoute>
-              }
-            />
-            <Route
-              path="/sudoku"
-              element={
-                <PrivateRoute>
-                  <Sudoku />
-                </PrivateRoute>
-              }
-            />
-            <Route
-              path="/suggestions"
-              element={
-                <PrivateRoute>
-                  <Suggestions />
-                </PrivateRoute>
-              }
-            />
-            <Route
-              path="/suggestions/:id"
-              element={
-                <PrivateRoute>
-                  <SuggestionDetail />
-                </PrivateRoute>
-              }
-            />
-            <Route
-              path="/cosmetiques"
-              element={
-                <PrivateRoute>
-                  <Cosmetics />
-                </PrivateRoute>
-              }
-            />
-            <Route
-              path="/encheres"
-              element={
-                <PrivateRoute>
-                  <Auctions />
-                </PrivateRoute>
-              }
-            />
-            <Route
-              path="/encheres/:id"
-              element={
-                <PrivateRoute>
-                  <AuctionDetail />
-                </PrivateRoute>
-              }
-            />
-            <Route
-              path="/gambling"
-              element={
-                <PrivateRoute>
-                  <GamblingHome />
-                </PrivateRoute>
-              }
-            />
-            <Route
-              path="/gambling/crates"
-              element={
-                <PrivateRoute>
-                  <Gambling />
-                </PrivateRoute>
-              }
-            />
-            <Route
-              path="/gambling/crates/:id"
-              element={
-                <PrivateRoute>
-                  <GamblingCrateDetail />
-                </PrivateRoute>
-              }
-            />
-            <Route
-              path="/gambling/blackjack"
-              element={
-                <PrivateRoute>
-                  <BlackjackTable />
-                </PrivateRoute>
-              }
-            />
-            <Route
-              path="/gambling/crash"
-              element={
-                <PrivateRoute>
-                  <Crash />
-                </PrivateRoute>
-              }
-            />
-            <Route
-              path="/gambling/tower"
-              element={
-                <PrivateRoute>
-                  <Tower />
-                </PrivateRoute>
-              }
-            />
-            <Route
-              path="/admin/saisons"
-              element={
-                <AdminRoute>
-                  <AdminSeasons />
-                </AdminRoute>
-              }
-            />
-            <Route
-              path="/admin/config"
-              element={
-                <AdminRoute>
-                  <AdminConfig />
-                </AdminRoute>
-              }
-            />
-            <Route
-              path="/admin/transactions"
-              element={
-                <AdminRoute>
-                  <AdminTransactions />
-                </AdminRoute>
-              }
-            />
-            <Route
-              path="/admin/defis"
-              element={
-                <AdminRoute>
-                  <AdminChallenges />
-                </AdminRoute>
-              }
-            />
-            <Route
-              path="/admin/joueurs"
-              element={
-                <AdminRoute>
-                  <AdminPlayers />
-                </AdminRoute>
-              }
-            />
-            <Route
-              path="/admin/abonnements"
-              element={
-                <AdminRoute>
-                  <AdminSubscriptions />
-                </AdminRoute>
-              }
-            />
-            <Route
-              path="/admin/cosmetiques"
-              element={
-                <AdminRoute>
-                  <AdminCosmetics />
-                </AdminRoute>
-              }
-            />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </div>
-        <div className="2xl:col-start-3 2xl:flex 2xl:justify-center 2xl:min-w-0">
-          <ChatDock />
-        </div>
-      </div>
+      {/* Pas de wrapper grid/flex autour des routes : certaines pages ont besoin de
+          rendre plein cadre (ex. ProfileBackdrop, bannière de profil en `absolute
+          inset-0` sur toute la largeur du viewport) — les contraindre dans une
+          colonne (même à 896px) les coupait sur les côtés. ChatDock (voir ce fichier)
+          est un pur survol en `position: fixed` par-dessus la page à 2xl+, jamais un
+          élément de mise en page qui redimensionne ou décale le contenu. */}
+      <Routes>
+        <Route path="/connexion" element={<Login />} />
+        <Route path="/inscription" element={<Register />} />
+        <Route
+          path="/"
+          element={
+            <PrivateRoute>
+              <Home />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/profil"
+          element={
+            <PrivateRoute>
+              <Profile />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/classement"
+          element={
+            <PrivateRoute>
+              <Leaderboard />
+            </PrivateRoute>
+          }
+        />
+        <Route path="/archives" element={<Navigate to="/classement" replace />} />
+        <Route
+          path="/joueurs/:username"
+          element={
+            <PrivateRoute>
+              <PlayerStats />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/defis"
+          element={
+            <PrivateRoute>
+              <Challenges />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/mini-jeux"
+          element={
+            <PrivateRoute>
+              <Minigames />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/mini-jeux/:id"
+          element={
+            <PrivateRoute>
+              <MinigameDetail />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/motus"
+          element={
+            <PrivateRoute>
+              <Motus />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/sudoku"
+          element={
+            <PrivateRoute>
+              <Sudoku />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/suggestions"
+          element={
+            <PrivateRoute>
+              <Suggestions />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/suggestions/:id"
+          element={
+            <PrivateRoute>
+              <SuggestionDetail />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/cosmetiques"
+          element={
+            <PrivateRoute>
+              <Cosmetics />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/encheres"
+          element={
+            <PrivateRoute>
+              <Auctions />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/encheres/:id"
+          element={
+            <PrivateRoute>
+              <AuctionDetail />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/gambling"
+          element={
+            <PrivateRoute>
+              <GamblingHome />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/gambling/crates"
+          element={
+            <PrivateRoute>
+              <Gambling />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/gambling/crates/:id"
+          element={
+            <PrivateRoute>
+              <GamblingCrateDetail />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/gambling/battles"
+          element={
+            <PrivateRoute>
+              <GamblingBattles />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/gambling/battles/:id"
+          element={
+            <PrivateRoute>
+              <GamblingBattleDetail />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/gambling/blackjack"
+          element={
+            <PrivateRoute>
+              <BlackjackTable />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/gambling/crash"
+          element={
+            <PrivateRoute>
+              <Crash />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/gambling/tower"
+          element={
+            <PrivateRoute>
+              <Tower />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/admin/saisons"
+          element={
+            <AdminRoute>
+              <AdminSeasons />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="/admin/config"
+          element={
+            <AdminRoute>
+              <AdminConfig />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="/admin/transactions"
+          element={
+            <AdminRoute>
+              <AdminTransactions />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="/admin/defis"
+          element={
+            <AdminRoute>
+              <AdminChallenges />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="/admin/joueurs"
+          element={
+            <AdminRoute>
+              <AdminPlayers />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="/admin/abonnements"
+          element={
+            <AdminRoute>
+              <AdminSubscriptions />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="/admin/cosmetiques"
+          element={
+            <AdminRoute>
+              <AdminCosmetics />
+            </AdminRoute>
+          }
+        />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+      <ChatDock />
     </>
   );
 }
