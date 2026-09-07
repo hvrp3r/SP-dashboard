@@ -20,5 +20,8 @@ router.post(
 );
 router.get('/:username', usersController.getPublicProfile);
 router.get('/:username/stats', usersController.getStats);
+router.get('/:username/transactions', usersController.getPublicTransactions);
+router.get('/:username/reactions', requireAuth, usersController.getProfileReactions);
+router.post('/:username/reactions', requireAuth, usersController.castProfileReaction);
 
 export default router;

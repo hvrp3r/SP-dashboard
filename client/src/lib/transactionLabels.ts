@@ -11,4 +11,9 @@ export const TRANSACTION_TYPE_LABELS: Record<SpTransactionType, string> = {
   gambling_spend: 'Mise gambling',
   gambling_win: 'Gain gambling',
   gambling_refund: 'Remboursement gambling',
+  auction_bid_hold: 'Enchère — mise bloquée',
+  auction_bid_refund: 'Enchère — mise remboursée',
+  auction_sale: 'Vente aux enchères',
+  motus_reward: 'Récompense Motus',
+  sudoku_reward: 'Récompense Sudoku',
 };

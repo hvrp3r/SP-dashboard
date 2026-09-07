@@ -74,6 +74,17 @@ export type LeaderboardSort = 'sp_balance' | 'sp_total_earned';
 
 export type CosmeticSlot = 'avatar_frame' | 'banner' | 'name_color' | 'title' | 'name_font';
 export type CosmeticRarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
+/** Effet visuel animé appliqué par-dessus color_value (name_color/title uniquement) — voir index.css. 'shimmer' est restreint à name_color (voir cosmeticsLabels.ts). */
+export type CosmeticColorAnimation =
+  | 'rainbow'
+  | 'pulse'
+  | 'neon'
+  | 'fire'
+  | 'ice'
+  | 'disco'
+  | 'glitch'
+  | 'lightning'
+  | 'shimmer';
 export type CosmeticObtainedSource = 'gambling' | 'admin_grant' | 'auction';
 
 export interface Cosmetic {
@@ -84,6 +95,9 @@ export interface Cosmetic {
   description: string | null;
   image_url: string | null;
   color_value: string | null;
+  color_animation: CosmeticColorAnimation | null;
+  /** Accent d'une animation à deux couleurs (glitch/lightning/shimmer — voir cosmeticsLabels.ts). Nul = repli CSS par défaut. */
+  color_secondary: string | null;
   font_family: string | null;
   rarity: CosmeticRarity;
   is_default: boolean;
@@ -109,6 +123,8 @@ export interface EquippedCosmetic {
   name: string;
   image_url: string | null;
   color_value: string | null;
+  color_animation: CosmeticColorAnimation | null;
+  color_secondary: string | null;
   font_family: string | null;
 }
 
@@ -138,7 +154,12 @@ export type SpTransactionType =
   | 'admin_deduct'
   | 'gambling_spend'
   | 'gambling_win'
-  | 'gambling_refund';
+  | 'gambling_refund'
+  | 'auction_bid_hold'
+  | 'auction_bid_refund'
+  | 'auction_sale'
+  | 'motus_reward'
+  | 'sudoku_reward';
 
 export interface SpTransaction {
   id: number;
@@ -371,6 +392,15 @@ export interface SuggestionComment {
 
 export interface SuggestionDetail extends Suggestion {
   comments: SuggestionComment[];
+}
+
+export type ProfileReactionValue = 1 | -1;
+
+export interface ProfileReactionSummary {
+  likeCount: number;
+  dislikeCount: number;
+  /** 1 = liké, -1 = disliké, 0 = pas de réaction du viewer courant. */
+  userReaction: ProfileReactionValue | 0;
 }
 
 export type GamblingRewardType = 'sp' | 'custom' | 'cosmetic';
@@ -907,6 +937,15 @@ export interface SudokuChoosingView {
   maxAttempts: Record<SudokuDifficulty, number>;
 }
 
+/** Une tentative passée du joueur — pas de détail cellule par cellule ici (déjà vu au moment du check), juste de quoi tracer l'historique. */
+export interface SudokuAttemptSummary {
+  attemptNumber: number;
+  isCorrect: boolean;
+  createdAt: string;
+  guess: string;
+  cellCorrect: boolean[];
+}
+
 /** Vue publique du puzzle du jour une fois la difficulté choisie : la solution n'est incluse qu'en fin de partie. */
 export interface SudokuGameView {
   status: SudokuGameStatus;
@@ -915,6 +954,7 @@ export interface SudokuGameView {
   givens: string;
   maxAttempts: number;
   attemptsUsed: number;
+  attempts: SudokuAttemptSummary[];
   rewardSp: number;
   solution: string | null;
 }
@@ -927,6 +967,7 @@ export interface SudokuCheckResult {
   status: SudokuGameStatus;
   attemptsUsed: number;
   maxAttempts: number;
+  attempts: SudokuAttemptSummary[];
   rewardSp: number;
   rewardGranted: boolean;
   solution: string | null;
@@ -938,6 +979,19 @@ export interface SudokuTodayAdminEntry {
   puzzleDate: string;
   clues: number;
   completions: number;
+}
+
+/** Vue MSP : une soumission d'un joueur, tous jours et difficultés confondus. */
+export interface SudokuAttemptHistoryEntry {
+  id: number;
+  user_id: number;
+  username: string;
+  puzzle_id: number;
+  puzzle_date: string;
+  difficulty: SudokuDifficulty;
+  attempt_number: number;
+  is_correct: boolean;
+  created_at: string;
 }
 
 export interface PlayerStats {

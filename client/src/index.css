@@ -231,3 +231,194 @@ body {
     opacity: 0;
   }
 }
+
+/* Cosmétiques "couleur animée" (name_color/title, voir CosmeticPreview.tsx et
+   UserNameTag.tsx). filter: hue-rotate/brightness plutôt qu'un background-clip
+   text : ça recolore uniformément tout l'élément (texte, bordure, fond du
+   badge de titre) sans casser le fond translucide du badge, et ça marche
+   pareil sur un simple <span> coloré que sur le pastille de titre. */
+@keyframes cosmeticHueRotate {
+  from {
+    filter: hue-rotate(0deg);
+  }
+  to {
+    filter: hue-rotate(360deg);
+  }
+}
+
+@keyframes cosmeticPulseGlow {
+  0%,
+  100% {
+    filter: brightness(1) saturate(1);
+  }
+  50% {
+    filter: brightness(1.5) saturate(1.4);
+  }
+}
+
+.cosmetic-anim-rainbow {
+  animation: cosmeticHueRotate 3s linear infinite;
+}
+
+.cosmetic-anim-pulse {
+  animation: cosmeticPulseGlow 1.6s ease-in-out infinite;
+}
+
+/* Disco : mêmes étapes que l'arc-en-ciel, mais un timing en escaliers plutôt
+   que linéaire — des sauts de teinte francs façon boule à facettes. */
+.cosmetic-anim-disco {
+  animation: cosmeticHueRotate 1.1s steps(8, jump-none) infinite;
+}
+
+/* Néon : drop-shadow (pas box/text-shadow) pour que le halo suive la forme
+   réelle de l'élément — les lettres d'un pseudo comme le contour arrondi du
+   badge de titre — plutôt qu'un rectangle. */
+@keyframes cosmeticNeon {
+  0%,
+  100% {
+    filter: brightness(1) drop-shadow(0 0 0 transparent);
+  }
+  50% {
+    filter: brightness(1.3) drop-shadow(0 0 6px currentColor);
+  }
+}
+.cosmetic-anim-neon {
+  animation: cosmeticNeon 1.8s ease-in-out infinite;
+}
+
+/* Feu : hue-rotate cantonné à une plage étroite (au lieu du tour complet de
+   l'arc-en-ciel) + saturation/luminosité qui vacillent, pour un flicker de
+   flamme plutôt qu'un cycle de couleurs. Couleur de base idéalement rouge/
+   orangée (choix du MSP), la teinte ne fait qu'osciller autour d'elle. */
+@keyframes cosmeticFire {
+  0%,
+  100% {
+    filter: hue-rotate(-14deg) saturate(1.3) brightness(1);
+  }
+  30% {
+    filter: hue-rotate(8deg) saturate(1.5) brightness(1.15);
+  }
+  55% {
+    filter: hue-rotate(-6deg) saturate(1.4) brightness(0.95);
+  }
+  80% {
+    filter: hue-rotate(12deg) saturate(1.5) brightness(1.1);
+  }
+}
+.cosmetic-anim-fire {
+  animation: cosmeticFire 1.1s ease-in-out infinite;
+}
+
+/* Glace : même principe que le feu mais plage plus étroite, plus lente, et
+   une désaturation légère au pic plutôt qu'une sursaturation — un chatoiement
+   froid plutôt qu'un vacillement. */
+@keyframes cosmeticIce {
+  0%,
+  100% {
+    filter: hue-rotate(-6deg) brightness(1) saturate(1);
+  }
+  50% {
+    filter: hue-rotate(6deg) brightness(1.25) saturate(0.85);
+  }
+}
+.cosmetic-anim-ice {
+  animation: cosmeticIce 2.6s ease-in-out infinite;
+}
+
+/* Glitch : la majeure partie du cycle reste à la couleur normale, avec deux
+   brefs blips qui sautent sans transition (steps(1, end), pas d'interpolation)
+   — l'effet "erreur numérique" plutôt qu'un mouvement continu. Le hue-rotate
+   reste (chromatic aberration) mais le halo drop-shadow porte désormais une
+   vraie couleur de blip configurable (--cosmetic-color-2, repli magenta) au
+   lieu de tout dériver de la couleur de base. */
+@keyframes cosmeticGlitch {
+  0%,
+  88%,
+  100% {
+    filter: hue-rotate(0deg) saturate(1) drop-shadow(0 0 0 transparent);
+    opacity: 1;
+  }
+  90% {
+    filter: hue-rotate(100deg) saturate(3) drop-shadow(0 0 3px var(--cosmetic-color-2, #ff00ff));
+    opacity: 0.7;
+  }
+  91% {
+    filter: hue-rotate(-70deg) saturate(2.5) drop-shadow(0 0 2px var(--cosmetic-color-2, #ff00ff));
+    opacity: 1;
+  }
+  92% {
+    filter: hue-rotate(0deg) saturate(1) drop-shadow(0 0 0 transparent);
+    opacity: 1;
+  }
+  94% {
+    filter: hue-rotate(150deg) saturate(3) drop-shadow(0 0 3px var(--cosmetic-color-2, #ff00ff));
+    opacity: 0.75;
+  }
+  95%,
+  100% {
+    filter: hue-rotate(0deg) saturate(1) drop-shadow(0 0 0 transparent);
+    opacity: 1;
+  }
+}
+.cosmetic-anim-glitch {
+  animation: cosmeticGlitch 2.6s steps(1, end) infinite;
+}
+
+/* Éclair : repos à la normale, avec un double flash bref (brightness +
+   drop-shadow) qui frappe une à deux fois par cycle, façon coup de foudre —
+   même logique de "blips" que le glitch. Couleur du flash configurable
+   (--cosmetic-color-2, repli blanc). */
+@keyframes cosmeticLightning {
+  0%,
+  90%,
+  100% {
+    filter: brightness(1) drop-shadow(0 0 0 transparent);
+  }
+  91% {
+    filter: brightness(2.4) drop-shadow(0 0 8px var(--cosmetic-color-2, #fff));
+  }
+  92% {
+    filter: brightness(1.1) drop-shadow(0 0 2px var(--cosmetic-color-2, #fff));
+  }
+  93% {
+    filter: brightness(2.6) drop-shadow(0 0 10px var(--cosmetic-color-2, #fff));
+  }
+  94%,
+  100% {
+    filter: brightness(1) drop-shadow(0 0 0 transparent);
+  }
+}
+.cosmetic-anim-lightning {
+  animation: cosmeticLightning 4s steps(1, end) infinite;
+}
+
+/* Chatoyant : seul effet en dégradé + background-clip (les autres sont tous
+   de simples filter, voir plus haut) — un reflet balaie le texte, couleur
+   configurable (--cosmetic-color-2, repli blanc). Exige un texte réel à
+   découper (contrairement aux autres, ne marche pas sur une pastille de
+   couleur vide) et remplace la couleur du texte par transparent, d'où la
+   variable --cosmetic-color pour garder la couleur de base dans le dégradé.
+   Restreint à name_color côté UI (voir cosmeticsLabels.ts) : sur le badge de
+   titre, background-clip:text clipperait aussi son fond teinté à la forme du
+   texte et l'effacerait. */
+@keyframes cosmeticShimmerSweep {
+  from {
+    background-position: 200% center;
+  }
+  to {
+    background-position: -200% center;
+  }
+}
+.cosmetic-anim-shimmer {
+  background-image: linear-gradient(
+    110deg,
+    var(--cosmetic-color, currentColor) 35%,
+    var(--cosmetic-color-2, #fff) 50%,
+    var(--cosmetic-color, currentColor) 65%
+  );
+  background-size: 220% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: cosmeticShimmerSweep 2.4s linear infinite;
+}

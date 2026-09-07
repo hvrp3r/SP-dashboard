@@ -1,0 +1,12 @@
+-- Couleur secondaire optionnelle pour les animations qui ont un vrai accent
+-- distinct de la couleur de base (contrairement à néon/feu/glace/disco/
+-- arc-en-ciel/pulsation, qui ne sont que des variations filter d'UNE seule
+-- couleur) :
+--   - éclair : couleur du flash (blanc en dur jusqu'ici)
+--   - chatoyant : couleur du reflet qui balaie le texte (blanc en dur)
+--   - glitch : couleur du halo de corruption (dérivée d'un hue-rotate jusqu'ici)
+-- Nullable et sans repli en base : le repli (blanc pour éclair/chatoyant,
+-- magenta pour glitch) vit dans le CSS (var(--cosmetic-color-2, <défaut>),
+-- voir index.css) pour que les cosmétiques déjà semés restent inchangés sans
+-- backfill.
+ALTER TABLE cosmetics ADD COLUMN color_secondary VARCHAR(20);

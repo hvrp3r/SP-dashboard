@@ -8,5 +8,6 @@ router.get('/today', requireAuth, sudokuController.getToday);
 router.post('/choose', requireAuth, sudokuController.chooseDifficulty);
 router.post('/check', requireAuth, sudokuController.checkGrid);
 router.get('/today/admin', requireAuth, requireAdmin, sudokuController.getTodayAdmin);
+router.get('/attempts', requireAuth, requireAdmin, sudokuController.listAttempts);
 
 export default router;

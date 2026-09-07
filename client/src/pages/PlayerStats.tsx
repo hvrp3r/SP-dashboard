@@ -1,21 +1,46 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
+import { useAuth } from '../hooks/useAuth.jsx';
 import * as usersApi from '../api/users.js';
 import * as cosmeticsApi from '../api/cosmetics.js';
+import * as transactionsApi from '../api/transactions.js';
 import Avatar from '../components/Avatar.jsx';
 import RankBadge from '../components/RankBadge.jsx';
 import UserNameTag from '../components/UserNameTag.jsx';
 import ProfileBackdrop from '../components/ProfileBackdrop.jsx';
+import ProfileReactions from '../components/ProfileReactions.jsx';
 import { TRANSACTION_TYPE_LABELS } from '../lib/transactionLabels.js';
-import type { EquippedCosmetic, PlayerStats as PlayerStatsType, SpTransactionType, User } from '../types.js';
+import type {
+  EquippedCosmetic,
+  PlayerStats as PlayerStatsType,
+  ProfileReactionSummary,
+  ProfileReactionValue,
+  SpTransaction,
+  SpTransactionType,
+  User,
+} from '../types.js';
+
+const TRANSACTIONS_PAGE_SIZE = 20;
+
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+}
 
 export default function PlayerStats() {
   const { username } = useParams<{ username: string }>();
+  const { user: viewer } = useAuth();
   const [profile, setProfile] = useState<User | null>(null);
   const [stats, setStats] = useState<PlayerStatsType | null>(null);
   const [equipped, setEquipped] = useState<EquippedCosmetic[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [reactions, setReactions] = useState<ProfileReactionSummary | null>(null);
+  const isOwnProfile = Boolean(viewer && username && viewer.username === username);
+
+  const [transactions, setTransactions] = useState<SpTransaction[]>([]);
+  const [loadingTransactions, setLoadingTransactions] = useState(true);
+  const [loadingMoreTransactions, setLoadingMoreTransactions] = useState(false);
+  const [hasMoreTransactions, setHasMoreTransactions] = useState(true);
 
   useEffect(() => {
     if (!username) return;
@@ -33,6 +58,74 @@ export default function PlayerStats() {
       .catch((err) => setError(err instanceof Error ? err.message : 'Erreur inconnue'))
       .finally(() => setLoading(false));
   }, [username]);
+
+  useEffect(() => {
+    if (!username) return;
+    setTransactions([]);
+    setHasMoreTransactions(true);
+    setLoadingTransactions(true);
+    transactionsApi
+      .getTransactionsForUsername(username, TRANSACTIONS_PAGE_SIZE, 0)
+      .then((data) => {
+        setTransactions(data);
+        setHasMoreTransactions(data.length === TRANSACTIONS_PAGE_SIZE);
+      })
+      .catch(() => {
+        // Silencieux : la section reste vide plutôt que de bloquer le reste du profil.
+      })
+      .finally(() => setLoadingTransactions(false));
+  }, [username]);
+
+  useEffect(() => {
+    if (!username) return;
+    setReactions(null);
+    usersApi
+      .getProfileReactions(username)
+      .then(setReactions)
+      .catch(() => {});
+  }, [username]);
+
+  async function handleReact(value: ProfileReactionValue) {
+    if (!username || !reactions) return;
+    const prevReaction = reactions.userReaction;
+    const nextReaction = prevReaction === value ? 0 : value;
+    setReactions((prev) => {
+      if (!prev) return prev;
+      let { likeCount, dislikeCount } = prev;
+      if (prevReaction === 1) likeCount -= 1;
+      if (prevReaction === -1) dislikeCount -= 1;
+      if (nextReaction === 1) likeCount += 1;
+      if (nextReaction === -1) dislikeCount += 1;
+      return { likeCount, dislikeCount, userReaction: nextReaction };
+    });
+    try {
+      const result = await usersApi.castProfileReaction(username, value);
+      setReactions(result);
+    } catch {
+      usersApi
+        .getProfileReactions(username)
+        .then(setReactions)
+        .catch(() => {});
+    }
+  }
+
+  async function handleLoadMoreTransactions() {
+    if (!username) return;
+    setLoadingMoreTransactions(true);
+    try {
+      const next = await transactionsApi.getTransactionsForUsername(
+        username,
+        TRANSACTIONS_PAGE_SIZE,
+        transactions.length
+      );
+      setTransactions((prev) => [...prev, ...next]);
+      setHasMoreTransactions(next.length === TRANSACTIONS_PAGE_SIZE);
+    } catch {
+      // Silencieux : le bouton "Charger plus" reste disponible pour réessayer.
+    } finally {
+      setLoadingMoreTransactions(false);
+    }
+  }
 
   const bannerUrl = equipped.find((c) => c.slot === 'banner')?.image_url ?? null;
   const frameUrl = equipped.find((c) => c.slot === 'avatar_frame')?.image_url ?? null;
@@ -70,6 +163,17 @@ export default function PlayerStats() {
                 </div>
               </div>
             </div>
+
+            {reactions && (
+              <div className="mb-6">
+                <ProfileReactions
+                  likeCount={reactions.likeCount}
+                  dislikeCount={reactions.dislikeCount}
+                  userReaction={reactions.userReaction}
+                  onReact={isOwnProfile ? undefined : handleReact}
+                />
+              </div>
+            )}
 
             <dl className="grid grid-cols-2 gap-4 mb-6">
               <div className="bg-emerald-500/10 rounded-lg p-4">
@@ -127,6 +231,67 @@ export default function PlayerStats() {
                         })}
                     </tbody>
                   </table>
+                </div>
+              )}
+            </div>
+
+            <div className="bg-zinc-900 border border-zinc-800 rounded-xl shadow-md overflow-hidden mt-6">
+              <div className="px-4 py-3 border-b border-zinc-800">
+                <h2 className="text-sm font-semibold text-zinc-300 uppercase">
+                  Historique des transactions
+                </h2>
+              </div>
+              {loadingTransactions ? (
+                <p className="p-6 text-center text-zinc-500">Chargement…</p>
+              ) : transactions.length === 0 ? (
+                <p className="p-6 text-center text-zinc-500">Aucune transaction pour le moment.</p>
+              ) : (
+                <div className="p-4">
+                  <ul className="space-y-2">
+                    {transactions.map((tx) => (
+                      <li
+                        key={tx.id}
+                        className={`flex items-center justify-between bg-zinc-800/60 rounded-lg px-3 py-2 text-sm ${
+                          tx.revoked_at ? 'opacity-50' : ''
+                        }`}
+                      >
+                        <div>
+                          <p className="text-zinc-200">{TRANSACTION_TYPE_LABELS[tx.type]}</p>
+                          <p className="text-xs text-zinc-500">
+                            {formatDate(tx.created_at)}
+                            {tx.note ? ` · ${tx.note}` : ''}
+                          </p>
+                          {tx.revoked_at && (
+                            <span className="inline-block mt-1 text-[10px] px-1.5 py-0.5 rounded bg-red-500/15 text-red-400">
+                              Révoquée
+                            </span>
+                          )}
+                        </div>
+                        <span
+                          className={`font-bold whitespace-nowrap ${
+                            tx.revoked_at
+                              ? 'line-through text-zinc-500'
+                              : tx.amount >= 0
+                                ? 'text-emerald-400'
+                                : 'text-red-400'
+                          }`}
+                        >
+                          {tx.amount >= 0 ? '+' : ''}
+                          {tx.amount}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                  {hasMoreTransactions && (
+                    <button
+                      type="button"
+                      onClick={handleLoadMoreTransactions}
+                      disabled={loadingMoreTransactions}
+                      className="mt-3 w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-sm font-medium py-2 rounded-md transition disabled:opacity-50"
+                    >
+                      {loadingMoreTransactions ? 'Chargement…' : 'Charger plus'}
+                    </button>
+                  )}
                 </div>
               )}
             </div>

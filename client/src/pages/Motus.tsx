@@ -52,6 +52,88 @@ function EmptyRow({ wordLength }: { wordLength: number }) {
   );
 }
 
+const KEY_STYLE: Record<MotusLetterState | 'unused', string> = {
+  correct: 'bg-emerald-500 text-zinc-950',
+  present: 'bg-amber-500 text-zinc-950',
+  absent: 'bg-zinc-900 text-zinc-600',
+  unused: 'bg-zinc-700 hover:bg-zinc-600 text-zinc-100',
+};
+
+const KEYBOARD_ROWS = ['AZERTYUIOP', 'QSDFGHJKLM', 'WXCVBN'];
+
+function letterStatuses(attempts: MotusAttempt[]): Record<string, MotusLetterState> {
+  const rank: Record<MotusLetterState, number> = { absent: 0, present: 1, correct: 2 };
+  const statuses: Record<string, MotusLetterState> = {};
+  for (const attempt of attempts) {
+    attempt.guess.split('').forEach((letter, i) => {
+      const state = attempt.result[i] as MotusLetterState;
+      const current = statuses[letter];
+      if (!current || rank[state] > rank[current]) {
+        statuses[letter] = state;
+      }
+    });
+  }
+  return statuses;
+}
+
+function Keyboard({
+  attempts,
+  onKey,
+  onEnter,
+  onBackspace,
+  disabled,
+}: {
+  attempts: MotusAttempt[];
+  onKey: (letter: string) => void;
+  onEnter: () => void;
+  onBackspace: () => void;
+  disabled: boolean;
+}) {
+  const statuses = letterStatuses(attempts);
+
+  return (
+    <div className="mt-4 space-y-1.5">
+      {KEYBOARD_ROWS.map((row, i) => (
+        <div key={i} className="flex justify-center gap-1">
+          {i === 2 && (
+            <button
+              type="button"
+              onClick={onEnter}
+              disabled={disabled}
+              className="flex-[1.5] rounded-md bg-zinc-700 hover:bg-zinc-600 disabled:opacity-40 disabled:cursor-not-allowed text-zinc-100 text-lg font-semibold py-3 transition"
+              aria-label="Valider"
+            >
+              ↵
+            </button>
+          )}
+          {row.split('').map((letter) => (
+            <button
+              key={letter}
+              type="button"
+              onClick={() => onKey(letter)}
+              disabled={disabled}
+              className={`flex-1 rounded-md text-sm font-bold uppercase py-3 transition disabled:opacity-40 disabled:cursor-not-allowed ${KEY_STYLE[statuses[letter] ?? 'unused']}`}
+            >
+              {letter}
+            </button>
+          ))}
+          {i === 2 && (
+            <button
+              type="button"
+              onClick={onBackspace}
+              disabled={disabled}
+              className="flex-[1.5] rounded-md bg-zinc-700 hover:bg-zinc-600 disabled:opacity-40 disabled:cursor-not-allowed text-zinc-100 text-sm font-semibold py-3 transition"
+              aria-label="Effacer"
+            >
+              ⌫
+            </button>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function Motus() {
   const { user, setUser } = useAuth();
   const confirm = useConfirm();
@@ -111,8 +193,7 @@ export default function Motus() {
     loadAdmin();
   }, [loadAdmin]);
 
-  async function handleGuess(e: FormEvent) {
-    e.preventDefault();
+  async function submitGuess() {
     if (!game || !guessInput.trim()) return;
     sound.unlockAudio();
     setSubmitting(true);
@@ -138,6 +219,20 @@ export default function Motus() {
     // panneau "Mot du jour" doit refléter le nouveau attemptCount (qui verrouille
     // l'édition dès la 1re tentative, la sienne y compris).
     await loadAdmin();
+  }
+
+  function handleGuess(e: FormEvent) {
+    e.preventDefault();
+    submitGuess();
+  }
+
+  function handleKeyPress(letter: string) {
+    if (!game) return;
+    setGuessInput((prev) => (prev.length < game.wordLength ? prev + letter : prev));
+  }
+
+  function handleBackspace() {
+    setGuessInput((prev) => prev.slice(0, -1));
   }
 
   async function handleAddWord(e: FormEvent) {
@@ -250,6 +345,16 @@ export default function Motus() {
                   {submitting ? '…' : 'Valider'}
                 </button>
               </form>
+            )}
+
+            {game.status === 'in_progress' && (
+              <Keyboard
+                attempts={attempts}
+                onKey={handleKeyPress}
+                onEnter={submitGuess}
+                onBackspace={handleBackspace}
+                disabled={submitting}
+              />
             )}
 
             {game.status === 'won' && (

@@ -1,5 +1,12 @@
 import { apiClient } from './client.js';
-import type { Cosmetic, CosmeticRarity, CosmeticSlot, EquippedCosmetic, MyCosmetics } from '../types.js';
+import type {
+  Cosmetic,
+  CosmeticColorAnimation,
+  CosmeticRarity,
+  CosmeticSlot,
+  EquippedCosmetic,
+  MyCosmetics,
+} from '../types.js';
 
 export const getCatalog = () => apiClient.get<Cosmetic[]>('/api/cosmetics/catalog');
 
@@ -24,6 +31,8 @@ export const createCosmetic = (input: {
   description?: string;
   imageUrl?: string;
   colorValue?: string;
+  colorAnimation?: CosmeticColorAnimation;
+  colorSecondary?: string;
   fontFamily?: string;
   rarity?: CosmeticRarity;
 }) => apiClient.post<Cosmetic>('/api/cosmetics', input);
@@ -35,6 +44,8 @@ export const updateCosmetic = (
     description: string | null;
     imageUrl: string | null;
     colorValue: string | null;
+    colorAnimation: CosmeticColorAnimation | null;
+    colorSecondary: string | null;
     fontFamily: string | null;
     rarity: CosmeticRarity;
   }>

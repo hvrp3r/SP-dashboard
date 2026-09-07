@@ -11,9 +11,17 @@ import Avatar from '../components/Avatar.jsx';
 import RankBadge from '../components/RankBadge.jsx';
 import UserNameTag from '../components/UserNameTag.jsx';
 import ProfileBackdrop from '../components/ProfileBackdrop.jsx';
-import type { EquippedCosmetic, GamblingInventoryEntry, SpTransaction, Subscription } from '../types.js';
+import ProfileReactions from '../components/ProfileReactions.jsx';
+import type {
+  EquippedCosmetic,
+  GamblingInventoryEntry,
+  ProfileReactionSummary,
+  SpTransaction,
+  Subscription,
+} from '../types.js';
 
 const TRANSACTIONS_POLL_INTERVAL_MS = 10000;
+const TRANSACTIONS_PAGE_SIZE = 20;
 const KOFI_URL = import.meta.env.VITE_KOFI_URL as string | undefined;
 
 function formatDate(iso: string): string {
@@ -25,11 +33,15 @@ export default function Profile() {
   const navigate = useNavigate();
   const [transactions, setTransactions] = useState<SpTransaction[]>([]);
   const [loadingTransactions, setLoadingTransactions] = useState(true);
+  const [loadingMoreTransactions, setLoadingMoreTransactions] = useState(false);
+  const [hasMoreTransactions, setHasMoreTransactions] = useState(true);
+  const loadedMoreRef = useRef(false);
   const [inventory, setInventory] = useState<GamblingInventoryEntry[]>([]);
   const [subscription, setSubscription] = useState<Subscription | null>(null);
   const [equipped, setEquipped] = useState<EquippedCosmetic[]>([]);
   const [codeCopied, setCodeCopied] = useState(false);
   const [rank, setRank] = useState<number | null | undefined>(undefined);
+  const [reactions, setReactions] = useState<ProfileReactionSummary | null>(null);
   const [uploading, setUploading] = useState(false);
   const [avatarError, setAvatarError] = useState<string | null>(null);
   const [togglingVisibility, setTogglingVisibility] = useState(false);
@@ -37,19 +49,44 @@ export default function Profile() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    function loadTransactions() {
+    function loadFirstPage() {
       return transactionsApi
-        .getMyTransactions(10)
-        .then(setTransactions)
+        .getMyTransactions(TRANSACTIONS_PAGE_SIZE, 0)
+        .then((freshFirstPage) => {
+          setTransactions((prev) => {
+            const freshIds = new Set(freshFirstPage.map((t) => t.id));
+            const older = prev.filter((t) => !freshIds.has(t.id));
+            return [...freshFirstPage, ...older];
+          });
+          // Tant que le joueur n'a pas cliqué "Charger plus", le poll seul détermine
+          // s'il reste des transactions plus anciennes à proposer.
+          if (!loadedMoreRef.current) {
+            setHasMoreTransactions(freshFirstPage.length === TRANSACTIONS_PAGE_SIZE);
+          }
+        })
         .catch(() => {
           // Silencieux en arrière-plan : la liste garde ses dernières valeurs connues.
         })
         .finally(() => setLoadingTransactions(false));
     }
-    loadTransactions();
-    const interval = setInterval(loadTransactions, TRANSACTIONS_POLL_INTERVAL_MS);
+    loadFirstPage();
+    const interval = setInterval(loadFirstPage, TRANSACTIONS_POLL_INTERVAL_MS);
     return () => clearInterval(interval);
   }, []);
+
+  async function handleLoadMoreTransactions() {
+    setLoadingMoreTransactions(true);
+    loadedMoreRef.current = true;
+    try {
+      const next = await transactionsApi.getMyTransactions(TRANSACTIONS_PAGE_SIZE, transactions.length);
+      setTransactions((prev) => [...prev, ...next]);
+      setHasMoreTransactions(next.length === TRANSACTIONS_PAGE_SIZE);
+    } catch {
+      // Silencieux : le bouton "Charger plus" reste disponible pour réessayer.
+    } finally {
+      setLoadingMoreTransactions(false);
+    }
+  }
 
   useEffect(() => {
     gamblingApi.getMyInventory().then(setInventory).catch(() => {});
@@ -82,6 +119,14 @@ export default function Profile() {
     usersApi
       .getStats(user.username)
       .then((s) => setRank(s.rank))
+      .catch(() => {});
+  }, [user?.username]);
+
+  useEffect(() => {
+    if (!user) return;
+    usersApi
+      .getProfileReactions(user.username)
+      .then(setReactions)
       .catch(() => {});
   }, [user?.username]);
 
@@ -163,7 +208,16 @@ export default function Profile() {
               {rank !== undefined && <RankBadge rank={rank} size="sm" />}
             </div>
             <p className="text-sm text-zinc-400">{user.email}</p>
-            <div className="flex items-center gap-3">
+            {reactions && (
+              <div className="mt-2">
+                <ProfileReactions
+                  likeCount={reactions.likeCount}
+                  dislikeCount={reactions.dislikeCount}
+                  userReaction={reactions.userReaction}
+                />
+              </div>
+            )}
+            <div className="flex items-center gap-3 mt-2">
               <Link
                 to={`/joueurs/${user.username}`}
                 className="text-xs text-emerald-400 font-medium hover:underline"
@@ -294,32 +348,60 @@ export default function Profile() {
 
         <div>
           <h2 className="text-sm font-semibold text-zinc-300 uppercase mb-3">
-            Transactions récentes
+            Historique des transactions
           </h2>
           {loadingTransactions ? (
             <p className="text-sm text-zinc-500">Chargement…</p>
           ) : transactions.length === 0 ? (
             <p className="text-sm text-zinc-500">Aucune transaction pour le moment.</p>
           ) : (
-            <ul className="space-y-2">
-              {transactions.map((tx) => (
-                <li
-                  key={tx.id}
-                  className="flex items-center justify-between bg-zinc-800/60 rounded-lg px-3 py-2 text-sm"
-                >
-                  <div>
-                    <p className="text-zinc-200">{TRANSACTION_TYPE_LABELS[tx.type]}</p>
-                    {tx.note && <p className="text-xs text-zinc-500">{tx.note}</p>}
-                  </div>
-                  <span
-                    className={`font-bold ${tx.amount >= 0 ? 'text-emerald-400' : 'text-red-400'}`}
+            <>
+              <ul className="space-y-2">
+                {transactions.map((tx) => (
+                  <li
+                    key={tx.id}
+                    className={`flex items-center justify-between bg-zinc-800/60 rounded-lg px-3 py-2 text-sm ${
+                      tx.revoked_at ? 'opacity-50' : ''
+                    }`}
                   >
-                    {tx.amount >= 0 ? '+' : ''}
-                    {tx.amount}
-                  </span>
-                </li>
-              ))}
-            </ul>
+                    <div>
+                      <p className="text-zinc-200">{TRANSACTION_TYPE_LABELS[tx.type]}</p>
+                      <p className="text-xs text-zinc-500">
+                        {formatDate(tx.created_at)}
+                        {tx.note ? ` · ${tx.note}` : ''}
+                      </p>
+                      {tx.revoked_at && (
+                        <span className="inline-block mt-1 text-[10px] px-1.5 py-0.5 rounded bg-red-500/15 text-red-400">
+                          Révoquée
+                        </span>
+                      )}
+                    </div>
+                    <span
+                      className={`font-bold whitespace-nowrap ${
+                        tx.revoked_at
+                          ? 'line-through text-zinc-500'
+                          : tx.amount >= 0
+                            ? 'text-emerald-400'
+                            : 'text-red-400'
+                      }`}
+                    >
+                      {tx.amount >= 0 ? '+' : ''}
+                      {tx.amount}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {hasMoreTransactions && (
+                <button
+                  type="button"
+                  onClick={handleLoadMoreTransactions}
+                  disabled={loadingMoreTransactions}
+                  className="mt-3 w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-sm font-medium py-2 rounded-md transition disabled:opacity-50"
+                >
+                  {loadingMoreTransactions ? 'Chargement…' : 'Charger plus'}
+                </button>
+              )}
+            </>
           )}
         </div>
 

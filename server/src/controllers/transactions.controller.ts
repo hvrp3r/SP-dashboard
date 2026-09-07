@@ -9,11 +9,20 @@ const VALID_TYPES: SpTransactionType[] = [
   'challenge_win',
   'challenge_loss',
   'minigame_reward',
+  'minigame_entry',
   'admin_grant',
   'admin_deduct',
+  'gambling_spend',
+  'gambling_win',
+  'gambling_refund',
+  'auction_bid_hold',
+  'auction_bid_refund',
+  'auction_sale',
+  'motus_reward',
+  'sudoku_reward',
 ];
 
-function parsePagination(req: Request): { limit: number; offset: number } {
+export function parsePagination(req: Request): { limit: number; offset: number } {
   const limitRaw = Number(req.query.limit);
   const offsetRaw = Number(req.query.offset);
   const limit = Number.isInteger(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 100) : 20;
