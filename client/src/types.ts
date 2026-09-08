@@ -148,8 +148,8 @@ export type SpTransactionType =
   | 'login_bonus'
   | 'challenge_win'
   | 'challenge_loss'
-  | 'minigame_reward'
-  | 'minigame_entry'
+  | 'event_reward'
+  | 'event_entry'
   | 'admin_grant'
   | 'admin_deduct'
   | 'gambling_spend'
@@ -241,19 +241,19 @@ export interface ChallengeQuota {
   countToday: number;
 }
 
-export type MinigameStatus = 'open' | 'closed' | 'cancelled';
+export type EventStatus = 'open' | 'closed' | 'cancelled';
 
-export const MINIGAME_GAME_TYPES = ['quiz', 'flappy_bird', 'speedrun'] as const;
-export type MinigameGameType = (typeof MINIGAME_GAME_TYPES)[number];
+export const EVENT_GAME_TYPES = ['quiz', 'flappy_bird', 'speedrun', 'tournament'] as const;
+export type EventGameType = (typeof EVENT_GAME_TYPES)[number];
 
-export interface MinigameSession {
+export interface EventSession {
   id: number;
   season_id: number | null;
   game_type: string;
   title: string | null;
   description: string | null;
   entry_fee: number | null;
-  status: MinigameStatus;
+  status: EventStatus;
   created_by: number | null;
   created_at: string;
   closed_at: string | null;
@@ -265,6 +265,10 @@ export interface MinigameSession {
   cancelled_by: number | null;
   game_image_url: string | null;
   game_external_url: string | null;
+  // Spécifique au game_type 'tournament' — null pour les autres types
+  tournament_format: string | null;
+  tournament_max_teams: number | null;
+  tournament_team_size: number | null;
 }
 
 export interface FlappyBirdAttempt {
@@ -318,7 +322,7 @@ export interface SpeedrunLeaderboardEntry {
   equipped_cosmetics: EquippedCosmetic[];
 }
 
-export interface MinigameParticipant {
+export interface EventParticipant {
   id: number;
   session_id: number;
   user_id: number;
@@ -326,14 +330,83 @@ export interface MinigameParticipant {
   awarded_by: number | null;
   awarded_at: string | null;
   joined_at: string;
+  // Rating de pondération (game_type 'tournament' uniquement) — null = fallback
+  // sur le solde SP au moment de la génération des équipes
+  rating: number | null;
   username: string;
   avatar_url: string | null;
   equipped_cosmetics: EquippedCosmetic[];
 }
 
-export type MinigameQuestionStatus = 'active' | 'closed';
+// ---------------------------------------------------------------------------
+// Tournois (game_type 'tournament')
+// ---------------------------------------------------------------------------
 
-export interface MinigameAnswerView {
+export const TOURNAMENT_FORMATS = ['single_elim', 'double_elim', 'round_robin'] as const;
+export type TournamentFormat = (typeof TOURNAMENT_FORMATS)[number];
+
+export interface TournamentTeamMember {
+  user_id: number;
+  username: string;
+  avatar_url: string | null;
+}
+
+export interface TournamentTeam {
+  id: number;
+  session_id: number;
+  tag: string;
+  logo_url: string | null;
+  created_at: string;
+  members: TournamentTeamMember[];
+}
+
+export interface TournamentMatchTeam {
+  id: number;
+  tag: string;
+  logo_url: string | null;
+}
+
+export interface TournamentMatch {
+  id: number;
+  session_id: number;
+  bracket: 'main' | 'winners' | 'losers' | 'grand_final' | 'grand_final_reset';
+  round: number;
+  position: number;
+  team_a: TournamentMatchTeam | null;
+  team_b: TournamentMatchTeam | null;
+  winner_team_id: number | null;
+  created_at: string;
+  resolved_at: string | null;
+}
+
+export interface TournamentAnnouncement {
+  id: number;
+  session_id: number;
+  author_id: number;
+  body: string;
+  created_at: string;
+  author_username: string;
+}
+
+export interface TournamentStandings {
+  team_id: number;
+  tag: string;
+  logo_url: string | null;
+  wins: number;
+  losses: number;
+  rank: number | null;
+}
+
+export interface TournamentState {
+  bracketGenerated: boolean;
+  finished: boolean;
+  championTeamId: number | null;
+  standings: TournamentStandings[];
+}
+
+export type EventQuestionStatus = 'active' | 'closed';
+
+export interface EventAnswerView {
   user_id: number;
   username: string;
   avatar_url: string | null;
@@ -346,11 +419,11 @@ export interface MinigameAnswerView {
   marked_correct?: boolean | null;
 }
 
-export interface MinigameQuestionView {
+export interface EventQuestionView {
   id: number;
   session_id: number;
   prompt: string;
-  status: MinigameQuestionStatus;
+  status: EventQuestionStatus;
   created_at: string;
   activated_at: string | null;
   closed_at: string | null;
@@ -359,13 +432,13 @@ export interface MinigameQuestionView {
   // Masquée (absente) tant que la question n'est pas révélée pour un joueur
   // non-admin ; `null` reste possible si le MSP n'a saisi aucune réponse.
   correct_answer?: string | null;
-  answers: MinigameAnswerView[];
+  answers: EventAnswerView[];
 }
 
-export interface MinigameSessionDetail extends MinigameSession {
+export interface EventSessionDetail extends EventSession {
   // Branche quiz
-  participants?: MinigameParticipant[];
-  currentQuestion?: MinigameQuestionView | null;
+  participants?: EventParticipant[];
+  currentQuestion?: EventQuestionView | null;
   // Branche flappy_bird
   leaderboard?: FlappyBirdLeaderboardEntry[];
   myBest?: FlappyBirdLeaderboardEntry | null;
@@ -374,6 +447,11 @@ export interface MinigameSessionDetail extends MinigameSession {
   speedrunLeaderboard?: SpeedrunLeaderboardEntry[];
   mySpeedrunBest?: SpeedrunLeaderboardEntry | null;
   speedrunAttempts?: SpeedrunAttempt[];
+  // Branche tournament
+  teams?: TournamentTeam[];
+  matches?: TournamentMatch[];
+  announcements?: TournamentAnnouncement[];
+  tournament?: TournamentState;
 }
 
 export type NotificationType =
@@ -383,12 +461,13 @@ export type NotificationType =
   | 'challenge_resolved'
   | 'challenge_cancelled'
   | 'challenge_expired'
-  | 'minigame_open'
+  | 'event_open'
   | 'cosmetic_earned'
   | 'sp_gained'
   | 'sp_lost'
   | 'suggestion_comment'
-  | 'suggestion_closed';
+  | 'suggestion_closed'
+  | 'tournament_announcement';
 
 export interface AppNotification {
   id: number;
@@ -717,7 +796,7 @@ export interface GamblingSpectatorEntry {
   equipped_cosmetics: EquippedCosmetic[];
 }
 
-export type ChatRoom = 'global' | 'crates' | 'blackjack' | 'crash' | 'tower' | 'minigame';
+export type ChatRoom = 'global' | 'crates' | 'blackjack' | 'crash' | 'tower' | 'event';
 
 export interface ChatMessage {
   id: number;

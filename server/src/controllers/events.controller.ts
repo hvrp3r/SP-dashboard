@@ -1,30 +1,33 @@
 import type { Request, Response } from 'express';
-import * as minigameService from '../services/minigame.service.js';
+import * as eventService from '../services/event.service.js';
 import * as seasonService from '../services/season.service.js';
 import * as userService from '../services/user.service.js';
 import * as notificationService from '../services/notification.service.js';
 import * as discordService from '../services/discord.service.js';
 import { buildFlappyBirdDetail } from './flappybird.controller.js';
 import { buildSpeedrunDetail } from './speedrun.controller.js';
+import { buildTournamentDetail } from './tournaments.controller.js';
 import { isValidHttpUrl } from '../utils/url.js';
 import {
-  MINIGAME_GAME_TYPES,
+  EVENT_GAME_TYPES,
+  TOURNAMENT_FORMATS,
   type AuthenticatedUser,
-  type MinigameAnswerView,
-  type MinigameParticipantEntry,
-  type MinigameQuestionRow,
-  type MinigameQuestionView,
-  type MinigameStatus,
+  type EventAnswerView,
+  type EventParticipantEntry,
+  type EventQuestionRow,
+  type EventQuestionView,
+  type EventStatus,
+  type TournamentFormat,
 } from '../types.js';
 
-const VALID_STATUSES: MinigameStatus[] = ['open', 'closed', 'cancelled'];
+const VALID_STATUSES: EventStatus[] = ['open', 'closed', 'cancelled'];
 
 async function buildQuestionView(
-  question: MinigameQuestionRow,
-  participants: MinigameParticipantEntry[],
+  question: EventQuestionRow,
+  participants: EventParticipantEntry[],
   viewer: AuthenticatedUser
-): Promise<MinigameQuestionView> {
-  const answers = await minigameService.getAnswers(question.id);
+): Promise<EventQuestionView> {
+  const answers = await eventService.getAnswers(question.id);
   const participantById = new Map(participants.map((p) => [p.user_id, p]));
   const activatedAtMs = new Date(question.activated_at ?? question.created_at).getTime();
 
@@ -35,11 +38,11 @@ async function buildQuestionView(
     participants.length > 0 && participants.every((p) => answers.some((a) => a.user_id === p.user_id));
   const revealed = question.status === 'closed' || allAnswered;
 
-  const answerViews: MinigameAnswerView[] = answers.map((a) => {
+  const answerViews: EventAnswerView[] = answers.map((a) => {
     const submittedAtMs = new Date(a.submitted_at).getTime();
     const secondsToAnswer = Math.max(0, Math.round((submittedAtMs - activatedAtMs) / 1000));
     const participant = participantById.get(a.user_id);
-    const view: MinigameAnswerView = {
+    const view: EventAnswerView = {
       user_id: a.user_id,
       username: participant?.username ?? '',
       avatar_url: participant?.avatar_url ?? null,
@@ -62,7 +65,7 @@ async function buildQuestionView(
 }
 
 async function buildSessionDetail(sessionId: number, viewer: AuthenticatedUser) {
-  const session = await minigameService.getSessionById(sessionId);
+  const session = await eventService.getSessionById(sessionId);
   if (!session) return null;
 
   if (session.game_type === 'flappy_bird') {
@@ -71,10 +74,13 @@ async function buildSessionDetail(sessionId: number, viewer: AuthenticatedUser) 
   if (session.game_type === 'speedrun') {
     return buildSpeedrunDetail(sessionId, viewer.id, viewer.role === 'admin');
   }
+  if (session.game_type === 'tournament') {
+    return buildTournamentDetail(sessionId);
+  }
 
-  await minigameService.expireQuestionIfNeeded(sessionId);
-  const participants = await minigameService.getSessionParticipants(sessionId);
-  const latestQuestion = await minigameService.getLatestQuestion(sessionId);
+  await eventService.expireQuestionIfNeeded(sessionId);
+  const participants = await eventService.getSessionParticipants(sessionId);
+  const latestQuestion = await eventService.getLatestQuestion(sessionId);
 
   const currentQuestion = latestQuestion
     ? await buildQuestionView(latestQuestion, participants, viewer)
@@ -94,6 +100,9 @@ interface CreateSessionBody {
   reward3rd?: number;
   gameImageUrl?: string;
   gameExternalUrl?: string;
+  tournamentFormat?: string;
+  tournamentMaxTeams?: number;
+  tournamentTeamSize?: number;
 }
 
 export async function createSession(
@@ -105,8 +114,8 @@ export async function createSession(
   const description = req.body?.description?.trim();
   const entryFeeRaw = req.body?.entryFee;
 
-  if (!gameType || !(MINIGAME_GAME_TYPES as readonly string[]).includes(gameType)) {
-    res.status(400).json({ error: 'Type de mini-jeu invalide' });
+  if (!gameType || !(EVENT_GAME_TYPES as readonly string[]).includes(gameType)) {
+    res.status(400).json({ error: 'Type d’événement invalide' });
     return;
   }
   if (!title) {
@@ -181,9 +190,58 @@ export async function createSession(
     }
   }
 
+  // Paramètres requis du tournoi : format, nombre d'équipes et taille d'équipe.
+  // La dotation (reward_1st/2nd/3rd = SP par membre) est obligatoire mais peut
+  // être à 0 — les récompenses se font alors uniquement via ajustements libres.
+  let tournamentFormat: string | null = null;
+  let tournamentMaxTeams: number | null = null;
+  let tournamentTeamSize: number | null = null;
+  let tournamentRewards: { reward1st: number; reward2nd: number; reward3rd: number } | null = null;
+  if (gameType === 'tournament') {
+    const rawFormat = req.body?.tournamentFormat;
+    if (!rawFormat || !(TOURNAMENT_FORMATS as readonly string[]).includes(rawFormat)) {
+      res.status(400).json({ error: 'Format de tournoi invalide' });
+      return;
+    }
+    const maxTeams = req.body?.tournamentMaxTeams;
+    const teamSize = req.body?.tournamentTeamSize;
+    if (!Number.isInteger(maxTeams) || (maxTeams as number) < 2 || (maxTeams as number) > 64) {
+      res.status(400).json({ error: 'Le nombre d’équipes doit être un entier entre 2 et 64' });
+      return;
+    }
+    if (!Number.isInteger(teamSize) || (teamSize as number) < 1 || (teamSize as number) > 16) {
+      res.status(400).json({ error: 'La taille d’équipe doit être un entier entre 1 et 16' });
+      return;
+    }
+    const t1 = req.body?.reward1st;
+    const t2 = req.body?.reward2nd;
+    const t3 = req.body?.reward3rd;
+    if (
+      !Number.isInteger(t1) ||
+      !Number.isInteger(t2) ||
+      !Number.isInteger(t3) ||
+      (t1 as number) < 0 ||
+      (t2 as number) < 0 ||
+      (t3 as number) < 0
+    ) {
+      res.status(400).json({
+        error: 'La dotation (3 rangs) doit être des entiers positifs ou nuls',
+      });
+      return;
+    }
+    tournamentFormat = rawFormat as TournamentFormat;
+    tournamentMaxTeams = maxTeams as number;
+    tournamentTeamSize = teamSize as number;
+    tournamentRewards = {
+      reward1st: t1 as number,
+      reward2nd: t2 as number,
+      reward3rd: t3 as number,
+    };
+  }
+
   const activeSeason = await seasonService.getActiveSeason();
 
-  const session = await minigameService.createSession({
+  const session = await eventService.createSession({
     seasonId: activeSeason?.id ?? null,
     gameType,
     title,
@@ -191,21 +249,26 @@ export async function createSession(
     entryFee,
     createdBy: req.user!.id,
     endsAt,
-    reward1st,
-    reward2nd,
-    reward3rd,
+    reward1st: tournamentRewards?.reward1st ?? reward1st,
+    reward2nd: tournamentRewards?.reward2nd ?? reward2nd,
+    reward3rd: tournamentRewards?.reward3rd ?? reward3rd,
     gameImageUrl,
     gameExternalUrl,
+    tournamentFormat,
+    tournamentMaxTeams,
+    tournamentTeamSize,
   });
 
   const recipientIds = await userService.listAllIds(req.user!.id);
+  const openMessage =
+    gameType === 'tournament' ? `Nouveau tournoi : ${title}` : `Nouvel événement : ${title}`;
   await notificationService.createNotificationsForUsers(
     recipientIds,
-    'minigame_open',
-    `Nouveau mini-jeu : ${title}`,
-    `/mini-jeux/${session.id}`
+    'event_open',
+    openMessage,
+    `/evenements/${session.id}`
   );
-  await discordService.sendMinigameLaunchedAlert({
+  await discordService.sendEventLaunchedAlert({
     id: session.id,
     title,
     gameType,
@@ -217,11 +280,11 @@ export async function createSession(
 
 export async function listSessions(req: Request, res: Response): Promise<void> {
   const statusParam = req.query.status as string | undefined;
-  if (statusParam && !VALID_STATUSES.includes(statusParam as MinigameStatus)) {
+  if (statusParam && !VALID_STATUSES.includes(statusParam as EventStatus)) {
     res.status(400).json({ error: 'Statut invalide' });
     return;
   }
-  const sessions = await minigameService.listSessions(statusParam as MinigameStatus | undefined);
+  const sessions = await eventService.listSessions(statusParam as EventStatus | undefined);
   res.json(sessions);
 }
 
@@ -246,15 +309,15 @@ export async function listQuestions(req: Request<{ id: string }>, res: Response)
     return;
   }
 
-  const session = await minigameService.getSessionById(sessionId);
+  const session = await eventService.getSessionById(sessionId);
   if (!session) {
     res.status(404).json({ error: 'Session introuvable' });
     return;
   }
 
-  await minigameService.expireQuestionIfNeeded(sessionId);
-  const participants = await minigameService.getSessionParticipants(sessionId);
-  const questions = await minigameService.listQuestions(sessionId);
+  await eventService.expireQuestionIfNeeded(sessionId);
+  const participants = await eventService.getSessionParticipants(sessionId);
+  const questions = await eventService.listQuestions(sessionId);
   const views = await Promise.all(
     questions.map((q) => buildQuestionView(q, participants, req.user!))
   );
@@ -269,7 +332,7 @@ export async function joinSession(req: Request<{ id: string }>, res: Response): 
     return;
   }
 
-  const session = await minigameService.getSessionById(sessionId);
+  const session = await eventService.getSessionById(sessionId);
   if (!session) {
     res.status(404).json({ error: 'Session introuvable' });
     return;
@@ -278,9 +341,17 @@ export async function joinSession(req: Request<{ id: string }>, res: Response): 
     res.status(400).json({ error: 'Cette session est clôturée' });
     return;
   }
+  if (session.game_type === 'tournament') {
+    const capacity = (session.tournament_max_teams ?? 0) * (session.tournament_team_size ?? 0);
+    const count = await eventService.countSessionParticipants(sessionId);
+    if (capacity > 0 && count >= capacity) {
+      res.status(400).json({ error: 'Ce tournoi est complet' });
+      return;
+    }
+  }
 
   try {
-    await minigameService.joinSession(sessionId, req.user!.id);
+    await eventService.joinSession(sessionId, req.user!.id);
   } catch (err) {
     const status = (err as { status?: number }).status ?? 500;
     res.status(status).json({ error: err instanceof Error ? err.message : 'Erreur serveur' });
@@ -310,7 +381,7 @@ export async function addParticipant(
     return;
   }
 
-  const session = await minigameService.getSessionById(sessionId);
+  const session = await eventService.getSessionById(sessionId);
   if (!session) {
     res.status(404).json({ error: 'Session introuvable' });
     return;
@@ -327,7 +398,7 @@ export async function addParticipant(
   }
 
   try {
-    await minigameService.addParticipant(sessionId, userId as number);
+    await eventService.addParticipant(sessionId, userId as number);
   } catch (err) {
     const status = (err as { status?: number }).status ?? 500;
     res.status(status).json({ error: err instanceof Error ? err.message : 'Erreur serveur' });
@@ -349,7 +420,7 @@ export async function removeParticipant(
     return;
   }
 
-  const participant = await minigameService.getParticipantById(participantId);
+  const participant = await eventService.getParticipantById(participantId);
   if (!participant || participant.session_id !== sessionId) {
     res.status(404).json({ error: 'Participant introuvable' });
     return;
@@ -359,7 +430,7 @@ export async function removeParticipant(
     return;
   }
 
-  await minigameService.removeParticipant(participantId);
+  await eventService.removeParticipant(participantId);
   const detail = await buildSessionDetail(sessionId, req.user!);
   res.json(detail);
 }
@@ -409,7 +480,7 @@ export async function askQuestion(
   }
   const correctAnswer = correctAnswerRaw || null;
 
-  const session = await minigameService.getSessionById(sessionId);
+  const session = await eventService.getSessionById(sessionId);
   if (!session) {
     res.status(404).json({ error: 'Session introuvable' });
     return;
@@ -419,7 +490,7 @@ export async function askQuestion(
     return;
   }
 
-  await minigameService.askQuestion(sessionId, prompt, durationSeconds, correctAnswer);
+  await eventService.askQuestion(sessionId, prompt, durationSeconds, correctAnswer);
   const detail = await buildSessionDetail(sessionId, req.user!);
   res.status(201).json(detail);
 }
@@ -435,7 +506,7 @@ export async function closeQuestion(
     return;
   }
 
-  const question = await minigameService.getQuestionById(questionId);
+  const question = await eventService.getQuestionById(questionId);
   if (!question || question.session_id !== sessionId) {
     res.status(404).json({ error: 'Question introuvable' });
     return;
@@ -445,7 +516,7 @@ export async function closeQuestion(
     return;
   }
 
-  await minigameService.closeQuestion(questionId);
+  await eventService.closeQuestion(questionId);
   const detail = await buildSessionDetail(sessionId, req.user!);
   res.json(detail);
 }
@@ -471,8 +542,8 @@ export async function submitAnswer(
     return;
   }
 
-  await minigameService.expireQuestionIfNeeded(sessionId);
-  const question = await minigameService.getQuestionById(questionId);
+  await eventService.expireQuestionIfNeeded(sessionId);
+  const question = await eventService.getQuestionById(questionId);
   if (!question || question.session_id !== sessionId) {
     res.status(404).json({ error: 'Question introuvable' });
     return;
@@ -482,14 +553,14 @@ export async function submitAnswer(
     return;
   }
 
-  const participant = await minigameService.getParticipantByUser(sessionId, req.user!.id);
+  const participant = await eventService.getParticipantByUser(sessionId, req.user!.id);
   if (!participant) {
     res.status(403).json({ error: 'Tu dois rejoindre la session pour répondre' });
     return;
   }
 
   try {
-    await minigameService.submitAnswer(questionId, req.user!.id, answerText);
+    await eventService.submitAnswer(questionId, req.user!.id, answerText);
   } catch (err) {
     const status = (err as { status?: number }).status ?? 500;
     res.status(status).json({ error: err instanceof Error ? err.message : 'Erreur serveur' });
@@ -527,19 +598,19 @@ export async function gradeAnswer(
     return;
   }
 
-  const question = await minigameService.getQuestionById(questionId);
+  const question = await eventService.getQuestionById(questionId);
   if (!question || question.session_id !== sessionId) {
     res.status(404).json({ error: 'Question introuvable' });
     return;
   }
 
-  const answer = await minigameService.getAnswer(questionId, userId);
+  const answer = await eventService.getAnswer(questionId, userId);
   if (!answer) {
     res.status(404).json({ error: 'Réponse introuvable' });
     return;
   }
 
-  await minigameService.gradeAnswer(questionId, userId, correct ?? null);
+  await eventService.gradeAnswer(questionId, userId, correct ?? null);
   const detail = await buildSessionDetail(sessionId, req.user!);
   res.json(detail);
 }
@@ -579,7 +650,7 @@ export async function awardParticipants(
 
   let awarded;
   try {
-    awarded = await minigameService.awardParticipants(sessionId, awards, req.user!.id);
+    awarded = await eventService.awardParticipants(sessionId, awards, req.user!.id);
   } catch (err) {
     const status = (err as { status?: number }).status ?? 500;
     res.status(status).json({ error: err instanceof Error ? err.message : 'Erreur serveur' });
@@ -593,8 +664,8 @@ export async function awardParticipants(
       notificationService.createNotification({
         userId: a.userId,
         type: 'sp_gained',
-        message: `Tu as gagné +${a.amount} SP au mini-jeu ${detail?.title ?? ''}`.trim(),
-        link: `/mini-jeux/${sessionId}`,
+        message: `Tu as gagné +${a.amount} SP à l'événement ${detail?.title ?? ''}`.trim(),
+        link: `/evenements/${sessionId}`,
       })
     )
   );
@@ -609,7 +680,7 @@ export async function closeSession(req: Request<{ id: string }>, res: Response):
     return;
   }
 
-  const session = await minigameService.getSessionById(sessionId);
+  const session = await eventService.getSessionById(sessionId);
   if (!session) {
     res.status(404).json({ error: 'Session introuvable' });
     return;
@@ -619,7 +690,7 @@ export async function closeSession(req: Request<{ id: string }>, res: Response):
     return;
   }
 
-  await minigameService.closeSession(sessionId);
+  await eventService.closeSession(sessionId);
   const detail = await buildSessionDetail(sessionId, req.user!);
   res.json(detail);
 }

@@ -162,7 +162,7 @@ function JeuxMenu({ games }: { games: GamblingGameInfo[] }) {
   const isJeuxRouteActive =
     location.pathname.startsWith('/motus') ||
     location.pathname.startsWith('/sudoku') ||
-    location.pathname.startsWith('/mini-jeux') ||
+    location.pathname.startsWith('/evenements') ||
     location.pathname.startsWith('/gambling');
 
   useEffect(() => {
@@ -199,8 +199,8 @@ function JeuxMenu({ games }: { games: GamblingGameInfo[] }) {
           className="absolute left-0 mt-2 w-48 bg-zinc-900 border border-zinc-800 rounded-xl shadow-lg shadow-black/30 z-50 overflow-hidden origin-top-left py-1"
           style={{ animation: 'fadeSlideIn 0.18s ease-out' }}
         >
-          <NavLink to="/mini-jeux" className={dropdownLinkClass}>
-            <span>🧠</span> Mini-jeux
+          <NavLink to="/evenements" className={dropdownLinkClass}>
+            <span>🧠</span> Événements
           </NavLink>
 
           <div className="my-1 border-t border-zinc-800" />
@@ -368,8 +368,8 @@ export default function NavBar() {
             </NavLink>
           ))}
 
-          <NavLink to="/mini-jeux" className={mobileLinkClass}>
-            🧠 Mini-jeux
+          <NavLink to="/evenements" className={mobileLinkClass}>
+            🧠 événements
           </NavLink>
 
           <p className="px-3 pt-3 pb-1 text-[10px] font-semibold text-zinc-500 uppercase tracking-wide">

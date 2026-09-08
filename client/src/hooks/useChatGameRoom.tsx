@@ -37,10 +37,10 @@ export function useChatGameRoom(): ChatGameRoom | null {
 
 /**
  * À appeler depuis une page de jeu (Crash, Tower, Blackjack, caisse, session de
- * mini-jeu…) pour annoncer son salon de discussion au ChatDock global — celui-ci
+ * événement…) pour annoncer son salon de discussion au ChatDock global — celui-ci
  * est monté une seule fois dans App et n'a sinon aucun moyen de savoir sur quelle
  * page de jeu on se trouve. Passer `null` tant que la page n'a rien à annoncer
- * (ex : session de mini-jeu pas encore chargée). Désinscrit automatiquement au
+ * (ex : session d'événement pas encore chargée). Désinscrit automatiquement au
  * démontage (changement de page).
  */
 export function useAnnounceChatRoom(room: ChatGameRoom | null): void {

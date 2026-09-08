@@ -1,12 +1,12 @@
 import type { Request, Response } from 'express';
 import * as chatService from '../services/chat.service.js';
-import * as minigameService from '../services/minigame.service.js';
+import * as eventService from '../services/event.service.js';
 import type { ChatRoom } from '../types.js';
 
-const VALID_ROOMS: ChatRoom[] = ['global', 'crates', 'blackjack', 'crash', 'tower', 'minigame'];
+const VALID_ROOMS: ChatRoom[] = ['global', 'crates', 'blackjack', 'crash', 'tower', 'event'];
 const MAX_MESSAGE_LENGTH = 500;
 
-/** roomKey n'a de sens que pour la room 'minigame' (id de la session) — les autres
+/** roomKey n'a de sens que pour la room 'event' (id de la session) — les autres
  * salons (global + jeux casino singleton) sont partagés par tous les joueurs, même
  * logique que parseSpectatorRoom dans gambling.controller.ts. */
 async function parseRoom(
@@ -15,11 +15,11 @@ async function parseRoom(
 ): Promise<{ room: ChatRoom; roomKey: string } | null> {
   if (typeof roomRaw !== 'string' || !VALID_ROOMS.includes(roomRaw as ChatRoom)) return null;
   const room = roomRaw as ChatRoom;
-  if (room !== 'minigame') return { room, roomKey: '' };
+  if (room !== 'event') return { room, roomKey: '' };
 
   const roomKey = typeof roomKeyRaw === 'string' ? roomKeyRaw.slice(0, 50) : '';
   if (!roomKey || !/^\d+$/.test(roomKey)) return null;
-  const session = await minigameService.getSessionById(Number(roomKey));
+  const session = await eventService.getSessionById(Number(roomKey));
   if (!session) return null;
   return { room, roomKey };
 }

@@ -61,7 +61,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // Rafraîchit régulièrement le profil (solde SP, streak...) pour que les gains/pertes
-  // survenus ailleurs (défi, mini-jeu, ajustement MSP) se reflètent sans rechargement.
+  // survenus ailleurs (défi, événement, ajustement MSP) se reflètent sans rechargement.
   useEffect(() => {
     if (!user) return;
     const interval = setInterval(async () => {

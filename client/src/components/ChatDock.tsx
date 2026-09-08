@@ -17,7 +17,7 @@ function formatTime(iso: string): string {
 /**
  * Chat en direct : un salon 'Global' toujours présent + un second onglet pour le
  * salon du jeu courant, annoncé par la page visitée via useAnnounceChatRoom (voir
- * useChatGameRoom.tsx) — Crash/Tower/Blackjack/caisse/session de mini-jeu.
+ * useChatGameRoom.tsx) — Crash/Tower/Blackjack/caisse/session d'événement.
  * Sur très grand écran (2xl+, ≥1536px) : carte arrondie en pur survol, `position:
  * fixed` — ChatDock n'est jamais un élément de mise en page (pas de colonne grid/flex
  * qui contraindrait la largeur des pages, ce qui coupait les fonds plein cadre comme

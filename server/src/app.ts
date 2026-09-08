@@ -8,7 +8,7 @@ import leaderboardRoutes from './routes/leaderboard.routes.js';
 import configRoutes from './routes/config.routes.js';
 import transactionsRoutes from './routes/transactions.routes.js';
 import challengesRoutes from './routes/challenges.routes.js';
-import minigamesRoutes from './routes/minigames.routes.js';
+import eventsRoutes from './routes/events.routes.js';
 import gamblingRoutes from './routes/gambling.routes.js';
 import gamblingBattlesRoutes from './routes/gamblingBattles.routes.js';
 import blackjackRoutes from './routes/blackjack.routes.js';
@@ -51,7 +51,7 @@ export function createApp(): Express {
   app.use('/api/config', configRoutes);
   app.use('/api/transactions', transactionsRoutes);
   app.use('/api/challenges', challengesRoutes);
-  app.use('/api/minigames', minigamesRoutes);
+  app.use('/api/events', eventsRoutes);
   app.use('/api/gambling/battles', gamblingBattlesRoutes);
   app.use('/api/gambling', gamblingRoutes);
   app.use('/api/blackjack', blackjackRoutes);

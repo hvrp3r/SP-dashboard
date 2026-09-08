@@ -124,8 +124,8 @@ export type SpTransactionType =
   | 'login_bonus'
   | 'challenge_win'
   | 'challenge_loss'
-  | 'minigame_reward'
-  | 'minigame_entry'
+  | 'event_reward'
+  | 'event_entry'
   | 'admin_grant'
   | 'admin_deduct'
   | 'gambling_spend'
@@ -216,19 +216,19 @@ export interface ChallengeEntry extends ChallengeRow {
   participants: ChallengeParticipantEntry[];
 }
 
-export type MinigameStatus = 'open' | 'closed' | 'cancelled';
+export type EventStatus = 'open' | 'closed' | 'cancelled';
 
-export const MINIGAME_GAME_TYPES = ['quiz', 'flappy_bird', 'speedrun'] as const;
-export type MinigameGameType = (typeof MINIGAME_GAME_TYPES)[number];
+export const EVENT_GAME_TYPES = ['quiz', 'flappy_bird', 'speedrun', 'tournament'] as const;
+export type EventGameType = (typeof EVENT_GAME_TYPES)[number];
 
-export interface MinigameSessionRow {
+export interface EventSessionRow {
   id: number;
   season_id: number | null;
   game_type: string;
   title: string | null;
   description: string | null;
   entry_fee: number | null;
-  status: MinigameStatus;
+  status: EventStatus;
   created_by: number | null;
   created_at: string;
   closed_at: string | null;
@@ -240,9 +240,13 @@ export interface MinigameSessionRow {
   cancelled_by: number | null;
   game_image_url: string | null;
   game_external_url: string | null;
+  // Spécifique au game_type 'tournament' — NULL pour les autres types
+  tournament_format: string | null;
+  tournament_max_teams: number | null;
+  tournament_team_size: number | null;
 }
 
-export interface MinigameParticipantRow {
+export interface EventParticipantRow {
   id: number;
   session_id: number;
   user_id: number;
@@ -250,12 +254,96 @@ export interface MinigameParticipantRow {
   awarded_by: number | null;
   awarded_at: string | null;
   joined_at: string;
+  // Rating de pondération (game_type 'tournament' uniquement) — NULL = fallback
+  // sur le solde SP au moment de la génération des équipes
+  rating: number | null;
 }
 
-export interface MinigameParticipantEntry extends MinigameParticipantRow {
+export interface EventParticipantEntry extends EventParticipantRow {
   username: string;
   avatar_url: string | null;
   equipped_cosmetics: EquippedCosmetic[];
+}
+
+// ---------------------------------------------------------------------------
+// Tournois (game_type 'tournament') — équipes, matchs, annonces
+// ---------------------------------------------------------------------------
+
+export const TOURNAMENT_FORMATS = ['single_elim', 'double_elim', 'round_robin'] as const;
+export type TournamentFormat = (typeof TOURNAMENT_FORMATS)[number];
+export type TournamentBracket = 'main' | 'winners' | 'losers' | 'grand_final' | 'grand_final_reset';
+
+export interface TournamentTeamRow {
+  id: number;
+  session_id: number;
+  tag: string;
+  logo_url: string | null;
+  created_at: string;
+}
+
+export interface TournamentTeamMember {
+  user_id: number;
+  username: string;
+  avatar_url: string | null;
+}
+
+export interface TournamentTeamEntry extends TournamentTeamRow {
+  members: TournamentTeamMember[];
+}
+
+/** Orientation d'un slot de match, encodée en DB :
+ * 't:5'  → l'équipe 5 est directement posée dans ce slot,
+ * 'w:12' → le vainqueur du match 12 arrive dans ce slot,
+ * 'l:12' → le perdant du match 12 arrive dans ce slot,
+ * NULL   → slot de bye vide (si l'autre slot a une équipe, match auto-résolu). */
+export type TournamentMatchFeed = string | null;
+
+export interface TournamentMatchRow {
+  id: number;
+  session_id: number;
+  bracket: TournamentBracket;
+  round: number;
+  position: number;
+  feed_a: TournamentMatchFeed;
+  feed_b: TournamentMatchFeed;
+  team_a_id: number | null;
+  team_b_id: number | null;
+  winner_team_id: number | null;
+  created_at: string;
+  resolved_at: string | null;
+}
+
+export interface TournamentMatchTeam {
+  id: number;
+  tag: string;
+  logo_url: string | null;
+}
+
+export interface TournamentMatchView extends TournamentMatchRow {
+  team_a: TournamentMatchTeam | null;
+  team_b: TournamentMatchTeam | null;
+}
+
+export interface TournamentAnnouncementRow {
+  id: number;
+  session_id: number;
+  author_id: number;
+  body: string;
+  created_at: string;
+}
+
+export interface TournamentAnnouncementEntry extends TournamentAnnouncementRow {
+  author_username: string;
+}
+
+export interface TournamentStandingsEntry {
+  team_id: number;
+  tag: string;
+  logo_url: string | null;
+  wins: number;
+  losses: number;
+  /** Rang final (1 = champion...) une fois le tournoi terminé, sinon null. */
+  rank: number | null;
 }
 
 export interface FlappyBirdAttemptRow {
@@ -317,13 +405,13 @@ export interface SpeedrunLeaderboardEntry {
   equipped_cosmetics: EquippedCosmetic[];
 }
 
-export type MinigameQuestionStatus = 'active' | 'closed';
+export type EventQuestionStatus = 'active' | 'closed';
 
-export interface MinigameQuestionRow {
+export interface EventQuestionRow {
   id: number;
   session_id: number;
   prompt: string;
-  status: MinigameQuestionStatus;
+  status: EventQuestionStatus;
   created_at: string;
   activated_at: string | null;
   closed_at: string | null;
@@ -332,7 +420,7 @@ export interface MinigameQuestionRow {
   correct_answer: string | null;
 }
 
-export interface MinigameAnswerRow {
+export interface EventAnswerRow {
   id: number;
   question_id: number;
   user_id: number;
@@ -342,7 +430,7 @@ export interface MinigameAnswerRow {
   marked_correct: boolean | null;
 }
 
-export interface MinigameAnswerView {
+export interface EventAnswerView {
   user_id: number;
   username: string;
   avatar_url: string | null;
@@ -355,12 +443,12 @@ export interface MinigameAnswerView {
   marked_correct?: boolean | null;
 }
 
-export interface MinigameQuestionView extends Omit<MinigameQuestionRow, 'correct_answer'> {
+export interface EventQuestionView extends Omit<EventQuestionRow, 'correct_answer'> {
   // Masquée (undefined) tant que la question n'est pas révélée pour un joueur
   // non-admin — voir buildQuestionView. `null` reste possible : aucune
   // réponse correcte n'a été saisie par le MSP.
   correct_answer?: string | null;
-  answers: MinigameAnswerView[];
+  answers: EventAnswerView[];
 }
 
 export type NotificationType =
@@ -370,7 +458,7 @@ export type NotificationType =
   | 'challenge_resolved'
   | 'challenge_cancelled'
   | 'challenge_expired'
-  | 'minigame_open'
+  | 'event_open'
   | 'sp_gained'
   | 'sp_lost'
   | 'cosmetic_earned'
@@ -379,9 +467,10 @@ export type NotificationType =
   | 'auction_sold'
   | 'auction_expired'
   | 'auction_cancelled'
-  | 'minigame_cancelled'
+  | 'event_cancelled'
   | 'suggestion_comment'
-  | 'suggestion_closed';
+  | 'suggestion_closed'
+  | 'tournament_announcement';
 
 export type CosmeticSlot = 'avatar_frame' | 'banner' | 'name_color' | 'title' | 'name_font';
 export type CosmeticRarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
@@ -566,7 +655,7 @@ export interface GamblingSpectatorEntry {
   equipped_cosmetics: EquippedCosmetic[];
 }
 
-export type ChatRoom = 'global' | 'crates' | 'blackjack' | 'crash' | 'tower' | 'minigame';
+export type ChatRoom = 'global' | 'crates' | 'blackjack' | 'crash' | 'tower' | 'event';
 
 export interface ChatMessageRow {
   id: number;
@@ -1020,7 +1109,7 @@ export interface MotusAttemptRow {
   created_at: string;
 }
 
-/** Vue MSP (toutes les soumissions, tous joueurs confondus) — même principe que les réponses de mini-jeu, réservé à l'admin. */
+/** Vue MSP (toutes les soumissions, tous joueurs confondus) — même principe que les réponses d'événement, réservé à l'admin. */
 export interface MotusAttemptHistoryEntry extends MotusAttemptRow {
   username: string;
   word_date: string;

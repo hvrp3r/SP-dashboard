@@ -6,8 +6,8 @@ import Home from './pages/Home.jsx';
 import Profile from './pages/Profile.jsx';
 import Leaderboard from './pages/Leaderboard.jsx';
 import Challenges from './pages/Challenges.jsx';
-import Minigames from './pages/Minigames.jsx';
-import MinigameDetail from './pages/MinigameDetail.jsx';
+import Events from './pages/Events.jsx';
+import EventDetail from './pages/EventDetail.jsx';
 import Suggestions from './pages/Suggestions.jsx';
 import SuggestionDetail from './pages/SuggestionDetail.jsx';
 import GamblingHome from './pages/GamblingHome.jsx';
@@ -103,18 +103,18 @@ export default function App() {
           }
         />
         <Route
-          path="/mini-jeux"
+          path="/evenements"
           element={
             <PrivateRoute>
-              <Minigames />
+              <Events />
             </PrivateRoute>
           }
         />
         <Route
-          path="/mini-jeux/:id"
+          path="/evenements/:id"
           element={
             <PrivateRoute>
-              <MinigameDetail />
+              <EventDetail />
             </PrivateRoute>
           }
         />

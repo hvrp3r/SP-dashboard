@@ -6,9 +6,9 @@ import * as usersApi from '../api/users.js';
 import * as seasonsApi from '../api/seasons.js';
 import * as motusApi from '../api/motus.js';
 import * as sudokuApi from '../api/sudoku.js';
-import * as minigamesApi from '../api/minigames.js';
-import { gameTypeIcon, gameTypeLabel } from '../lib/minigameLabels.js';
-import type { MinigameSession, MotusGame, Season, SudokuTodayView } from '../types.js';
+import * as eventsApi from '../api/events.js';
+import { gameTypeIcon, gameTypeLabel } from '../lib/eventLabels.js';
+import type { EventSession, MotusGame, Season, SudokuTodayView } from '../types.js';
 
 function todayLocal(): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris' }).format(new Date());
@@ -44,7 +44,7 @@ interface NavCard {
 const NAV_CARDS: NavCard[] = [
   { to: '/classement', label: 'Classement', description: 'Le classement de la saison', emoji: '🏆' },
   { to: '/defis', label: 'Défis', description: 'Défie un ou plusieurs joueurs', emoji: '⚔️' },
-  { to: '/mini-jeux', label: 'Mini-jeux', description: 'Rejoins un quiz en direct', emoji: '🧠' },
+  { to: '/evenements', label: 'Événements', description: 'Rejoins un quiz en direct', emoji: '🧠' },
   { to: '/gambling', label: 'Gambling', description: 'Ouvre des caisses, tente ta chance', emoji: '🎰' },
   { to: '/cosmetiques', label: 'Cosmétiques', description: 'Cadres, fonds, titres, polices…', emoji: '✨' },
   { to: '/encheres', label: 'Enchères', description: 'Enchéris sur des cosmétiques exclusifs', emoji: '🔨' },
@@ -59,7 +59,7 @@ export default function Home() {
   const [bonusAmount, setBonusAmount] = useState<number | null>(null);
   const [motus, setMotus] = useState<MotusGame | null>(null);
   const [sudoku, setSudoku] = useState<SudokuTodayView | null>(null);
-  const [openMinigames, setOpenMinigames] = useState<MinigameSession[]>([]);
+  const [openEvents, setOpenEvents] = useState<EventSession[]>([]);
 
   useEffect(() => {
     seasonsApi.getActiveSeason().then(setActiveSeason).catch(() => setActiveSeason(null));
@@ -69,10 +69,10 @@ export default function Home() {
     if (!user) return;
     motusApi.getToday().then(setMotus).catch(() => setMotus(null));
     sudokuApi.getToday().then(setSudoku).catch(() => setSudoku(null));
-    minigamesApi
+    eventsApi
       .listSessions('open')
-      .then(setOpenMinigames)
-      .catch(() => setOpenMinigames([]));
+      .then(setOpenEvents)
+      .catch(() => setOpenEvents([]));
   }, [user?.username]);
 
   useEffect(() => {
@@ -192,14 +192,14 @@ export default function Home() {
           </div>
         )}
 
-        {openMinigames.length > 0 && (
+        {openEvents.length > 0 && (
           <>
-            <h2 className="text-sm font-semibold text-zinc-300 uppercase mb-3">Mini-jeux en cours</h2>
+            <h2 className="text-sm font-semibold text-zinc-300 uppercase mb-3">Événements en cours</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
-              {openMinigames.map((s) => (
+              {openEvents.map((s) => (
                 <Link
                   key={s.id}
-                  to={`/mini-jeux/${s.id}`}
+                  to={`/evenements/${s.id}`}
                   className="flex items-center gap-3 bg-zinc-900 border border-zinc-800 rounded-xl shadow-md p-4 hover:border-emerald-500/50 transition"
                 >
                   <span className="text-2xl flex-shrink-0">{gameTypeIcon(s.game_type)}</span>

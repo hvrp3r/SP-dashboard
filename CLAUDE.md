@@ -2,7 +2,7 @@
 
 ## Vue d'ensemble du projet
 
-**Points Sourires** est une plateforme gamifiée de fausse économie entre amis. La monnaie virtuelle s'appelle les **SP (Points Sourires)**. Les joueurs peuvent en gagner via des connexions quotidiennes, des défis entre joueurs (avec mise), et des mini-jeux organisés par le **MSP (Maître des Points Sourires)**.
+**Points Sourires** est une plateforme gamifiée de fausse économie entre amis. La monnaie virtuelle s'appelle les **SP (Points Sourires)**. Les joueurs peuvent en gagner via des connexions quotidiennes, des défis entre joueurs (avec mise), et des événement organisés par le **MSP (Maître des Points Sourires)**.
 
 Le jeu est organisé en **saisons** : chaque saison a ses propres classements et statistiques, permettant de repartir sur de nouvelles bases tout en conservant l'historique.
 
@@ -35,7 +35,7 @@ Les apps sont écrit uniquement en TS, et le repo est un multi repo utilisant pn
 │   ├── routes/
 │   ├── controllers/
 │   ├── middleware/
-│   ├── services/    # Logique métier (SP, défis, mini-jeux…)
+│   ├── services/    # Logique métier (SP, défis, événement…)
 │   └── db/          # Connexion PostgreSQL + migrations
 ├── docker-compose.yml
 └── CLAUDE.md
@@ -95,9 +95,9 @@ season_id INT REFERENCES seasons(id),
 amount INT NOT NULL,                   -- positif = crédit, négatif = débit
 type VARCHAR(50) NOT NULL,
   -- 'login_bonus' | 'challenge_win' | 'challenge_loss'
-  -- 'minigame_reward' | 'admin_grant' | 'admin_deduct'
+  -- 'event_reward' | 'admin_grant' | 'admin_deduct'
   -- 'gambling_spend' | 'gambling_win'
-related_id INT,                        -- challenge_id ou minigame_session_id (nullable)
+related_id INT,                        -- challenge_id ou event_session_id (nullable)
 note TEXT,
 created_at TIMESTAMPTZ DEFAULT NOW(),
 revoked_at TIMESTAMPTZ,                -- non NULL si le MSP a révoqué cette transaction
@@ -113,7 +113,7 @@ season_id INT REFERENCES seasons(id),
 challenger_id INT REFERENCES users(id),  -- créateur du défi (toujours "accepted" dans challenge_participants)
 wager_amount INT NOT NULL,               -- mise par joueur (identique pour tous les participants)
 description TEXT,                        -- note libre du créateur
-type VARCHAR(20) NOT NULL DEFAULT 'custom',  -- 'custom' | 'coin_flip' (migration 039), pas de CHECK — même logique que minigame_sessions.game_type
+type VARCHAR(20) NOT NULL DEFAULT 'custom',  -- 'custom' | 'coin_flip' (migration 039), pas de CHECK — même logique que event_sessions.game_type
 status VARCHAR(20) NOT NULL DEFAULT 'pending',
   -- 'pending' | 'accepted' | 'declined' | 'expired' | 'resolved' | 'cancelled'
 winner_id INT REFERENCES users(id),   -- NULL jusqu'à résolution
@@ -139,36 +139,45 @@ created_at TIMESTAMPTZ DEFAULT NOW(),
 UNIQUE (challenge_id, user_id)
 ```
 
-### `minigame_sessions`
+### `event_sessions`
 ```sql
 id SERIAL PRIMARY KEY,
 season_id INT REFERENCES seasons(id),
-game_type VARCHAR(50) NOT NULL,       -- 'quiz' (seul type pour l'instant)
+game_type VARCHAR(50) NOT NULL,       -- 'quiz' | 'flappy_bird' | 'speedrun' | 'tournament' (pas de CHECK — même logique que challenges.type)
 title VARCHAR(255),                   -- ex: "Quiz Culture Générale #3"
 description TEXT,
-status VARCHAR(20) DEFAULT 'open',    -- 'open' | 'closed'
+entry_fee INT,                        -- (migration 013) mise d'inscription par joueur, débitée au self-join
+status VARCHAR(20) DEFAULT 'open',    -- 'open' | 'closed' | 'cancelled' (migration 035 pour 'cancelled')
 created_by INT REFERENCES users(id), -- doit être admin (MSP)
 created_at TIMESTAMPTZ DEFAULT NOW(),
-closed_at TIMESTAMPTZ
+closed_at TIMESTAMPTZ,
+ends_at TIMESTAMPTZ,                  -- (migration 034) date limite auto-distribution (flappy_bird/speedrun)
+reward_1st INT, reward_2nd INT, reward_3rd INT,  -- (034) SP par joueur, CHECK non négatifs — flappy/speedrun : gains par rang de score ; tournoi : dotation par membre de l'équipe classée 1er/2e/3e (migration 067)
+cancelled_at TIMESTAMPTZ, cancelled_by INT REFERENCES users(id),  -- (035) annulation par le MSP
+game_image_url TEXT, game_external_url TEXT,  -- (064) fiche jeu speedrun.com
+tournament_format VARCHAR(20),        -- (067) 'single_elim' | 'double_elim' | 'round_robin' — NULL hors tournoi
+tournament_max_teams INT,             -- (067) taille d'arbre prévue (2-64)
+tournament_team_size INT              -- (067) joueurs par équipe (1-16)
 ```
 
-### `minigame_participants`
+### `event_participants`
 -- Un joueur rejoint lui-même une session ouverte (pas d'ajout manuel par défaut, même si le MSP peut aussi ajouter/retirer un participant depuis le panel).
 ```sql
 id SERIAL PRIMARY KEY,
-session_id INT REFERENCES minigame_sessions(id),
+session_id INT REFERENCES event_sessions(id),
 user_id INT REFERENCES users(id),
 sp_awarded INT DEFAULT 0,             -- montant libre choisi par le MSP (pas lié à un rang)
 awarded_by INT REFERENCES users(id), -- MSP qui a validé
 awarded_at TIMESTAMPTZ,
-joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+rating INT                            -- (migration 067) rating de pondération des tournois (CHECK ≥ 0, NULL = fallback solde SP à la génération) — utilisé uniquement par game_type 'tournament'
 ```
 
-### `minigame_questions`
+### `event_questions`
 -- Une question "en direct" à la fois par session ; en poser une nouvelle clôture automatiquement la précédente.
 ```sql
 id SERIAL PRIMARY KEY,
-session_id INT REFERENCES minigame_sessions(id),
+session_id INT REFERENCES event_sessions(id),
 prompt TEXT NOT NULL,
 status VARCHAR(20) NOT NULL DEFAULT 'active',  -- 'active' | 'closed'
 created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -176,15 +185,66 @@ activated_at TIMESTAMPTZ,
 closed_at TIMESTAMPTZ
 ```
 
-### `minigame_answers`
+### `event_answers`
 -- Réponse libre, verrouillée une fois soumise (pas de modification). Le texte n'est visible que par le MSP et par l'auteur de la réponse ; les autres joueurs ne voient que le statut "a répondu" + le temps de réponse.
 ```sql
 id SERIAL PRIMARY KEY,
-question_id INT REFERENCES minigame_questions(id),
+question_id INT REFERENCES event_questions(id),
 user_id INT REFERENCES users(id),
 answer_text TEXT NOT NULL,
 submitted_at TIMESTAMPTZ DEFAULT NOW(),
 UNIQUE (question_id, user_id)
+```
+
+### `tournament_teams`
+-- Équipes d'un tournoi (game_type 'tournament') : tag court unique par session + logo optionnel (upload, servi depuis /uploads/team-logos).
+```sql
+id SERIAL PRIMARY KEY,
+session_id INT REFERENCES event_sessions(id),
+tag VARCHAR(8) NOT NULL,
+logo_url TEXT,
+created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+UNIQUE (session_id, tag)
+```
+
+### `tournament_team_members`
+-- Un joueur = au plus une équipe par tournoi (vérifié applicativement, pas de contrainte BDD cross-table). Les membres doivent être inscrits à la session (event_participants).
+```sql
+id SERIAL PRIMARY KEY,
+team_id INT REFERENCES tournament_teams(id),
+user_id INT REFERENCES users(id),
+created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+UNIQUE (team_id, user_id)
+```
+
+### `tournament_matches`
+-- Matchs de tournoi. L'orientation de l'arbre est portée par les feeds :
+-- 't:5' (équipe 5 posée), 'w:12' (vainqueur du match 12), 'l:12' (perdant du
+-- match 12), NULL (slot de bye vide). resolveMatch propage automatiquement les
+-- équipes dans les matchs suivants et auto-résout les byes.
+```sql
+id SERIAL PRIMARY KEY,
+session_id INT REFERENCES event_sessions(id),
+bracket VARCHAR(20) NOT NULL DEFAULT 'main',  -- 'main' (élimination simple / round-robin) | 'winners' | 'losers' (double) | 'grand_final' | 'grand_final_reset'
+round INT NOT NULL,                   -- numéro de tour (ou de journée en round-robin)
+position INT NOT NULL,
+feed_a TEXT, feed_b TEXT,
+team_a_id INT REFERENCES tournament_teams(id),
+team_b_id INT REFERENCES tournament_teams(id),
+winner_team_id INT REFERENCES tournament_teams(id),
+created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+resolved_at TIMESTAMPTZ,
+UNIQUE (session_id, bracket, round, position)
+```
+
+### `tournament_announcements`
+-- Annonces du MSP dans un tournoi : visibles par tous, chaque publication notifie les inscrits (type 'tournament_announcement').
+```sql
+id SERIAL PRIMARY KEY,
+session_id INT REFERENCES event_sessions(id),
+author_id INT REFERENCES users(id),
+body VARCHAR(500) NOT NULL,
+created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 ```
 
 ### `gambling_crates`
@@ -282,8 +342,8 @@ id SERIAL PRIMARY KEY,
 user_id INT REFERENCES users(id),
 type VARCHAR(50) NOT NULL,
   -- 'challenge_received' | 'challenge_accepted' | 'challenge_declined' | 'challenge_resolved'
-  -- 'challenge_cancelled' | 'challenge_expired' | 'minigame_open' | 'sp_gained' | 'sp_lost'
-  -- 'suggestion_comment' | 'suggestion_closed'
+  -- 'challenge_cancelled' | 'challenge_expired' | 'event_open' | 'sp_gained' | 'sp_lost'
+  -- 'suggestion_comment' | 'suggestion_closed' | 'tournament_announcement'
 message TEXT NOT NULL,
 link TEXT,                             -- route client pour le clic (ex: '/defis')
 read_at TIMESTAMPTZ,
@@ -308,7 +368,7 @@ updated_at TIMESTAMPTZ DEFAULT NOW()
 --   gambling_max_wager_per_day (SP total misé/jour sur le gambling, tous crates confondus, défaut: 50)
 --   kofi_subscription_period_days (durée en jours de validité d'un abonnement après paiement, défaut: 35)
 -- Note : minigame_reward_1st/2nd/3rd ont existé puis ont été supprimées (migration 005) —
--- l'attribution des SP en mini-jeu est un montant libre par joueur, plus des récompenses fixes par rang.
+-- l'attribution des SP en événement est un montant libre par joueur, plus des récompenses fixes par rang.
 ```
 
 ### `suggestions`
@@ -363,7 +423,7 @@ created_at TIMESTAMPTZ DEFAULT NOW()
 - Inscription : username + email + mot de passe (hashé avec bcrypt)
 - Connexion : JWT access token (15min) + refresh token (7j, stocké en httpOnly cookie)
 - Profil public : avatar, username, solde SP, stats de la saison active
-- Profil privé (connecté) : historique des transactions, défis, mini-jeux
+- Profil privé (connecté) : historique des transactions, défis, événement
 
 ### 2. Leaderboard
 
@@ -425,17 +485,17 @@ Un défi peut réunir **plusieurs adversaires au sein d'un même défi** (un seu
 - `max_wager_amount` : mise max par défi (par joueur)
 - `max_challenges_per_day` : nombre max de défis *lancés* par joueur par jour (peu importe le nombre d'adversaires invités dans chacun)
 
-### 5. Mini-Jeux — Quiz en direct (seul type actuel)
+### 5. Événements — Quiz en direct (game_type 'quiz')
 
 > Ce système a été repensé en cours de projet : la version initiale (MSP saisit des résultats obtenus hors-plateforme, récompenses fixes par rang 🥇🥈🥉) a été remplacée par un **quiz interactif en direct**, à la demande explicite de l'utilisateur. Les clés `minigame_reward_1st/2nd/3rd` n'existent plus.
 
 #### Création & participation :
-- Le MSP crée une session depuis la page Mini-jeux (les fonctionnalités MSP y sont visibles uniquement pour les admins — pas de page `/admin` séparée) : type de jeu, titre, description
+- Le MSP crée une session depuis la page Événement (les fonctionnalités MSP y sont visibles uniquement pour les admins — pas de page `/admin` séparée) : type de jeu, titre, description
 - La session passe en `open` → visible par tous les joueurs
-- **N'importe quel joueur peut rejoindre lui-même** la session (`minigame_participants`, self-join) — le MSP peut aussi ajouter/retirer un participant manuellement depuis le panel
+- **N'importe quel joueur peut rejoindre lui-même** la session (`event_participants`, self-join) — le MSP peut aussi ajouter/retirer un participant manuellement depuis le panel
 
 #### Déroulement en direct :
-- Le MSP affiche une question à la fois (`minigame_questions`, statut `active`) ; en poser une nouvelle clôture automatiquement la précédente
+- Le MSP affiche une question à la fois (`event_questions`, statut `active`) ; en poser une nouvelle clôture automatiquement la précédente
 - Les joueurs voient la question en temps réel (polling) et soumettent une réponse libre — **verrouillée une fois soumise**, pas de modification possible
 - Le temps de réponse (`seconds_to_answer`) est calculé côté serveur
 - **Confidentialité des réponses** : le texte d'une réponse n'est visible que par le MSP et par son auteur ; les autres joueurs voient seulement que la personne "a répondu" + son temps, jamais le contenu (sérialisation role-aware côté contrôleur)
@@ -443,12 +503,12 @@ Un défi peut réunir **plusieurs adversaires au sein d'un même défi** (un seu
 
 #### Attribution des récompenses (MSP) :
 - Une fois la question (ou la session) close, le MSP attribue un **montant SP libre** à chaque participant, joueur par joueur — **pas de montant fixe par rang**, pas de lien automatique avec la rapidité de réponse
-- Chaque attribution génère une transaction `minigame_reward`
+- Chaque attribution génère une transaction `event_reward`
 - Le MSP clôture la session (`closed`) une fois les SP attribués
 - Un historique des questions posées reste consultable dans la session (`GET /:id/questions`)
 
 #### Évolutivité :
-- La colonne `game_type` dans `minigame_sessions` est prévue pour accueillir de futurs types de jeux
+- La colonne `game_type` dans `event_sessions` est prévue pour accueillir de futurs types de jeux
 - La logique d'attribution manuelle et libre par le MSP s'appliquera à tous les types futurs
 
 ### 6. Notifications & synchronisation temps réel
@@ -456,15 +516,15 @@ Un défi peut réunir **plusieurs adversaires au sein d'un même défi** (un seu
 - Pas de WebSocket (décision assumée) : tout est en **polling**, à des intervalles courts par écran :
   - Cloche de notifications : compte + liste ensemble toutes les 10s
   - Défis (joueur et admin) : toutes les 5s
-  - Session mini-jeu ouverte (question en cours) : toutes les 2s
+  - Session événement ouverte (question en cours) : toutes les 2s
   - Solde/streak utilisateur (`useAuth`) : toutes les 15s
   - Transactions récentes du profil : toutes les 10s
-- Une notification (`notifications`, type + message + `link` de redirection) est créée pour : défi reçu/accepté/décliné/résolu/annulé/expiré, mini-jeu ouvert, gain de SP, perte de SP
+- Une notification (`notifications`, type + message + `link` de redirection) est créée pour : défi reçu/accepté/décliné/résolu/annulé/expiré, événement ouvert, gain de SP, perte de SP, annonce de tournoi (aux inscrits de la session)
 - Toujours déclenchée depuis les **contrôleurs**, jamais depuis les services (les services ne connaissent pas la couche notification)
 
 ### 7. Gambling — Case Opening
 
-Section fusionnée dans une page joueur (`/gambling`, contrôles MSP visibles seulement si `user.role === 'admin'`) — même pattern que les Mini-Jeux, pas de page `/admin/gambling` séparée.
+Section fusionnée dans une page joueur (`/gambling`, contrôles MSP visibles seulement si `user.role === 'admin'`) — même pattern que les Événement, pas de page `/admin/gambling` séparée.
 
 #### Principe :
 - Le MSP configure une ou plusieurs **caisses** (`gambling_crates`) : nom, description, image, coût fixe (`cost_sp`) pour l'ouvrir, et optionnellement un nombre max d'ouvertures par joueur (`max_opens_per_player`, NULL = illimité — ex : caisse événement limitée à 3 ouvertures/joueur). Une fois la limite atteinte, le bouton d'ouverture est désactivé côté client et le serveur refuse quand même la requête (mêmes verrous que le plafond quotidien).
@@ -537,7 +597,7 @@ L'utilisateur voulait un abonnement donnant accès à une caisse gambling, **san
 
 ### 9. Suggestions (features & bugs)
 
-Page (`/suggestions`) où les joueurs proposent des features ou signalent des bugs, votent façon Reddit (upvote **et** downvote) et commentent — accessible depuis le sous-menu du profil (pas dans la barre de nav principale). Pas de page `/admin/suggestions` séparée, les contrôles MSP (clôturer, supprimer) sont directement dans la page de détail, visibles si `user.role === 'admin'` (même pattern que Mini-Jeux/Gambling).
+Page (`/suggestions`) où les joueurs proposent des features ou signalent des bugs, votent façon Reddit (upvote **et** downvote) et commentent — accessible depuis le sous-menu du profil (pas dans la barre de nav principale). Pas de page `/admin/suggestions` séparée, les contrôles MSP (clôturer, supprimer) sont directement dans la page de détail, visibles si `user.role === 'admin'` (même pattern que Événement/Gambling).
 
 #### Flux :
 - N'importe quel joueur crée une suggestion : type (`feature` ou `bug`), titre, description libre optionnelle.
@@ -549,7 +609,42 @@ Page (`/suggestions`) où les joueurs proposent des features ou signalent des bu
 - **Clôturer** (`status = 'closed'`) : la suggestion devient lecture seule (plus de vote ni de commentaire possible, vérifié côté serveur dans les deux contrôleurs, pas seulement caché côté client), reste visible dans l'historique/filtre "Clôturées". Notifie l'auteur (`suggestion_closed`).
 - **Supprimer** : suppression **définitive** de la suggestion, de ses votes et commentaires (`ON DELETE CASCADE`) — contrairement au reste de l'app (transactions, défis, comptes joueurs…), il n'y a ici aucun enjeu d'historique économique ou de traçabilité anti-triche à préserver, donc pas de soft-delete. Décision explicite de l'utilisateur ("le MSP peut clôturer ou supprimer des posts").
 - Un nouveau commentaire notifie l'auteur du post (`suggestion_comment`), sauf si l'auteur commente son propre post.
-- Pas de notification broadcast à la création d'une suggestion (contrairement à l'ouverture d'un mini-jeu) — n'importe quel joueur peut poster à tout moment, contrairement à un mini-jeu (action MSP rare), notifier tout le monde à chaque suggestion serait trop bruyant.
+- Pas de notification broadcast à la création d'une suggestion (contrairement à l'ouverture d'un événement) — n'importe quel joueur peut poster à tout moment, contrairement à un événement (action MSP rare), notifier tout le monde à chaque suggestion serait trop bruyant.
+
+---
+
+### 10. Tournois (game_type 'tournament')
+
+Nouveau type de session d'événement (migration 067), même pattern que flappy_bird/speedrun : les colonnes génériques d'`event_sessions` servent de socle (`entry_fee` = mise d'inscription, `reward_1st/2nd/3rd` = dotation), et les tables `tournament_*` portent le spécifique. Les matchs se jouent hors-plateforme ; le MSP déclare chaque vainqueur depuis le panel (décision explicite — pas de déclaration par les participants, contrairement aux défis), et l'avancement se propage automatiquement. Les contrôles MSP sont fusionnés dans la page `/evenements/:id` (même pattern que les autres événements — pas de page `/admin/tournois`).
+
+#### Création :
+- Le MSP crée une session depuis la page Événements avec `game_type='tournament'` : format (`single_elim` | `double_elim` | `round_robin`), nombre d'équipes (2-64), taille d'équipe (1-16), dotation (SP **par membre** de l'équipe finissant 1er/2e/3e — les 3 champs sont requis mais peuvent être à 0 ; en élimination directe les deux demi-finalistes sont ex-aequo 3e et reçoivent chacun la dotation 3e).
+- `entry_fee` optionnel (même mécanique de mise au self-join que les autres sessions).
+- La création notifie tout le monde (`event_open`, message "Nouveau tournoi : …") + alerte Discord si activée.
+
+#### Inscription & équipes :
+- Inscription individuelle via le self-join existant (`event_participants`, mise débitée si `entry_fee`), limitée à `max_teams × team_size` places.
+- **Rating de pondération** : `event_participants.rating` (nullable, CHECK ≥ 0), édité par le MSP ; NULL = fallback sur le **solde SP** du joueur au moment de la génération (décision explicite).
+- **Formation des équipes (MSP uniquement)** :
+  - **Manuelle** : créer des équipes (tag 1-8 caractères unique par tournoi + logo uploadé, servi depuis `/uploads/team-logos` — 2 Mo max, PNG/JPEG/WEBP/GIF), assigner/retirer chaque inscrit (un joueur = au plus une équipe par tournoi, taille d'équipe respectée).
+  - **Aléatoire équilibrée** : tri par rating effectif décroissant, *bucket shuffle* des ex-aequos (deux tirages successifs diffèrent), distribution en **serpentin** (1re → 2e → … → n-ième → (n-1)-ième → …). Tags auto `T1`, `T2`… renommables ensuite. Un nombre d'équipes cible peut être passé (défaut : `tournament_max_teams`, sinon le minimum qui fait tenir tout le monde).
+- **Verrouillage** : dès que l'arbre est généré, les équipes sont figées (toutes les mutations refusées côté serveur) ; le MSP doit réinitialiser l'arbre pour les modifier.
+- Générer l'arbre exige ≥ 2 équipes et **aucune équipe vide** (une équipe sans membre pourrait gagner par bye et toucher une dotation sans joueur à créditer).
+
+#### Formats :
+- **Élimination directe** : bracket `main`, serpentin classique (seed 1 vs seed P, 2 vs P-1…). Les nombres non-puissance de 2 sont comblés par des **byes** (slot vide, auto-résolu : la seule équipe présente avance). 3e place = les deux perdants des demi-finales (ex-aequo).
+- **Double élimination** : brackets `winners` + `losers`. Les perdants WB descendent en LB (rounds mineurs = arrivée des perdants par paires adjacentes du round WB correspondant ; rounds majeurs = survivants entre eux ; le perdant de la finale WB entre directement dans la finale LB). Grande finale : champion WB vs champion LB. **Match de reset** : si le représentant LB gagne la grande finale, un match `grand_final_reset` est créé (le champion WB doit être battu deux fois pour perdre) — sinon le tournoi s'arrête à la GF. 3e place = perdant de la finale LB.
+- **Round-robin** : poule unique, méthode du cercle (N-1 journées si N pair, N avec un bye si impair). Classement par victoires, départage par seed (ordre de création des équipes — pas de matchs nuls en v1).
+- L'arbre complet est généré d'un coup (tous les matchs, slots TBD) ; les feeds (`w:`/`l:`/`t:`) orientent la propagation : résoudre un match remplit les slots suivants et auto-résout les byes en cascade, le tout dans une transaction (`SELECT … FOR UPDATE` sur les matchs de la session).
+
+#### Résolution & dotation :
+- Le MSP déclare le vainqueur de chaque match **jouable** (les deux équipes connues) — jamais un match en attente.
+- À la résolution du **dernier match** (finale single / GF ou reset double / dernier match RR), le classement final est calculé et la **dotation est distribuée automatiquement** : `reward_1st/2nd/3rd` SP par membre des équipes classées (transactions `event_reward`, note = titre du tournoi, dans la même transaction que la propagation). Les notifications `sp_gained` (avec tag d'équipe) sont créées depuis le contrôleur.
+- **Ajustements libres** en plus : le MSP peut attribuer des SP à la main à n'importe quel inscrit (même endpoint `award` que le quiz), puis clôture la session quand il veut.
+- **Réinitialisation de l'arbre** : possible tant qu'**aucun match n'a été résolu** (sinon refus — préserver l'historique). Le reset supprime les matchs, les équipes redeviennent modifiables.
+
+#### Annonces :
+- Le MSP publie des annonces (500 caractères max) visibles par tous dans le tournoi ; chaque publication notifie **tous les inscrits** (`tournament_announcement`, message tronqué à 100 caractères, link `/evenements/:id`).
 
 ---
 
@@ -559,11 +654,14 @@ Page (`/suggestions`) où les joueurs proposent des features ou signalent des bu
 |--------------------------------------|---|---|
 | Se connecter, voir le leaderboard    | ✅ | ✅ |
 | Créer/accepter des défis             | ✅ | ✅ |
-| Participer aux mini-jeux             | ✅ | ✅ |
+| Participer aux événement             | ✅ | ✅ |
+| S'inscrire à un tournoi              | ✅ | ✅ |
 | Ouvrir des caisses (gambling)         | ✅ | ✅ |
 | Voir ses transactions                | ✅ | ✅ |
-| Créer/clôturer une session mini-jeu  | ❌ | ✅ |
-| Attribuer les SP d'un mini-jeu       | ❌ | ✅ |
+| Créer/clôturer une session événement  | ❌ | ✅ |
+| Attribuer les SP d'un événement       | ❌ | ✅ |
+| Gérer équipes/arbre/matchs d'un tournoi | ❌ | ✅ |
+| Publier une annonce de tournoi        | ❌ | ✅ |
 | Créer/configurer une caisse gambling | ❌ | ✅ |
 | Arbitrer un défi                     | ❌ | ✅ |
 | Gérer les saisons                    | ❌ | ✅ |
@@ -586,7 +684,7 @@ Page (`/suggestions`) où les joueurs proposent des features ou signalent des bu
 
 ## Panel Admin (MSP)
 
-> Deux approches coexistent, par choix explicite : certaines sections MSP ont leur propre route `/admin/...` protégée par `requireAdmin` ; d'autres sont **fusionnées dans les pages joueur partagées**, avec les contrôles MSP affichés uniquement si `user.role === 'admin'`. Les Mini-Jeux ont été délibérément migrés de "page admin séparée" vers "section MSP dans la page joueur" en cours de projet, à la demande explicite de l'utilisateur — ne pas recréer de page `/admin/mini-jeux` séparée.
+> Deux approches coexistent, par choix explicite : certaines sections MSP ont leur propre route `/admin/...` protégée par `requireAdmin` ; d'autres sont **fusionnées dans les pages joueur partagées**, avec les contrôles MSP affichés uniquement si `user.role === 'admin'`. Les Événement ont été délibérément migrés de "page admin séparée" vers "section MSP dans la page joueur" en cours de projet, à la demande explicite de l'utilisateur — ne pas recréer de page `/admin/evenements` séparée.
 
 Sections dans des pages `/admin/...` dédiées :
 - **Config** : formulaire pour modifier toutes les clés `admin_config`
@@ -594,12 +692,12 @@ Sections dans des pages `/admin/...` dédiées :
 - **Joueurs** (`/admin/joueurs`) : liste de tous les comptes (rôle, solde, statut), désactiver/réactiver un compte (jamais de suppression — voir la note sur `disabled_at` dans le schéma `users` plus haut). Le MSP ne peut pas désactiver son propre compte.
 - **Défis** (`/admin/defis`) : liste filtrée (en cours, en attente, contestés), arbitrage (force un gagnant parmi les participants `accepted`), annulation
 - **Transactions** : log global avec filtres (joueur, type, saison, date), révocation, création manuelle de transaction
-- **Abonnements** (`/admin/abonnements`) : liste des abonnements, activation/prolongation/révocation manuelle, file d'attente des paiements Ko-fi non rattachés (voir section 8) — page dédiée plutôt que fusionnée dans le profil joueur, car ce sont des actions strictement MSP (contrairement aux Mini-Jeux/Gambling où le joueur et le MSP partagent la même page)
+- **Abonnements** (`/admin/abonnements`) : liste des abonnements, activation/prolongation/révocation manuelle, file d'attente des paiements Ko-fi non rattachés (voir section 8) — page dédiée plutôt que fusionnée dans le profil joueur, car ce sont des actions strictement MSP (contrairement aux Événement/Gambling où le joueur et le MSP partagent la même page)
 
 Sections fusionnées dans la page joueur correspondante (visibles seulement si MSP) :
-- **Mini-Jeux** (`/mini-jeux`, `/mini-jeux/:id`) : créer une session, poser/clôturer une question, attribuer les SP librement, clôturer la session
-- **Gambling** (`/gambling`) : créer/éditer des caisses, gérer le pool de récompenses par caisse (SP ou custom, poids de tirage), archiver/désarchiver une caisse (masquée aux joueurs et repliée par défaut même côté MSP, derrière « Voir les caisses archivées »), supprimer une caisse jamais ouverte (sinon archivage seulement, pour préserver l'historique anti-triche — voir section 7) — même logique que les Mini-Jeux, ne pas créer de page `/admin/gambling` séparée
-- **Suggestions** (`/suggestions`, `/suggestions/:id`) : clôturer ou supprimer une suggestion — même logique que Mini-Jeux/Gambling, pas de page `/admin/suggestions` séparée
+- **Événement** (`/evenements`, `/evenements/:id`) : créer une session (quiz, flappy_bird, speedrun, tournoi), poser/clôturer une question, attribuer les SP librement, clôturer la session ; pour les tournois : gestion des équipes (création tag+logo, assignation, génération aléatoire pondérée), génération/réinitialisation de l'arbre, déclaration des vainqueurs, publication d'annonces
+- **Gambling** (`/gambling`) : créer/éditer des caisses, gérer le pool de récompenses par caisse (SP ou custom, poids de tirage), archiver/désarchiver une caisse (masquée aux joueurs et repliée par défaut même côté MSP, derrière « Voir les caisses archivées »), supprimer une caisse jamais ouverte (sinon archivage seulement, pour préserver l'historique anti-triche — voir section 7) — même logique que les Événement, ne pas créer de page `/admin/gambling` séparée
+- **Suggestions** (`/suggestions`, `/suggestions/:id`) : clôturer ou supprimer une suggestion — même logique que Événement/Gambling, pas de page `/admin/suggestions` séparée
 
 ---
 
@@ -633,11 +731,11 @@ Phase 4 — Défis ✅
   ✅ Arbitrage MSP
   ⚠️ Étendu en cours de projet : plusieurs adversaires au sein d'un même défi (voir section 4), description libre, annulation/invalidation MSP
 
-Phase 5 — Mini-Jeux (Quiz) ✅
+Phase 5 — Événement (Quiz) ✅
   ⚠️ Pivot complet en cours de projet : quiz en direct (self-join, question live, réponses cachées, SP libres) — remplace la version initiale "MSP saisit un rang, récompenses fixes" (voir section 5)
 
 Phase 6 — Polish ✅
-  ✅ Notifications in-app (défi reçu/accepté/décliné/résolu/annulé/expiré, mini-jeu ouvert, gain/perte de SP) + synchronisation temps réel par polling
+  ✅ Notifications in-app (défi reçu/accepté/décliné/résolu/annulé/expiré, événement ouvert, gain/perte de SP) + synchronisation temps réel par polling
   ✅ Upload avatar
   ✅ Page stats détaillée par joueur
   ✅ Responsive mobile + nav fixe en haut + micro-animations ("juice")
@@ -651,10 +749,11 @@ Ajoutées en cours de projet, à la demande de l'utilisateur, non prévues dans 
 - Transactions classées par saison dans la page transactions ; interdiction de révoquer une transaction d'une saison archivée
 - Le MSP peut créer une transaction SP manuelle directement (pas seulement ajuster un solde)
 - Popups de confirmation custom (`useConfirm`) à la place de `window.confirm` natif
-- Tags visuels du type de mini-jeu dans la liste des mini-jeux
+- Tags visuels du type de événement dans la liste des événement
 - Abonnement mensuel via Ko-fi (financement des serveurs) avec caisse gambling réservée aux abonnés (voir section 8)
 - Page Suggestions : proposition de features/bugs par les joueurs, vote façon Reddit, commentaires, clôture/suppression par le MSP (voir section 9)
 - Défis "Pile ou face" (`challenges.type = 'coin_flip'`) : variante 1v1 des défis SP Wager où le gagnant est tiré au sort par le serveur dès que l'adversaire accepte, sans déclaration manuelle ni arbitrage nécessaire (voir section 4)
+- Tournois (`game_type = 'tournament'`) : arbre à élimination simple/double ou round-robin, équipes tag+logo générées (serpentin pondéré par rating) ou composées à la main, dotation par rang distribuée automatiquement, annonces du MSP (voir section 10)
 
 ---
 
@@ -714,8 +813,8 @@ VITE_KOFI_URL=
 | Résolution de défi | Manuelle (consensus de tous les participants `accepted`) + arbitrage MSP |
 | Solde négatif possible ? | **Non** — bloqué applicativement + contrainte BDD                       |
 | Nombre max d'admins | **Aucune limite**                                                       |
-| Qui crée les mini-jeux ? | **MSP uniquement**                                                      |
-| Récompenses mini-jeu | ~~Montants fixes~~ → **montant libre choisi par le MSP par joueur** (pivot vers le quiz en direct) |
+| Qui crée les événement ? | **MSP uniquement**                                                      |
+| Récompenses événement | ~~Montants fixes~~ → **montant libre choisi par le MSP par joueur** (pivot vers le quiz en direct) |
 | Saisons | Oui — classements et stats par saison, archives consultables            |
 | Un défi peut-il avoir plusieurs adversaires ? | Oui — **au sein d'un même défi** (un pot commun, un gagnant), pas plusieurs défis séparés. Correction explicite de l'utilisateur après une première implémentation erronée en "N défis 1v1 indépendants". |
 | Mise en cas de N adversaires ? | Chacun mise le même montant ; le gagnant remporte le pot entier (`wager × participants accepted`) — généralisation stricte du 1v1 |
@@ -724,7 +823,7 @@ VITE_KOFI_URL=
 | Le MSP peut-il être caché du classement ? | Oui — `is_leaderboard_hidden`, n'affecte que les classements, pas le profil/les transactions |
 | Le MSP peut-il révoquer une transaction ? | Oui, sauf si sa saison est archivée (`closed`) — jamais de suppression, toujours un ajustement inverse tracé |
 | Le MSP peut-il supprimer un compte joueur ? | Non, seulement le **désactiver** (`disabled_at`) — décision explicite de l'utilisateur pour préserver l'historique (transactions, défis, season_snapshots), même principe que `is_leaderboard_hidden`. Bloque login/refresh, masque du leaderboard et de la sélection d'adversaire. Réversible, et un MSP ne peut pas se désactiver lui-même |
-| Architecture des pages admin ? | Mixte : pages `/admin/...` dédiées pour Config/Saisons/Joueurs/Défis/Transactions, mais Mini-Jeux et Gambling sont fusionnés dans la page joueur (contrôles visibles si MSP) — décision explicite de l'utilisateur, ne pas re-séparer |
+| Architecture des pages admin ? | Mixte : pages `/admin/...` dédiées pour Config/Saisons/Joueurs/Défis/Transactions, mais Événement et Gambling sont fusionnés dans la page joueur (contrôles visibles si MSP) — décision explicite de l'utilisateur, ne pas re-séparer |
 | Type de gambling au lancement ? | **Case opening uniquement** — caisses configurables par le MSP (coût, pool de récompenses), autres formats de jeu non prévus pour l'instant |
 | Les gains "custom" (image+titre) ont-ils une valeur SP ? | **Non** — purement cosmétiques, aucun effet sur l'économie SP, juste une collection affichée sur le profil (`gambling_inventory`) |
 | Plafond anti-abus du gambling ? | Un seul levier : `gambling_max_wager_per_day` (SP misé/jour, tous crates confondus) — pas de plafond séparé sur le nombre d'ouvertures, décision explicite de garder un seul paramètre simple |
@@ -737,4 +836,11 @@ VITE_KOFI_URL=
 | La caisse "abonnés" est-elle un système séparé du gambling existant ? | Non — un simple flag `gambling_crates.requires_subscription`, réutilise entièrement le pool de récompenses et le tirage pondéré existants (décision explicite de l'utilisateur) |
 | Le MSP peut-il supprimer une suggestion (contrairement aux autres ressources de l'app) ? | Oui, suppression définitive (cascade sur votes/commentaires) — décision explicite de l'utilisateur. Contrairement aux transactions/comptes/défis, aucun enjeu d'historique économique ou anti-triche à préserver ici |
 | Le vote sur une suggestion est-il façon Reddit (up/down) ? | Oui — up et down, un vote par joueur par suggestion, en bascule ; le score peut être négatif. Décision explicite de l'utilisateur (demande initiale d'upvote seul, étendue au downvote) |
+| Un défi "pile ou face" peut-il avoir plusieurs adversaires comme un défi classique ? | Non — restreint à un seul adversaire (2 participants), un pile ou face n'a que deux faces. Résolution automatique par le serveur dès acceptation, pas de déclaration manuelle ni d'étape "accepted" visible |
+| Formats de tournoi ? | **Les 3** : élimination directe, double élimination (avec match de reset si le représentant de la bracket perdants gagne la grande finale) et round-robin — décision explicite de l'utilisateur |
+| Comment se forment les équipes d'un tournoi ? | Inscription individuelle puis équipes formées par le MSP : manuellement, ou génération aléatoire équilibrée (serpentin pondéré par rating, *bucket shuffle* des ex-aequos) |
+| Base de la pondération des équipes ? | Rating MSP (`event_participants.rating`, éditable) avec fallback sur le **solde SP** au moment de la génération — décision explicite |
+| Récompenses de tournoi ? | Dotation par rang (`reward_1st/2nd/3rd` SP **par membre**) configurée à la création, **distribuée automatiquement** à la fin + ajustements libres du MSP ensuite — transaction type `event_reward` |
+| Qui déclare les vainqueurs de matchs de tournoi ? | **MSP uniquement** (il organise les parties hors-plateforme) — décision explicite, pas de déclaration par les participants comme les défis |
+| Les tournois sont-ils une entité séparée des événements ? | Non — un tournoi est une session comme les autres (`event_sessions.game_type = 'tournament'`), tables `tournament_*` pour le spécifique (même pattern que flappy_bird/speedrun), contrôles MSP dans la page `/evenements/:id` |
 | Un défi "pile ou face" peut-il avoir plusieurs adversaires comme un défi classique ? | Non — restreint à un seul adversaire (2 participants), un pile ou face n'a que deux faces. Résolution automatique par le serveur dès acceptation, pas de déclaration manuelle ni d'étape "accepted" visible |

@@ -1,28 +1,30 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth.jsx';
-import * as minigamesApi from '../api/minigames.js';
+import * as eventsApi from '../api/events.js';
 import * as speedrunApi from '../api/speedrun.js';
-import { GAME_TYPE_LABELS, gameTypeLabel } from '../lib/minigameLabels.js';
+import { GAME_TYPE_LABELS, gameTypeLabel } from '../lib/eventLabels.js';
 import {
-  MINIGAME_GAME_TYPES,
-  type MinigameGameType,
-  type MinigameSession,
+  EVENT_GAME_TYPES,
+  TOURNAMENT_FORMATS,
+  type EventGameType,
+  type EventSession,
   type SpeedrunComGameResult,
+  type TournamentFormat,
 } from '../types.js';
 
 const SPEEDRUN_SEARCH_DEBOUNCE_MS = 400;
 
-export default function Minigames() {
+export default function Events() {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
 
-  const [sessions, setSessions] = useState<MinigameSession[]>([]);
+  const [sessions, setSessions] = useState<EventSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showClosed, setShowClosed] = useState(false);
 
-  const [gameType, setGameType] = useState<MinigameGameType>(MINIGAME_GAME_TYPES[0]);
+  const [gameType, setGameType] = useState<EventGameType>(EVENT_GAME_TYPES[0]);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [isPaid, setIsPaid] = useState(false);
@@ -32,6 +34,11 @@ export default function Minigames() {
   const [reward2nd, setReward2nd] = useState('');
   const [reward3rd, setReward3rd] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  // Spécifique tournoi
+  const [tournamentFormat, setTournamentFormat] = useState<TournamentFormat>('single_elim');
+  const [maxTeams, setMaxTeams] = useState('8');
+  const [teamSize, setTeamSize] = useState('1');
 
   // Recherche speedrun.com — purement une pré-suggestion pour remplir titre/
   // description/image/lien ; le MSP garde toujours la main pour tout saisir à la
@@ -77,7 +84,7 @@ export default function Minigames() {
   async function load() {
     setLoading(true);
     try {
-      const data = await minigamesApi.listSessions();
+      const data = await eventsApi.listSessions();
       setSessions(data);
       setError(null);
     } catch (err) {
@@ -115,6 +122,24 @@ export default function Minigames() {
       !Number.isInteger(reward3rdValue) ||
       reward3rdValue < 0);
 
+  const showTournamentOptions = gameType === 'tournament';
+  const maxTeamsValue = Number(maxTeams);
+  const teamSizeValue = Number(teamSize);
+  const tournamentInvalid =
+    showTournamentOptions &&
+    (!Number.isInteger(maxTeamsValue) ||
+      maxTeamsValue < 2 ||
+      maxTeamsValue > 64 ||
+      !Number.isInteger(teamSizeValue) ||
+      teamSizeValue < 1 ||
+      teamSizeValue > 16 ||
+      !Number.isInteger(reward1stValue) ||
+      reward1stValue < 0 ||
+      !Number.isInteger(reward2ndValue) ||
+      reward2ndValue < 0 ||
+      !Number.isInteger(reward3rdValue) ||
+      reward3rdValue < 0);
+
   async function handleCreate(e: FormEvent) {
     e.preventDefault();
     setError(null);
@@ -126,9 +151,13 @@ export default function Minigames() {
       setError('La date limite (dans le futur) et les 3 gains sont requis');
       return;
     }
+    if (tournamentInvalid) {
+      setError('Format, nombre d’équipes (2-64), taille d’équipe (1-16) et dotation requis');
+      return;
+    }
     setSubmitting(true);
     try {
-      await minigamesApi.createSession(
+      await eventsApi.createSession(
         gameType,
         title.trim(),
         description.trim() || undefined,
@@ -142,6 +171,16 @@ export default function Minigames() {
               gameImageUrl: gameType === 'speedrun' ? (selectedGame?.imageUrl ?? undefined) : undefined,
               gameExternalUrl: gameType === 'speedrun' ? (selectedGame?.weblink ?? undefined) : undefined,
             }
+          : undefined,
+        showTournamentOptions
+          ? {
+              tournamentFormat,
+              tournamentMaxTeams: maxTeamsValue,
+              tournamentTeamSize: teamSizeValue,
+              reward1st: reward1stValue,
+              reward2nd: reward2ndValue,
+              reward3rd: reward3rdValue,
+            }
           : undefined
       );
       setTitle('');
@@ -152,6 +191,9 @@ export default function Minigames() {
       setReward1st('');
       setReward2nd('');
       setReward3rd('');
+      setTournamentFormat('single_elim');
+      setMaxTeams('8');
+      setTeamSize('1');
       setSelectedGame(null);
       setSpeedrunQuery('');
       setSpeedrunResults([]);
@@ -166,7 +208,7 @@ export default function Minigames() {
   return (
     <div className="min-h-screen bg-zinc-950 py-10 px-4">
       <div className="max-w-2xl mx-auto">
-        <h1 className="text-2xl font-bold text-zinc-50 mb-6">Mini-jeux</h1>
+        <h1 className="text-2xl font-bold text-zinc-50 mb-6">Événements</h1>
 
         {error && <p className="mb-4 text-sm text-red-400">{error}</p>}
 
@@ -177,17 +219,22 @@ export default function Minigames() {
               <select
                 value={gameType}
                 onChange={(e) => {
-                  const nextType = e.target.value as MinigameGameType;
+                  const nextType = e.target.value as EventGameType;
                   setGameType(nextType);
                   if (nextType !== 'quiz') {
                     setIsPaid(false);
                     setEntryFee('');
                   }
-                  if (nextType !== 'flappy_bird' && nextType !== 'speedrun') {
+                  if (nextType !== 'flappy_bird' && nextType !== 'speedrun' && nextType !== 'tournament') {
                     setEndsAt('');
                     setReward1st('');
                     setReward2nd('');
                     setReward3rd('');
+                  }
+                  if (nextType !== 'tournament') {
+                    setTournamentFormat('single_elim');
+                    setMaxTeams('8');
+                    setTeamSize('1');
                   }
                   if (nextType !== 'speedrun') {
                     setSelectedGame(null);
@@ -197,7 +244,7 @@ export default function Minigames() {
                 }}
                 className="w-full rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
               >
-                {MINIGAME_GAME_TYPES.map((type) => (
+                {EVENT_GAME_TYPES.map((type) => (
                   <option key={type} value={type}>
                     {GAME_TYPE_LABELS[type]}
                   </option>
@@ -280,7 +327,11 @@ export default function Minigames() {
                 type="text"
                 required
                 maxLength={255}
-                placeholder="Titre (ex: Quiz Culture Générale #3)"
+                placeholder={
+                  gameType === 'tournament'
+                    ? 'Titre (ex: Tournoi Flappy Bird — Saison 1)'
+                    : 'Titre (ex: Quiz Culture Générale #3)'
+                }
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 className="w-full rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
@@ -367,9 +418,101 @@ export default function Minigames() {
                   </div>
                 </div>
               )}
+              {showTournamentOptions && (
+                <div className="space-y-2">
+                  <div>
+                    <label className="block text-xs text-zinc-500 mb-1">Format</label>
+                    <select
+                      value={tournamentFormat}
+                      onChange={(e) => setTournamentFormat(e.target.value as TournamentFormat)}
+                      className="w-full rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    >
+                      {TOURNAMENT_FORMATS.map((f) => (
+                        <option key={f} value={f}>
+                          {f === 'single_elim'
+                            ? 'Élimination directe'
+                            : f === 'double_elim'
+                              ? 'Double élimination'
+                              : 'Round-robin (poule unique)'}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-xs text-zinc-500 mb-1">Nombre d’équipes (max)</label>
+                      <input
+                        type="number"
+                        required
+                        min={2}
+                        max={64}
+                        step={1}
+                        value={maxTeams}
+                        onChange={(e) => setMaxTeams(e.target.value)}
+                        className="w-full rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-zinc-500 mb-1">Joueurs par équipe</label>
+                      <input
+                        type="number"
+                        required
+                        min={1}
+                        max={16}
+                        step={1}
+                        value={teamSize}
+                        onChange={(e) => setTeamSize(e.target.value)}
+                        className="w-full rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-xs text-zinc-500">
+                    Dotation en SP par membre de l’équipe — distribuée automatiquement à la fin du
+                    tournoi.
+                  </p>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <label className="block text-xs text-zinc-500 mb-1">1er (SP)</label>
+                      <input
+                        type="number"
+                        required
+                        min={0}
+                        step={1}
+                        value={reward1st}
+                        onChange={(e) => setReward1st(e.target.value)}
+                        className="w-full rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-zinc-500 mb-1">2e (SP)</label>
+                      <input
+                        type="number"
+                        required
+                        min={0}
+                        step={1}
+                        value={reward2nd}
+                        onChange={(e) => setReward2nd(e.target.value)}
+                        className="w-full rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-zinc-500 mb-1">3e (SP)</label>
+                      <input
+                        type="number"
+                        required
+                        min={0}
+                        step={1}
+                        value={reward3rd}
+                        onChange={(e) => setReward3rd(e.target.value)}
+                        className="w-full rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
               <button
                 type="submit"
-                disabled={submitting || paidFeeInvalid || deadlineRewardInvalid}
+                disabled={submitting || paidFeeInvalid || deadlineRewardInvalid || tournamentInvalid}
                 className="bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-semibold px-4 py-2 rounded-md transition disabled:opacity-50"
               >
                 Créer
@@ -384,9 +527,9 @@ export default function Minigames() {
           <>
             <div className="space-y-3">
               {openSessions.length === 0 ? (
-                <p className="text-zinc-500">Aucun mini-jeu ouvert pour le moment.</p>
+                <p className="text-zinc-500">Aucun événement ouvert pour le moment.</p>
               ) : (
-                openSessions.map((s) => <MinigameCard key={s.id} session={s} />)
+                openSessions.map((s) => <EventCard key={s.id} session={s} />)
               )}
             </div>
 
@@ -398,13 +541,13 @@ export default function Minigames() {
                   className="mb-3 text-sm text-zinc-400 hover:text-zinc-200 font-medium transition"
                 >
                   {showClosed
-                    ? 'Masquer les mini-jeux clôturés'
-                    : `Voir les mini-jeux clôturés (${closedSessions.length})`}
+                    ? 'Masquer les événements clôturés'
+                    : `Voir les événements clôturés (${closedSessions.length})`}
                 </button>
                 {showClosed && (
                   <div className="space-y-3">
                     {closedSessions.map((s) => (
-                      <MinigameCard key={s.id} session={s} />
+                      <EventCard key={s.id} session={s} />
                     ))}
                   </div>
                 )}
@@ -417,10 +560,10 @@ export default function Minigames() {
   );
 }
 
-function MinigameCard({ session: s }: { session: MinigameSession }) {
+function EventCard({ session: s }: { session: EventSession }) {
   return (
     <Link
-      to={`/mini-jeux/${s.id}`}
+      to={`/evenements/${s.id}`}
       className="flex items-start gap-3 bg-zinc-900 border border-zinc-800 rounded-xl shadow-md p-4 hover:border-emerald-500/50 transition"
     >
       {s.game_image_url && (
@@ -442,7 +585,7 @@ function MinigameCard({ session: s }: { session: MinigameSession }) {
               {s.entry_fee} SP
             </span>
           )}
-          {(s.game_type === 'flappy_bird' || s.game_type === 'speedrun') && s.reward_1st ? (
+          {['flappy_bird', 'speedrun', 'tournament'].includes(s.game_type) && s.reward_1st ? (
             <span className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-yellow-500/15 text-yellow-400 font-medium uppercase tracking-wide">
               🥇 {s.reward_1st} SP
             </span>

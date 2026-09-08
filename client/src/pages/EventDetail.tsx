@@ -2,41 +2,47 @@ import { useCallback, useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth.jsx';
 import { useAnnounceChatRoom } from '../hooks/useChatGameRoom.jsx';
-import * as minigamesApi from '../api/minigames.js';
-import { gameTypeLabel } from '../lib/minigameLabels.js';
+import * as eventsApi from '../api/events.js';
+import { gameTypeIcon, gameTypeLabel } from '../lib/eventLabels.js';
 import QuizSessionDetail from '../components/QuizSessionDetail.jsx';
 import FlappyBirdSessionDetail from '../components/FlappyBirdSessionDetail.jsx';
 import SpeedrunSessionDetail from '../components/SpeedrunSessionDetail.jsx';
-import type { MinigameQuestionView, MinigameSessionDetail } from '../types.js';
+import TournamentDetail from '../components/TournamentDetail.jsx';
+import type { EventQuestionView, EventSessionDetail } from '../types.js';
 
 const POLL_INTERVAL_MS = 2000;
 
-export default function MinigameDetail() {
+export default function EventDetail() {
   const { id } = useParams<{ id: string }>();
   const sessionId = Number(id);
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
 
-  const [session, setSession] = useState<MinigameSessionDetail | null>(null);
-  const [questions, setQuestions] = useState<MinigameQuestionView[]>([]);
+  const [session, setSession] = useState<EventSessionDetail | null>(null);
+  const [questions, setQuestions] = useState<EventQuestionView[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useAnnounceChatRoom(
     session
-      ? { room: 'minigame', roomKey: String(sessionId), label: session.title || 'Mini-jeu', icon: '🧠' }
+      ? {
+          room: 'event',
+          roomKey: String(sessionId),
+          label: session.title || gameTypeLabel(session.game_type),
+          icon: gameTypeIcon(session.game_type),
+        }
       : null
   );
 
   const load = useCallback(async () => {
     try {
-      const data = await minigamesApi.getSession(sessionId);
+      const data = await eventsApi.getSession(sessionId);
       setSession(data);
       setError(null);
       // listQuestions est un endpoint quiz-only ; l'appeler pour une session
       // flappy_bird/speedrun n'apporterait qu'un aller-retour inutile à chaque poll.
       if (data.game_type === 'quiz') {
-        const history = await minigamesApi.listQuestions(sessionId);
+        const history = await eventsApi.listQuestions(sessionId);
         setQuestions(history);
       }
     } catch (err) {
@@ -59,8 +65,8 @@ export default function MinigameDetail() {
   return (
     <div className="min-h-screen bg-zinc-950 py-10 px-4">
       <div className="max-w-2xl mx-auto">
-        <Link to="/mini-jeux" className="text-sm text-emerald-400 font-medium">
-          ← Mini-jeux
+        <Link to="/evenements" className="text-sm text-emerald-400 font-medium">
+          ← Événements
         </Link>
 
         {error && <p className="mt-4 text-sm text-red-400">{error}</p>}
@@ -110,6 +116,15 @@ export default function MinigameDetail() {
               />
             ) : session.game_type === 'speedrun' ? (
               <SpeedrunSessionDetail
+                sessionId={sessionId}
+                session={session}
+                isAdmin={isAdmin}
+                userId={user?.id}
+                onSessionChange={setSession}
+                onError={setError}
+              />
+            ) : session.game_type === 'tournament' ? (
+              <TournamentDetail
                 sessionId={sessionId}
                 session={session}
                 isAdmin={isAdmin}
