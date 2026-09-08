@@ -943,15 +943,21 @@ export interface SudokuChoosingView {
   status: 'choosing';
   rewards: Record<SudokuDifficulty, number>;
   maxAttempts: Record<SudokuDifficulty, number>;
+  hideFeedback: Record<SudokuDifficulty, boolean>;
 }
 
-/** Une tentative passée du joueur — pas de détail cellule par cellule ici (déjà vu au moment du check), juste de quoi tracer l'historique. */
+/**
+ * Une tentative passée du joueur. `cellCorrect` vaut `null` quand le MSP a
+ * caché le détail case par case pour cette difficulté — seul `wrongCount`
+ * (nombre de cases fausses) est alors disponible.
+ */
 export interface SudokuAttemptSummary {
   attemptNumber: number;
   isCorrect: boolean;
   createdAt: string;
   guess: string;
-  cellCorrect: boolean[];
+  cellCorrect: boolean[] | null;
+  wrongCount: number;
 }
 
 /** Vue publique du puzzle du jour une fois la difficulté choisie : la solution n'est incluse qu'en fin de partie. */
@@ -965,13 +971,16 @@ export interface SudokuGameView {
   attempts: SudokuAttemptSummary[];
   rewardSp: number;
   solution: string | null;
+  hideFeedback: boolean;
 }
 
 export type SudokuTodayView = SudokuChoosingView | SudokuGameView;
 
+/** `cellCorrect` vaut `null` si le MSP a caché le détail case par case pour cette difficulté — seul `wrongCount` est alors fourni. */
 export interface SudokuCheckResult {
   solved: boolean;
-  cellCorrect: boolean[];
+  cellCorrect: boolean[] | null;
+  wrongCount: number;
   status: SudokuGameStatus;
   attemptsUsed: number;
   maxAttempts: number;

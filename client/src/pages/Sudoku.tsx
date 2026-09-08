@@ -59,35 +59,57 @@ function saveProgress(puzzleDate: string, difficulty: SudokuDifficulty, grid: st
   }
 }
 
-/** Aperçu en lecture seule d'une grille soumise passée — mêmes couleurs que la grille jouable, sans interaction. */
-function AttemptGridPreview({ givens, guess, cellCorrect }: { givens: string; guess: string; cellCorrect: boolean[] }) {
+/**
+ * Aperçu en lecture seule d'une grille soumise passée — mêmes couleurs que la
+ * grille jouable, sans interaction. `cellCorrect` vaut `null` quand le MSP a
+ * caché le détail case par case pour cette difficulté : aucune case n'est
+ * alors colorée en rouge, seul le nombre de cases fausses est affiché.
+ */
+function AttemptGridPreview({
+  givens,
+  guess,
+  cellCorrect,
+  wrongCount,
+}: {
+  givens: string;
+  guess: string;
+  cellCorrect: boolean[] | null;
+  wrongCount: number;
+}) {
   return (
-    <div
-      className="grid gap-0.5 bg-zinc-700 border-2 border-zinc-600 rounded-md overflow-hidden mt-2"
-      style={{ gridTemplateColumns: 'repeat(9, minmax(0, 1fr))' }}
-    >
-      {Array.from({ length: 81 }, (_, i) => {
-        const isGiven = givens[i] !== '0';
-        const value = guess[i] === '0' ? '' : guess[i];
-        const wrong = guess[i] !== '0' && !cellCorrect[i];
-        const col = i % 9;
-        const row = Math.floor(i / 9);
-        const thickRight = col % 3 === 2 && col !== 8;
-        const thickBottom = row % 3 === 2 && row !== 8;
-        return (
-          <div
-            key={i}
-            className={`aspect-square flex items-center justify-center font-semibold text-xs ${
-              isGiven ? 'bg-zinc-800 text-zinc-300' : 'bg-zinc-900 text-emerald-400'
-            } ${wrong ? '!bg-red-500/20 !text-red-400' : ''} ${
-              thickRight ? 'border-r-2 border-r-zinc-500' : ''
-            } ${thickBottom ? 'border-b-2 border-b-zinc-500' : ''}`}
-          >
-            {value}
-          </div>
-        );
-      })}
-    </div>
+    <>
+      <div
+        className="grid gap-0.5 bg-zinc-700 border-2 border-zinc-600 rounded-md overflow-hidden mt-2"
+        style={{ gridTemplateColumns: 'repeat(9, minmax(0, 1fr))' }}
+      >
+        {Array.from({ length: 81 }, (_, i) => {
+          const isGiven = givens[i] !== '0';
+          const value = guess[i] === '0' ? '' : guess[i];
+          const wrong = cellCorrect !== null && guess[i] !== '0' && !cellCorrect[i];
+          const col = i % 9;
+          const row = Math.floor(i / 9);
+          const thickRight = col % 3 === 2 && col !== 8;
+          const thickBottom = row % 3 === 2 && row !== 8;
+          return (
+            <div
+              key={i}
+              className={`aspect-square flex items-center justify-center font-semibold text-xs ${
+                isGiven ? 'bg-zinc-800 text-zinc-300' : 'bg-zinc-900 text-emerald-400'
+              } ${wrong ? '!bg-red-500/20 !text-red-400' : ''} ${
+                thickRight ? 'border-r-2 border-r-zinc-500' : ''
+              } ${thickBottom ? 'border-b-2 border-b-zinc-500' : ''}`}
+            >
+              {value}
+            </div>
+          );
+        })}
+      </div>
+      {cellCorrect === null && (
+        <p className="text-sm text-red-400 font-semibold mt-1.5">
+          {wrongCount} case{wrongCount > 1 ? 's' : ''} incorrecte{wrongCount > 1 ? 's' : ''}
+        </p>
+      )}
+    </>
   );
 }
 
@@ -204,6 +226,7 @@ export default function Sudoku() {
     setGrid(nextGrid);
     setNotes(nextNotes);
     setCellCorrect(null);
+    setMessage(null);
     saveProgress(view.puzzleDate, view.difficulty, nextGrid, nextNotes);
   }
 
@@ -214,6 +237,7 @@ export default function Sudoku() {
     setGrid(nextGrid);
     setNotes(nextNotes);
     setCellCorrect(null);
+    setMessage(null);
     saveProgress(view.puzzleDate, view.difficulty, nextGrid, nextNotes);
   }
 
@@ -249,6 +273,7 @@ export default function Sudoku() {
         attempts: result.attempts,
         rewardSp: result.rewardSp,
         solution: result.solution,
+        hideFeedback: view.hideFeedback,
       });
 
       if (result.status !== 'in_progress' && result.solution) {
@@ -275,6 +300,11 @@ export default function Sudoku() {
       } else {
         sound.playChip();
         saveProgress(view.puzzleDate, view.difficulty, grid, notes);
+        if (result.cellCorrect === null) {
+          setMessage(
+            `${result.wrongCount} case${result.wrongCount > 1 ? 's' : ''} incorrecte${result.wrongCount > 1 ? 's' : ''}`
+          );
+        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur inconnue');
@@ -315,7 +345,14 @@ export default function Sudoku() {
                   disabled={choosing}
                   className="w-full flex items-center justify-between bg-zinc-900 border border-zinc-800 hover:border-emerald-500/50 rounded-md px-4 py-3 transition disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  <span className="font-semibold text-zinc-100">{d.label}</span>
+                  <span className="font-semibold text-zinc-100">
+                    {d.label}
+                    {view.hideFeedback[d.value] && (
+                      <span className="block text-[11px] font-normal text-amber-500/80 mt-0.5">
+                        Cases correctes non révélées
+                      </span>
+                    )}
+                  </span>
                   <span className="text-right">
                     <span className="block text-sm text-emerald-400 font-medium">+{view.rewards[d.value]} SP</span>
                     <span className="block text-xs text-zinc-500">
@@ -428,6 +465,9 @@ export default function Sudoku() {
                 Perdu — plus de tentatives disponibles aujourd'hui. La solution est affichée ci-dessus.
               </p>
             )}
+            {view.status === 'in_progress' && message && (
+              <p className="text-center text-base text-red-400 font-bold mb-2">{message}</p>
+            )}
             {view.status === 'in_progress' && (() => {
               const remaining = view.maxAttempts - view.attemptsUsed;
               return (
@@ -478,7 +518,12 @@ export default function Sudoku() {
                         </button>
                         {expanded && (
                           <div className="px-3 pb-3">
-                            <AttemptGridPreview givens={view.givens} guess={a.guess} cellCorrect={a.cellCorrect} />
+                            <AttemptGridPreview
+                              givens={view.givens}
+                              guess={a.guess}
+                              cellCorrect={a.cellCorrect}
+                              wrongCount={a.wrongCount}
+                            />
                           </div>
                         )}
                       </li>

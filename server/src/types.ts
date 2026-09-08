@@ -1044,6 +1044,7 @@ export interface SudokuChoosingView {
   status: 'choosing';
   rewards: Record<SudokuDifficulty, number>;
   maxAttempts: Record<SudokuDifficulty, number>;
+  hideFeedback: Record<SudokuDifficulty, boolean>;
 }
 
 /**
@@ -1051,13 +1052,17 @@ export interface SudokuChoosingView {
  * réafficher — `cellCorrect` ne révèle jamais les chiffres de la solution,
  * seulement si chaque case remplie était juste, donc sûr à renvoyer même en
  * cours de partie (même principe que le résultat d'un `check` en direct).
+ * `cellCorrect` vaut `null` quand le MSP a activé `sudoku_hide_feedback_*`
+ * pour cette difficulté : seul `wrongCount` (nombre de cases fausses) est
+ * alors disponible, pas le détail case par case.
  */
 export interface SudokuAttemptSummary {
   attemptNumber: number;
   isCorrect: boolean;
   createdAt: string;
   guess: string;
-  cellCorrect: boolean[];
+  cellCorrect: boolean[] | null;
+  wrongCount: number;
 }
 
 /** Vue publique du puzzle du jour une fois la difficulté choisie : la solution n'est incluse qu'en fin de partie. */
@@ -1071,14 +1076,21 @@ export interface SudokuGameView {
   attempts: SudokuAttemptSummary[];
   rewardSp: number;
   solution: string | null;
+  hideFeedback: boolean;
 }
 
 export type SudokuTodayView = SudokuChoosingView | SudokuGameView;
 
-/** Résultat d'une soumission (consomme une tentative) : correction cellule par cellule (case vide jamais correcte). */
+/**
+ * Résultat d'une soumission (consomme une tentative) : correction cellule par
+ * cellule (case vide jamais correcte), sauf si `sudoku_hide_feedback_*` est
+ * actif pour cette difficulté — `cellCorrect` vaut alors `null` et seul
+ * `wrongCount` est renvoyé.
+ */
 export interface SudokuCheckResult {
   solved: boolean;
-  cellCorrect: boolean[];
+  cellCorrect: boolean[] | null;
+  wrongCount: number;
   status: SudokuGameStatus;
   attemptsUsed: number;
   maxAttempts: number;
