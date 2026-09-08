@@ -20,6 +20,21 @@ export function setVolume(next: number): void {
   if (typeof window !== 'undefined') {
     window.localStorage.setItem(VOLUME_STORAGE_KEY, String(volume));
   }
+  // Les pistes du quiz (contrairement aux tons synthétisés, calculés au moment
+  // du son) peuvent déjà être en train de jouer — répercuter le nouveau volume
+  // immédiatement sur leur gain plutôt que d'attendre la prochaine piste. Une
+  // piste déjà en fondu de sortie (`stopping`) est ignorée : lui appliquer le
+  // volume courant annulerait sa rampe vers 0 et la laisserait bloquée à plein
+  // volume, indéfiniment audible puisque plus rien ne la referme ensuite.
+  const audio = ctx;
+  if (audio) {
+    const now = audio.currentTime;
+    for (const track of [quizIntroTrack, quizLoopTrack, quizAnswerTrack]) {
+      if (!track || track.stopping) continue;
+      track.gain.gain.cancelScheduledValues(now);
+      track.gain.gain.setValueAtTime(volume, now);
+    }
+  }
 }
 
 let ctx: AudioContext | null = null;
@@ -264,121 +279,176 @@ export function playHeartbeatBeat(): void {
   bassThump(now + 0.16, 0.09);
 }
 
-let quizTensionInterval: ReturnType<typeof setInterval> | null = null;
-let quizTensionIntervalMs = 0;
-let quizTensionBeat = 0;
+// Musique du quiz : vrais enregistrements (façon "Qui veut gagner des
+// millions ?") plutôt que des tons synthétisés — plus chaud, moins "digital".
+// `quiz_intro` : sting joué une fois au lancement d'une question chronométrée.
+// `quiz_part1`/`quiz_part2` : boucle de suspense, part2 pour la dernière ligne
+// droite (plus intense). `quiz_answer` : sting joué à la révélation.
+//
+// Lu via l'API Web Audio (AudioBufferSourceNode + GainNode), pas de simples
+// balises <audio> : ça permet un vrai fondu (linearRampToValueAtTime) au
+// démarrage/à l'arrêt de chaque piste plutôt qu'un pause() qui coupe le son
+// net en plein milieu — notamment quand la boucle de suspense change de phase
+// ou s'arrête à la révélation.
+const QUIZ_AUDIO_BASE = '/sounds/quiz';
+const QUIZ_FADE_SECONDS = 0.5;
+type QuizLoopPhase = 'part1' | 'part2';
 
-/**
- * (Re)démarre la boucle de tic-tac de tension du quiz au tempo demandé (ms
- * entre deux tics), façon horloge de "Qui veut gagner des millions ?" — le
- * tempo est recalculé par l'appelant selon le temps restant du timer de
- * question (accélère à l'approche de zéro). No-op si déjà au même tempo.
- */
-/**
- * Tic-tac d'horloge mécanique (impulsion de bruit filtrée en passe-bande +
- * un léger "corps" grave qui lui donne du poids) plutôt qu'un bip carré
- * électronique — plus proche d'un vrai réveil que d'un jeu 8-bit.
- * `accent` alterne un tic un peu plus haut/marqué et un tac plus sourd,
- * comme les deux temps d'une vraie horloge.
- */
-function clockTick(startTime: number, accent: boolean): void {
-  if (volume <= 0) return;
-  const audio = getContext();
-  if (!audio) return;
-  const peak = accent ? 0.11 : 0.075;
+interface QuizTrack {
+  source: AudioBufferSourceNode;
+  gain: GainNode;
+  // Vrai une fois son fondu de sortie programmé (voir stopQuizTrack) — sert à
+  // ce que setVolume() ne vienne pas écraser cette rampe vers 0 en la
+  // ramenant au volume courant, ce qui laisserait la piste bloquée audible.
+  stopping: boolean;
+}
 
-  const bufferSize = Math.max(1, Math.floor(audio.sampleRate * 0.025));
-  const buffer = audio.createBuffer(1, bufferSize, audio.sampleRate);
-  const data = buffer.getChannelData(0);
-  for (let i = 0; i < bufferSize; i++) {
-    data[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize);
+let quizIntroTrack: QuizTrack | null = null;
+let quizLoopTrack: QuizTrack | null = null;
+let quizAnswerTrack: QuizTrack | null = null;
+let quizLoopPhase: QuizLoopPhase | null = null;
+
+// Le chargement d'une piste est asynchrone (fetch + décodage) : si une
+// nouvelle demande arrive avant que la précédente ait fini de démarrer (rappel
+// React trop fréquent, double appel, etc.), la piste qui finit par démarrer en
+// retard doit s'auto-détruire au lieu de s'assigner par-dessus la bonne — sans
+// ce jeton, une source `loop = true` sans plus aucune référence continue de
+// jouer indéfiniment en arrière-plan (elle n'est stoppée que via la référence
+// suivie ; personne ne l'arrête jamais si elle n'est jamais devenue "la"
+// référence). Un compteur par emplacement (intro/boucle/réponse) suffit : seule
+// la toute dernière demande émise pour cet emplacement peut s'assigner.
+let quizIntroRequestId = 0;
+let quizLoopRequestId = 0;
+let quizAnswerRequestId = 0;
+
+const quizBufferCache = new Map<string, Promise<AudioBuffer>>();
+
+function loadQuizBuffer(audio: AudioContext, url: string): Promise<AudioBuffer> {
+  let promise = quizBufferCache.get(url);
+  if (!promise) {
+    promise = fetch(url)
+      .then((res) => res.arrayBuffer())
+      .then((buf) => audio.decodeAudioData(buf));
+    quizBufferCache.set(url, promise);
   }
-  const noise = audio.createBufferSource();
-  noise.buffer = buffer;
-  const filter = audio.createBiquadFilter();
-  filter.type = 'bandpass';
-  filter.frequency.setValueAtTime(accent ? 2600 : 1900, startTime);
-  filter.Q.value = 2.5;
-  const noiseGain = audio.createGain();
-  noiseGain.gain.setValueAtTime(peak * volume, startTime);
-  noiseGain.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.03);
-  noise.connect(filter);
-  filter.connect(noiseGain);
-  noiseGain.connect(audio.destination);
-  noise.start(startTime);
-  noise.stop(startTime + 0.035);
+  return promise;
+}
 
-  const osc = audio.createOscillator();
+/** Fondu entrant : le gain part de 0 pour atteindre le volume courant, jamais un démarrage sec. */
+async function startQuizTrack(url: string, loop: boolean): Promise<QuizTrack | null> {
+  const audio = getContext();
+  if (!audio) return null;
+  const buffer = await loadQuizBuffer(audio, url);
+  const source = audio.createBufferSource();
+  source.buffer = buffer;
+  source.loop = loop;
   const gain = audio.createGain();
-  osc.type = 'sine';
-  osc.frequency.setValueAtTime(accent ? 210 : 160, startTime);
-  osc.frequency.exponentialRampToValueAtTime(accent ? 110 : 85, startTime + 0.05);
-  gain.gain.setValueAtTime(peak * 0.55 * volume, startTime);
-  gain.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.055);
-  osc.connect(gain);
+  const now = audio.currentTime;
+  gain.gain.setValueAtTime(0, now);
+  gain.gain.linearRampToValueAtTime(volume, now + QUIZ_FADE_SECONDS);
+  source.connect(gain);
   gain.connect(audio.destination);
-  osc.start(startTime);
-  osc.stop(startTime + 0.06);
+  source.start();
+  return { source, gain, stopping: false };
 }
 
-export function setQuizTensionTempo(intervalMs: number): void {
-  if (quizTensionInterval && quizTensionIntervalMs === intervalMs) return;
-  if (quizTensionInterval) clearInterval(quizTensionInterval);
-  quizTensionIntervalMs = intervalMs;
-  quizTensionBeat = 0;
-  const beat = () => {
-    const audio = getContext();
-    if (audio) {
-      clockTick(audio.currentTime, quizTensionBeat % 2 === 0);
-    }
-    quizTensionBeat++;
-  };
-  beat();
-  quizTensionInterval = setInterval(beat, intervalMs);
-}
-
-/** Arrête la boucle de tension du quiz (question close, réponses révélées, ou changement de page). */
-export function stopQuizTension(): void {
-  if (quizTensionInterval) {
-    clearInterval(quizTensionInterval);
-    quizTensionInterval = null;
-  }
-  quizTensionIntervalMs = 0;
-}
-
-/** Petit carillon (harmoniques sinusoïdales, façon cloche) à une note donnée. */
-function bellChime(freq: number, startTime: number, duration: number, peak: number): void {
+/** Fondu sortant sur `QUIZ_FADE_SECONDS` puis arrêt — jamais de coupure nette en pleine boucle. */
+function stopQuizTrack(track: QuizTrack | null): void {
+  if (!track) return;
+  track.stopping = true;
   const audio = getContext();
-  if (!audio) return;
-  // Fondamentale + deux harmoniques légèrement désaccordées : donne un grain
-  // de cloche chaud plutôt qu'un bip pur, sans matériel audio externe.
-  [
-    { mult: 1, share: 0.55 },
-    { mult: 2.01, share: 0.28 },
-    { mult: 3.98, share: 0.17 },
-  ].forEach(({ mult, share }) => {
-    const osc = audio.createOscillator();
-    const gain = audio.createGain();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(freq * mult, startTime);
-    gain.gain.setValueAtTime(0, startTime);
-    gain.gain.linearRampToValueAtTime(peak * share * volume, startTime + 0.015);
-    gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
-    osc.connect(gain);
-    gain.connect(audio.destination);
-    osc.start(startTime);
-    osc.stop(startTime + duration + 0.05);
+  if (!audio) {
+    track.source.stop();
+    return;
+  }
+  const now = audio.currentTime;
+  track.gain.gain.cancelScheduledValues(now);
+  track.gain.gain.setValueAtTime(track.gain.gain.value, now);
+  track.gain.gain.linearRampToValueAtTime(0, now + QUIZ_FADE_SECONDS);
+  track.source.stop(now + QUIZ_FADE_SECONDS + 0.05);
+}
+
+/** Sting joué une fois au lancement d'une question chronométrée. */
+export function startQuizIntro(): void {
+  stopQuizTrack(quizIntroTrack);
+  quizIntroTrack = null;
+  const requestId = ++quizIntroRequestId;
+  startQuizTrack(`${QUIZ_AUDIO_BASE}/quiz_intro.wav`, false).then((track) => {
+    if (requestId === quizIntroRequestId) {
+      quizIntroTrack = track;
+    } else {
+      stopQuizTrack(track);
+    }
   });
 }
 
-/** Carillon chaleureux de révélation quand les réponses des autres joueurs deviennent visibles. */
-export function playQuizReveal(): void {
-  const audio = getContext();
-  if (!audio) return;
-  const now = audio.currentTime;
-  bellChime(523.25, now, 0.5, 0.13);
-  bellChime(659.25, now + 0.1, 0.55, 0.13);
-  bellChime(783.99, now + 0.2, 0.9, 0.16);
+/**
+ * (Re)démarre la boucle de suspense sur la phase demandée — `part2` pour la
+ * dernière ligne droite du timer, plus intense. No-op si déjà sur cette phase
+ * (avec une piste effectivement assignée : un chargement encore en vol pour
+ * cette même phase ne compte pas, sinon un second appel rapproché avant la fin
+ * du chargement redémarrerait inutilement la piste).
+ * La phase précédente s'éteint en fondu pendant que la nouvelle s'installe,
+ * plutôt que de s'interrompre net.
+ */
+export function setQuizLoopPhase(phase: QuizLoopPhase): void {
+  if (quizLoopPhase === phase && quizLoopTrack) return;
+  stopQuizTrack(quizLoopTrack);
+  quizLoopTrack = null;
+  quizLoopPhase = phase;
+  const requestId = ++quizLoopRequestId;
+  startQuizTrack(`${QUIZ_AUDIO_BASE}/quiz_${phase}.wav`, true).then((track) => {
+    // Si une demande plus récente est arrivée entre-temps (phase re-changée,
+    // ou juste un second appel pour la même phase avant que celui-ci ait fini
+    // de charger), cette piste n'est plus la bonne — l'éteindre plutôt que de
+    // l'assigner, sinon elle continuerait de boucler indéfiniment sans que
+    // rien ne la référence jamais pour l'arrêter.
+    if (requestId === quizLoopRequestId && quizLoopPhase === phase) {
+      quizLoopTrack = track;
+    } else {
+      stopQuizTrack(track);
+    }
+  });
+}
+
+/** Arrête (en fondu) la boucle de tension du quiz — réponses révélées, question close, ou changement de page. */
+export function stopQuizLoop(): void {
+  quizLoopRequestId++;
+  stopQuizTrack(quizLoopTrack);
+  quizLoopTrack = null;
+  quizLoopPhase = null;
+}
+
+/** Sting de révélation quand les réponses des autres joueurs deviennent visibles. */
+export function playQuizAnswer(): void {
+  stopQuizLoop();
+  stopQuizTrack(quizIntroTrack);
+  quizIntroTrack = null;
+  quizIntroRequestId++;
+  stopQuizTrack(quizAnswerTrack);
+  quizAnswerTrack = null;
+  const requestId = ++quizAnswerRequestId;
+  startQuizTrack(`${QUIZ_AUDIO_BASE}/quiz_answer.wav`, false).then((track) => {
+    if (requestId === quizAnswerRequestId) {
+      quizAnswerTrack = track;
+    } else {
+      stopQuizTrack(track);
+    }
+  });
+}
+
+/** Coupe (en fondu) toute la musique du quiz — démontage du composant, changement de session. */
+export function stopAllQuizAudio(): void {
+  quizLoopRequestId++;
+  quizIntroRequestId++;
+  quizAnswerRequestId++;
+  stopQuizTrack(quizLoopTrack);
+  quizLoopTrack = null;
+  quizLoopPhase = null;
+  stopQuizTrack(quizIntroTrack);
+  quizIntroTrack = null;
+  stopQuizTrack(quizAnswerTrack);
+  quizAnswerTrack = null;
 }
 
 /** "Cha-ching" de caisse enregistreuse à un retrait Crash réussi. */

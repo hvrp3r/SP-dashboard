@@ -293,6 +293,9 @@ export interface MinigameQuestionRow {
   duration_seconds: number | null;
   ends_at: string | null;
   correct_answer: string | null;
+  // Déclenché manuellement par le MSP — voir migration 062. Toujours visible
+  // (simple repère musical, pas une donnée de jeu à protéger).
+  intense_at: string | null;
 }
 
 export interface MinigameAnswerRow {

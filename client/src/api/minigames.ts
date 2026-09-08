@@ -65,6 +65,11 @@ export const closeQuestion = (sessionId: number, questionId: number) =>
     `/api/minigames/${sessionId}/questions/${questionId}/close`
   );
 
+export const intensifyQuestion = (sessionId: number, questionId: number) =>
+  apiClient.post<MinigameSessionDetail>(
+    `/api/minigames/${sessionId}/questions/${questionId}/intensify`
+  );
+
 export const submitAnswer = (sessionId: number, questionId: number, answerText: string) =>
   apiClient.post<MinigameSessionDetail>(
     `/api/minigames/${sessionId}/questions/${questionId}/answer`,

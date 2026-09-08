@@ -391,6 +391,37 @@ export async function askQuestion(
   res.status(201).json(detail);
 }
 
+/**
+ * Déclenche la phase "intense" de la musique de tension pour tous les
+ * joueurs (voir minigame.service.ts#intensifyQuestion) — avant même que le
+ * décompte n'atteigne le seuil automatique.
+ */
+export async function intensifyQuestion(
+  req: Request<{ id: string; questionId: string }>,
+  res: Response
+): Promise<void> {
+  const sessionId = Number(req.params.id);
+  const questionId = Number(req.params.questionId);
+  if (!Number.isInteger(sessionId) || !Number.isInteger(questionId)) {
+    res.status(400).json({ error: 'Identifiant invalide' });
+    return;
+  }
+
+  const question = await minigameService.getQuestionById(questionId);
+  if (!question || question.session_id !== sessionId) {
+    res.status(404).json({ error: 'Question introuvable' });
+    return;
+  }
+  if (question.status !== 'active') {
+    res.status(400).json({ error: 'Cette question est clôturée' });
+    return;
+  }
+
+  await minigameService.intensifyQuestion(questionId);
+  const detail = await buildSessionDetail(sessionId, req.user!);
+  res.json(detail);
+}
+
 export async function closeQuestion(
   req: Request<{ id: string; questionId: string }>,
   res: Response

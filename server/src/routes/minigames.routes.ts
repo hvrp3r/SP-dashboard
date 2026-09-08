@@ -24,6 +24,12 @@ router.post(
   requireAdmin,
   minigamesController.closeQuestion
 );
+router.post(
+  '/:id/questions/:questionId/intensify',
+  requireAuth,
+  requireAdmin,
+  minigamesController.intensifyQuestion
+);
 router.post('/:id/questions/:questionId/answer', requireAuth, minigamesController.submitAnswer);
 router.post(
   '/:id/questions/:questionId/answers/:userId/grade',

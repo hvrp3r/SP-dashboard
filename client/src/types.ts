@@ -323,6 +323,9 @@ export interface MinigameQuestionView {
   closed_at: string | null;
   duration_seconds: number | null;
   ends_at: string | null;
+  // Déclenché manuellement par le MSP pour passer la musique de tension en
+  // phase intense avant le seuil automatique du décompte. Toujours visible.
+  intense_at: string | null;
   // Masquée (absente) tant que la question n'est pas révélée pour un joueur
   // non-admin ; `null` reste possible si le MSP n'a saisi aucune réponse.
   correct_answer?: string | null;

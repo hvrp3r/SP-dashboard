@@ -295,6 +295,21 @@ export async function expireQuestionIfNeeded(sessionId: number): Promise<void> {
   );
 }
 
+/**
+ * Déclenche la phase "intense" de la musique de tension côté clients, avant
+ * même le seuil automatique du décompte. Idempotent (COALESCE) : un second
+ * clic du MSP ne repousse pas le timestamp.
+ */
+export async function intensifyQuestion(questionId: number): Promise<MinigameQuestionRow | null> {
+  const { rows } = await pool.query<MinigameQuestionRow>(
+    `UPDATE minigame_questions SET intense_at = COALESCE(intense_at, NOW())
+     WHERE id = $1 AND status = 'active'
+     RETURNING *`,
+    [questionId]
+  );
+  return rows[0] ?? null;
+}
+
 export async function closeQuestion(questionId: number): Promise<MinigameQuestionRow | null> {
   const { rows } = await pool.query<MinigameQuestionRow>(
     `UPDATE minigame_questions SET status = 'closed', closed_at = NOW()

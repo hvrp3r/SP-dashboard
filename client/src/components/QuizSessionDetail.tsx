@@ -9,14 +9,8 @@ import * as sound from '../lib/sound.js';
 import type { LeaderboardEntry, MinigameQuestionView, MinigameSessionDetail } from '../types.js';
 
 const TICK_INTERVAL_MS = 1000;
-
-/** Tempo (ms entre deux tics) de la musique de tension — accélère à l'approche de l'échéance. */
-function tensionTempoMs(remainingSeconds: number): number {
-  if (remainingSeconds <= 5) return 150;
-  if (remainingSeconds <= 10) return 250;
-  if (remainingSeconds <= 20) return 400;
-  return 700;
-}
+/** Sous ce seuil (secondes restantes), la boucle de suspense bascule sur la variante plus intense. */
+const QUIZ_LOOP_INTENSE_THRESHOLD_S = 10;
 
 /** Compare une réponse à la réponse correcte saisie par le MSP (insensible à la casse/aux espaces). */
 function matchesCorrectAnswer(correctAnswer: string | null | undefined, answerText: string | undefined): boolean {
@@ -78,6 +72,7 @@ export default function QuizSessionDetail({
   const [awardAmounts, setAwardAmounts] = useState<Record<number, string>>({});
   const [nowMs, setNowMs] = useState(() => Date.now());
   const revealedRef = useRef(false);
+  const introPlayedRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -107,34 +102,74 @@ export default function QuizSessionDetail({
     participants.every((p) => currentQuestion.answers.some((a) => a.user_id === p.user_id));
   const answersRevealed = currentQuestion?.status === 'closed' || allAnswered;
 
+  // Le décompte s'arrête dès que les réponses sont révélées (plus personne à
+  // attendre), même si la question reste "active" en base tant que le MSP ne
+  // l'a pas explicitement clôturée — sinon le chrono continuait de défiler à
+  // l'écran (et la musique de tension avec lui) après que tout le monde ait
+  // déjà répondu.
   const remainingSeconds =
-    currentQuestion?.status === 'active' && currentQuestion.ends_at
+    currentQuestion?.status === 'active' && currentQuestion.ends_at && !answersRevealed
       ? Math.max(0, Math.ceil((new Date(currentQuestion.ends_at).getTime() - nowMs) / 1000))
       : null;
 
-  // Musique de tension pendant une question chronométrée en cours, tant que les
-  // réponses ne sont pas encore révélées ; jingle de révélation une seule fois
-  // au moment où elles le deviennent (réponses de tous reçues, timer écoulé ou
-  // MSP a clôturé).
+  // Sting d'intro une fois par question chronométrée, dès qu'elle démarre.
   useEffect(() => {
-    if (currentQuestion?.status === 'active' && remainingSeconds !== null && !answersRevealed) {
-      sound.setQuizTensionTempo(tensionTempoMs(remainingSeconds));
-    } else {
-      sound.stopQuizTension();
+    if (
+      currentQuestion?.status === 'active' &&
+      currentQuestion.duration_seconds &&
+      introPlayedRef.current !== currentQuestion.id
+    ) {
+      introPlayedRef.current = currentQuestion.id;
+      sound.startQuizIntro();
     }
-    return () => sound.stopQuizTension();
-  }, [currentQuestion?.status, remainingSeconds, answersRevealed]);
+  }, [currentQuestion?.id, currentQuestion?.status, currentQuestion?.duration_seconds]);
 
+  // La boucle part1 tourne tant que le timer avance ; elle ne bascule sur la
+  // variante intense (part2) que sous le seuil automatique ou si le MSP l'a
+  // déclenchée manuellement (`intense_at`, propagé à tous via le polling —
+  // chacun joue sa propre musique localement, il n'y a pas de flux partagé).
+  const hasCountdown = remainingSeconds !== null;
+  const useIntensePhase =
+    hasCountdown && (remainingSeconds! <= QUIZ_LOOP_INTENSE_THRESHOLD_S || !!currentQuestion?.intense_at);
+
+  // Dépend de `hasCountdown`/`useIntensePhase` (des booléens qui ne changent
+  // qu'à un vrai changement d'état : début/fin du timer, franchissement du
+  // seuil) et surtout PAS de `remainingSeconds` lui-même, qui varie à chaque
+  // tick d'horloge (chaque seconde) — sinon cet effet (et son nettoyage)
+  // s'exécutait chaque seconde et relançait la piste depuis le début en
+  // boucle, l'empêchant d'aller jusqu'au bout du fichier.
   useEffect(() => {
-    revealedRef.current = false;
+    if (hasCountdown) {
+      sound.setQuizLoopPhase(useIntensePhase ? 'part2' : 'part1');
+    } else {
+      sound.stopQuizLoop();
+    }
+    return () => sound.stopQuizLoop();
+  }, [hasCountdown, useIntensePhase]);
+
+  // Établit l'état de référence dès qu'une nouvelle question apparaît, à la
+  // valeur qu'elle a déjà à cet instant — pas toujours `false`. Sinon, arriver
+  // sur la page (ou la recharger) alors que la dernière question est déjà
+  // close jouait immédiatement le sting de révélation au montage : le sting
+  // ne doit sonner que pour une transition observée EN DIRECT pendant qu'on
+  // regarde, jamais rétroactivement pour un état déjà acquis avant l'arrivée.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    revealedRef.current = answersRevealed;
   }, [currentQuestion?.id]);
 
+  // Sting de révélation une seule fois au moment où les réponses deviennent
+  // visibles (réponses de tous reçues, timer écoulé, ou MSP a clôturé).
   useEffect(() => {
     if (answersRevealed && !revealedRef.current) {
       revealedRef.current = true;
-      sound.playQuizReveal();
+      sound.playQuizAnswer();
     }
   }, [answersRevealed]);
+
+  useEffect(() => {
+    return () => sound.stopAllQuizAudio();
+  }, []);
 
   async function handleJoin() {
     sound.unlockAudio();
@@ -232,6 +267,21 @@ export default function QuizSessionDetail({
     onError(null);
     try {
       const data = await minigamesApi.closeQuestion(sessionId, currentQuestion.id);
+      onSessionChange(data);
+    } catch (err) {
+      onError(err instanceof Error ? err.message : 'Erreur inconnue');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleIntensify() {
+    if (!currentQuestion) return;
+    sound.unlockAudio();
+    setBusy(true);
+    onError(null);
+    try {
+      const data = await minigamesApi.intensifyQuestion(sessionId, currentQuestion.id);
       onSessionChange(data);
     } catch (err) {
       onError(err instanceof Error ? err.message : 'Erreur inconnue');
@@ -415,6 +465,16 @@ export default function QuizSessionDetail({
             </div>
             <div className="flex items-center gap-2">
               <VolumeSlider />
+              {isAdmin && remainingSeconds !== null && !useIntensePhase && (
+                <button
+                  onClick={handleIntensify}
+                  disabled={busy}
+                  title="Bascule la musique de tension en phase intense pour tous les joueurs, avant la fin du décompte"
+                  className="text-sm bg-zinc-800 hover:bg-zinc-700 text-amber-400 px-3 py-1.5 rounded-md transition disabled:opacity-50"
+                >
+                  🔥 Intensifier
+                </button>
+              )}
               {isAdmin && currentQuestion.status === 'active' && (
                 <button
                   onClick={handleCloseQuestion}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth.jsx';
 import { useAnnounceChatRoom } from '../hooks/useChatGameRoom.jsx';
@@ -27,21 +27,35 @@ export default function MinigameDetail() {
       : null
   );
 
+  // Le polling toutes les 2s (plus les rafraîchissements déclenchés par les
+  // actions du MSP) peut faire partir plusieurs requêtes `load()` avant que
+  // les précédentes n'aient répondu. Sans garde de séquence, une réponse plus
+  // ancienne arrivant après une plus récente (réseau plus lent, requête
+  // concurrente) écrasait l'état frais avec des données périmées — un
+  // `intense_at`/`status` tout juste mis à jour repassait alors en arrière,
+  // ce qui relançait la boucle de tension sur `part1` juste après qu'elle ait
+  // basculé sur `part2` ou se soit arrêtée à la révélation.
+  const loadSeqRef = useRef(0);
+
   const load = useCallback(async () => {
+    const seq = ++loadSeqRef.current;
     try {
       const data = await minigamesApi.getSession(sessionId);
+      if (seq !== loadSeqRef.current) return;
       setSession(data);
       setError(null);
       // listQuestions est un endpoint quiz-only ; l'appeler pour une session
       // flappy_bird n'apporterait qu'un aller-retour inutile à chaque poll.
       if (data.game_type !== 'flappy_bird') {
         const history = await minigamesApi.listQuestions(sessionId);
+        if (seq !== loadSeqRef.current) return;
         setQuestions(history);
       }
     } catch (err) {
+      if (seq !== loadSeqRef.current) return;
       setError(err instanceof Error ? err.message : 'Erreur inconnue');
     } finally {
-      setLoading(false);
+      if (seq === loadSeqRef.current) setLoading(false);
     }
   }, [sessionId]);
 
@@ -54,6 +68,17 @@ export default function MinigameDetail() {
     const interval = setInterval(load, POLL_INTERVAL_MS);
     return () => clearInterval(interval);
   }, [session?.status, load]);
+
+  // Les actions du MSP (poser une question, intensifier, clôturer…) reçoivent
+  // directement la session à jour en réponse de leur propre requête — mais un
+  // poll lancé juste avant peut encore être en vol et répondre juste après,
+  // avec des données plus anciennes. Invalider la séquence ici fait échouer
+  // la garde de `load()` sur ce poll-là quand sa réponse arrive, au lieu de
+  // laisser cette donnée périmée écraser l'état qu'on vient de recevoir.
+  const handleSessionChange = useCallback((data: MinigameSessionDetail) => {
+    loadSeqRef.current++;
+    setSession(data);
+  }, []);
 
   return (
     <div className="min-h-screen bg-zinc-950 py-10 px-4">
@@ -104,7 +129,7 @@ export default function MinigameDetail() {
                 session={session}
                 isAdmin={isAdmin}
                 userId={user?.id}
-                onSessionChange={setSession}
+                onSessionChange={handleSessionChange}
                 onError={setError}
               />
             ) : (
@@ -114,7 +139,7 @@ export default function MinigameDetail() {
                 questions={questions}
                 isAdmin={isAdmin}
                 userId={user?.id}
-                onSessionChange={setSession}
+                onSessionChange={handleSessionChange}
                 onError={setError}
               />
             )}
