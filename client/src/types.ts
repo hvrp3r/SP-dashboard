@@ -979,49 +979,39 @@ export type SudokuGameStatus = 'in_progress' | 'won' | 'lost';
 export interface SudokuChoosingView {
   status: 'choosing';
   rewards: Record<SudokuDifficulty, number>;
-  maxAttempts: Record<SudokuDifficulty, number>;
-  hideFeedback: Record<SudokuDifficulty, boolean>;
+  maxMistakes: Record<SudokuDifficulty, number>;
 }
 
 /**
- * Une tentative passée du joueur. `cellCorrect` vaut `null` quand le MSP a
- * caché le détail case par case pour cette difficulté — seul `wrongCount`
- * (nombre de cases fausses) est alors disponible.
+ * Vue publique du puzzle du jour une fois la difficulté choisie : la solution
+ * n'est incluse qu'en fin de partie. `validated` est une grille de 81
+ * caractères (même format que `givens`) portant le chiffre de chaque case
+ * déjà validée correcte par le joueur (verrouillée) et '0' ailleurs — source
+ * de vérité pour reconstruire la grille après un rechargement ; le reste
+ * (saisies pas encore validées) n'est qu'un brouillon local, jamais fait
+ * confiance côté serveur.
  */
-export interface SudokuAttemptSummary {
-  attemptNumber: number;
-  isCorrect: boolean;
-  createdAt: string;
-  guess: string;
-  cellCorrect: boolean[] | null;
-  wrongCount: number;
-}
-
-/** Vue publique du puzzle du jour une fois la difficulté choisie : la solution n'est incluse qu'en fin de partie. */
 export interface SudokuGameView {
   status: SudokuGameStatus;
   puzzleDate: string;
   difficulty: SudokuDifficulty;
   givens: string;
-  maxAttempts: number;
-  attemptsUsed: number;
-  attempts: SudokuAttemptSummary[];
+  maxMistakes: number;
+  mistakesUsed: number;
+  validated: string;
   rewardSp: number;
   solution: string | null;
-  hideFeedback: boolean;
 }
 
 export type SudokuTodayView = SudokuChoosingView | SudokuGameView;
 
-/** `cellCorrect` vaut `null` si le MSP a caché le détail case par case pour cette difficulté — seul `wrongCount` est alors fourni. */
-export interface SudokuCheckResult {
-  solved: boolean;
-  cellCorrect: boolean[] | null;
-  wrongCount: number;
+/** Résultat de la soumission d'une case unique — juste, elle se verrouille ; fausse, elle compte comme une erreur. */
+export interface SudokuSubmitResult {
+  correct: boolean;
+  cellIndex: number;
   status: SudokuGameStatus;
-  attemptsUsed: number;
-  maxAttempts: number;
-  attempts: SudokuAttemptSummary[];
+  mistakesUsed: number;
+  maxMistakes: number;
   rewardSp: number;
   rewardGranted: boolean;
   solution: string | null;
@@ -1035,7 +1025,7 @@ export interface SudokuTodayAdminEntry {
   completions: number;
 }
 
-/** Vue MSP : une soumission d'un joueur, tous jours et difficultés confondus. */
+/** Vue MSP : une soumission (une case) d'un joueur, tous jours et difficultés confondus. */
 export interface SudokuAttemptHistoryEntry {
   id: number;
   user_id: number;
@@ -1044,6 +1034,8 @@ export interface SudokuAttemptHistoryEntry {
   puzzle_date: string;
   difficulty: SudokuDifficulty;
   attempt_number: number;
+  cell_index: number;
+  digit: string;
   is_correct: boolean;
   created_at: string;
 }

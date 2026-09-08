@@ -6,7 +6,7 @@ const router = Router();
 
 router.get('/today', requireAuth, sudokuController.getToday);
 router.post('/choose', requireAuth, sudokuController.chooseDifficulty);
-router.post('/check', requireAuth, sudokuController.checkGrid);
+router.post('/submit', requireAuth, sudokuController.submitCell);
 router.get('/today/admin', requireAuth, requireAdmin, sudokuController.getTodayAdmin);
 router.get('/attempts', requireAuth, requireAdmin, sudokuController.listAttempts);
 
