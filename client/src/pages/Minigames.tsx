@@ -1,9 +1,17 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth.jsx';
 import * as minigamesApi from '../api/minigames.js';
+import * as speedrunApi from '../api/speedrun.js';
 import { GAME_TYPE_LABELS, gameTypeLabel } from '../lib/minigameLabels.js';
-import { MINIGAME_GAME_TYPES, type MinigameGameType, type MinigameSession } from '../types.js';
+import {
+  MINIGAME_GAME_TYPES,
+  type MinigameGameType,
+  type MinigameSession,
+  type SpeedrunComGameResult,
+} from '../types.js';
+
+const SPEEDRUN_SEARCH_DEBOUNCE_MS = 400;
 
 export default function Minigames() {
   const { user } = useAuth();
@@ -24,6 +32,47 @@ export default function Minigames() {
   const [reward2nd, setReward2nd] = useState('');
   const [reward3rd, setReward3rd] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  // Recherche speedrun.com — purement une pré-suggestion pour remplir titre/
+  // description/image/lien ; le MSP garde toujours la main pour tout saisir à la
+  // main sans jamais y toucher.
+  const [speedrunQuery, setSpeedrunQuery] = useState('');
+  const [speedrunResults, setSpeedrunResults] = useState<SpeedrunComGameResult[]>([]);
+  const [speedrunSearching, setSpeedrunSearching] = useState(false);
+  const [speedrunSearchError, setSpeedrunSearchError] = useState<string | null>(null);
+  const [selectedGame, setSelectedGame] = useState<SpeedrunComGameResult | null>(null);
+  const speedrunDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (gameType !== 'speedrun' || speedrunQuery.trim().length < 2) {
+      setSpeedrunResults([]);
+      return;
+    }
+    if (speedrunDebounceRef.current) clearTimeout(speedrunDebounceRef.current);
+    speedrunDebounceRef.current = setTimeout(async () => {
+      setSpeedrunSearching(true);
+      setSpeedrunSearchError(null);
+      try {
+        const results = await speedrunApi.searchGames(speedrunQuery.trim());
+        setSpeedrunResults(results);
+      } catch (err) {
+        setSpeedrunSearchError(err instanceof Error ? err.message : 'Recherche indisponible');
+      } finally {
+        setSpeedrunSearching(false);
+      }
+    }, SPEEDRUN_SEARCH_DEBOUNCE_MS);
+    return () => {
+      if (speedrunDebounceRef.current) clearTimeout(speedrunDebounceRef.current);
+    };
+  }, [gameType, speedrunQuery]);
+
+  function handleSelectSpeedrunGame(game: SpeedrunComGameResult) {
+    setSelectedGame(game);
+    setTitle(game.name);
+    setDescription(game.description);
+    setSpeedrunQuery('');
+    setSpeedrunResults([]);
+  }
 
   async function load() {
     setLoading(true);
@@ -49,13 +98,13 @@ export default function Minigames() {
   const paidFeeValue = showPaidOption && isPaid ? Number(entryFee) : NaN;
   const paidFeeInvalid = showPaidOption && isPaid && (!Number.isInteger(paidFeeValue) || paidFeeValue <= 0);
 
-  const showFlappyBirdOptions = gameType === 'flappy_bird';
+  const showDeadlineRewardOptions = gameType === 'flappy_bird' || gameType === 'speedrun';
   const reward1stValue = Number(reward1st);
   const reward2ndValue = Number(reward2nd);
   const reward3rdValue = Number(reward3rd);
   const endsAtDate = endsAt ? new Date(endsAt) : null;
-  const flappyBirdInvalid =
-    showFlappyBirdOptions &&
+  const deadlineRewardInvalid =
+    showDeadlineRewardOptions &&
     (!endsAtDate ||
       Number.isNaN(endsAtDate.getTime()) ||
       endsAtDate <= new Date() ||
@@ -73,7 +122,7 @@ export default function Minigames() {
       setError('La mise doit être un entier positif');
       return;
     }
-    if (flappyBirdInvalid) {
+    if (deadlineRewardInvalid) {
       setError('La date limite (dans le futur) et les 3 gains sont requis');
       return;
     }
@@ -84,12 +133,14 @@ export default function Minigames() {
         title.trim(),
         description.trim() || undefined,
         showPaidOption && isPaid ? paidFeeValue : undefined,
-        showFlappyBirdOptions
+        showDeadlineRewardOptions
           ? {
               endsAt: new Date(endsAt).toISOString(),
               reward1st: reward1stValue,
               reward2nd: reward2ndValue,
               reward3rd: reward3rdValue,
+              gameImageUrl: gameType === 'speedrun' ? (selectedGame?.imageUrl ?? undefined) : undefined,
+              gameExternalUrl: gameType === 'speedrun' ? (selectedGame?.weblink ?? undefined) : undefined,
             }
           : undefined
       );
@@ -101,6 +152,9 @@ export default function Minigames() {
       setReward1st('');
       setReward2nd('');
       setReward3rd('');
+      setSelectedGame(null);
+      setSpeedrunQuery('');
+      setSpeedrunResults([]);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur inconnue');
@@ -129,11 +183,16 @@ export default function Minigames() {
                     setIsPaid(false);
                     setEntryFee('');
                   }
-                  if (nextType !== 'flappy_bird') {
+                  if (nextType !== 'flappy_bird' && nextType !== 'speedrun') {
                     setEndsAt('');
                     setReward1st('');
                     setReward2nd('');
                     setReward3rd('');
+                  }
+                  if (nextType !== 'speedrun') {
+                    setSelectedGame(null);
+                    setSpeedrunQuery('');
+                    setSpeedrunResults([]);
                   }
                 }}
                 className="w-full rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
@@ -144,6 +203,79 @@ export default function Minigames() {
                   </option>
                 ))}
               </select>
+              {gameType === 'speedrun' && (
+                <div className="relative space-y-2">
+                  {selectedGame ? (
+                    <div className="flex items-center gap-3 rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2">
+                      {selectedGame.imageUrl && (
+                        <img
+                          src={selectedGame.imageUrl}
+                          alt=""
+                          className="h-10 w-10 rounded object-cover flex-shrink-0"
+                        />
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm text-zinc-100 truncate">{selectedGame.name}</p>
+                        <a
+                          href={selectedGame.weblink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-emerald-400 hover:underline"
+                        >
+                          Voir sur speedrun.com ↗
+                        </a>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedGame(null)}
+                        className="flex-shrink-0 text-xs text-zinc-500 hover:text-zinc-300"
+                        title="Retirer le lien speedrun.com (titre et description restent modifiables à la main)"
+                      >
+                        Retirer
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <input
+                        type="text"
+                        placeholder="Rechercher un jeu sur speedrun.com (optionnel)"
+                        value={speedrunQuery}
+                        onChange={(e) => setSpeedrunQuery(e.target.value)}
+                        className="w-full rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
+                      {speedrunSearching && (
+                        <p className="text-xs text-zinc-500">Recherche…</p>
+                      )}
+                      {speedrunSearchError && (
+                        <p className="text-xs text-red-400">{speedrunSearchError}</p>
+                      )}
+                      {speedrunResults.length > 0 && (
+                        <div className="absolute z-10 w-full max-h-64 overflow-y-auto rounded-md border border-zinc-700 bg-zinc-900 shadow-lg">
+                          {speedrunResults.map((game) => (
+                            <button
+                              type="button"
+                              key={game.id}
+                              onClick={() => handleSelectSpeedrunGame(game)}
+                              className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-zinc-800 transition"
+                            >
+                              {game.imageUrl ? (
+                                <img
+                                  src={game.imageUrl}
+                                  alt=""
+                                  className="h-8 w-8 rounded object-cover flex-shrink-0"
+                                />
+                              ) : (
+                                <div className="h-8 w-8 rounded bg-zinc-800 flex-shrink-0" />
+                              )}
+                              <span className="text-sm text-zinc-200 truncate">{game.name}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
               <input
                 type="text"
                 required
@@ -185,7 +317,7 @@ export default function Minigames() {
                   )}
                 </div>
               )}
-              {showFlappyBirdOptions && (
+              {showDeadlineRewardOptions && (
                 <div className="space-y-2">
                   <label className="block text-xs text-zinc-500">Date limite</label>
                   <input
@@ -237,7 +369,7 @@ export default function Minigames() {
               )}
               <button
                 type="submit"
-                disabled={submitting || paidFeeInvalid || flappyBirdInvalid}
+                disabled={submitting || paidFeeInvalid || deadlineRewardInvalid}
                 className="bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-semibold px-4 py-2 rounded-md transition disabled:opacity-50"
               >
                 Créer
@@ -289,8 +421,16 @@ function MinigameCard({ session: s }: { session: MinigameSession }) {
   return (
     <Link
       to={`/mini-jeux/${s.id}`}
-      className="block bg-zinc-900 border border-zinc-800 rounded-xl shadow-md p-4 hover:border-emerald-500/50 transition"
+      className="flex items-start gap-3 bg-zinc-900 border border-zinc-800 rounded-xl shadow-md p-4 hover:border-emerald-500/50 transition"
     >
+      {s.game_image_url && (
+        <img
+          src={s.game_image_url}
+          alt=""
+          className="h-10 w-10 rounded object-cover flex-shrink-0"
+        />
+      )}
+      <div className="flex-1 min-w-0">
       <div className="flex items-center justify-between mb-1 gap-2">
         <div className="flex items-center gap-2 min-w-0">
           <p className="font-medium text-zinc-100 truncate">{s.title}</p>
@@ -302,7 +442,7 @@ function MinigameCard({ session: s }: { session: MinigameSession }) {
               {s.entry_fee} SP
             </span>
           )}
-          {s.game_type === 'flappy_bird' && s.reward_1st ? (
+          {(s.game_type === 'flappy_bird' || s.game_type === 'speedrun') && s.reward_1st ? (
             <span className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-yellow-500/15 text-yellow-400 font-medium uppercase tracking-wide">
               🥇 {s.reward_1st} SP
             </span>
@@ -321,6 +461,7 @@ function MinigameCard({ session: s }: { session: MinigameSession }) {
         </span>
       </div>
       {s.description && <p className="text-sm text-zinc-500">{s.description}</p>}
+      </div>
     </Link>
   );
 }

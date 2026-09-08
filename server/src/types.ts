@@ -218,7 +218,7 @@ export interface ChallengeEntry extends ChallengeRow {
 
 export type MinigameStatus = 'open' | 'closed' | 'cancelled';
 
-export const MINIGAME_GAME_TYPES = ['quiz', 'flappy_bird'] as const;
+export const MINIGAME_GAME_TYPES = ['quiz', 'flappy_bird', 'speedrun'] as const;
 export type MinigameGameType = (typeof MINIGAME_GAME_TYPES)[number];
 
 export interface MinigameSessionRow {
@@ -238,6 +238,8 @@ export interface MinigameSessionRow {
   reward_3rd: number | null;
   cancelled_at: string | null;
   cancelled_by: number | null;
+  game_image_url: string | null;
+  game_external_url: string | null;
 }
 
 export interface MinigameParticipantRow {
@@ -276,6 +278,41 @@ export interface FlappyBirdLeaderboardEntry {
   avatar_url: string | null;
   best_score: number;
   /** played_at de la tentative qui a établi best_score — sert au départage (premier arrivé). */
+  achieved_at: string;
+  equipped_cosmetics: EquippedCosmetic[];
+}
+
+export interface SpeedrunAttemptRow {
+  id: number;
+  session_id: number;
+  user_id: number;
+  time_ms: number;
+  video_url: string;
+  submitted_at: string;
+  excluded_at: string | null;
+  excluded_by: number | null;
+}
+
+export interface SpeedrunAttemptEntry extends SpeedrunAttemptRow {
+  username: string;
+}
+
+/** Résultat simplifié d'une recherche de jeu sur speedrun.com — voir speedruncom.service.ts. */
+export interface SpeedrunComGameResult {
+  id: string;
+  name: string;
+  weblink: string;
+  imageUrl: string | null;
+  description: string;
+}
+
+export interface SpeedrunLeaderboardEntry {
+  user_id: number;
+  username: string;
+  avatar_url: string | null;
+  best_time_ms: number;
+  video_url: string;
+  /** submitted_at de la tentative qui a établi best_time_ms — sert au départage (premier arrivé). */
   achieved_at: string;
   equipped_cosmetics: EquippedCosmetic[];
 }

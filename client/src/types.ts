@@ -243,7 +243,7 @@ export interface ChallengeQuota {
 
 export type MinigameStatus = 'open' | 'closed' | 'cancelled';
 
-export const MINIGAME_GAME_TYPES = ['quiz', 'flappy_bird'] as const;
+export const MINIGAME_GAME_TYPES = ['quiz', 'flappy_bird', 'speedrun'] as const;
 export type MinigameGameType = (typeof MINIGAME_GAME_TYPES)[number];
 
 export interface MinigameSession {
@@ -263,6 +263,8 @@ export interface MinigameSession {
   reward_3rd: number | null;
   cancelled_at: string | null;
   cancelled_by: number | null;
+  game_image_url: string | null;
+  game_external_url: string | null;
 }
 
 export interface FlappyBirdAttempt {
@@ -281,6 +283,37 @@ export interface FlappyBirdLeaderboardEntry {
   username: string;
   avatar_url: string | null;
   best_score: number;
+  achieved_at: string;
+  equipped_cosmetics: EquippedCosmetic[];
+}
+
+/** Résultat simplifié d'une recherche de jeu sur speedrun.com. */
+export interface SpeedrunComGameResult {
+  id: string;
+  name: string;
+  weblink: string;
+  imageUrl: string | null;
+  description: string;
+}
+
+export interface SpeedrunAttempt {
+  id: number;
+  session_id: number;
+  user_id: number;
+  time_ms: number;
+  video_url: string;
+  submitted_at: string;
+  excluded_at: string | null;
+  excluded_by: number | null;
+  username: string;
+}
+
+export interface SpeedrunLeaderboardEntry {
+  user_id: number;
+  username: string;
+  avatar_url: string | null;
+  best_time_ms: number;
+  video_url: string;
   achieved_at: string;
   equipped_cosmetics: EquippedCosmetic[];
 }
@@ -337,6 +370,10 @@ export interface MinigameSessionDetail extends MinigameSession {
   leaderboard?: FlappyBirdLeaderboardEntry[];
   myBest?: FlappyBirdLeaderboardEntry | null;
   attempts?: FlappyBirdAttempt[];
+  // Branche speedrun
+  speedrunLeaderboard?: SpeedrunLeaderboardEntry[];
+  mySpeedrunBest?: SpeedrunLeaderboardEntry | null;
+  speedrunAttempts?: SpeedrunAttempt[];
 }
 
 export type NotificationType =

@@ -15,11 +15,14 @@ export const getSession = (id: number) =>
 export const listQuestions = (sessionId: number) =>
   apiClient.get<MinigameQuestionView[]>(`/api/minigames/${sessionId}/questions`);
 
-interface CreateFlappyBirdOptions {
+interface CreateDeadlineRewardOptions {
   endsAt: string;
   reward1st: number;
   reward2nd: number;
   reward3rd: number;
+  // Rattachement optionnel à une fiche jeu speedrun.com (branche speedrun uniquement).
+  gameImageUrl?: string;
+  gameExternalUrl?: string;
 }
 
 export const createSession = (
@@ -27,14 +30,14 @@ export const createSession = (
   title: string,
   description?: string,
   entryFee?: number,
-  flappyBird?: CreateFlappyBirdOptions
+  deadlineRewards?: CreateDeadlineRewardOptions
 ) =>
   apiClient.post<MinigameSession>('/api/minigames', {
     gameType,
     title,
     description,
     entryFee,
-    ...flappyBird,
+    ...deadlineRewards,
   });
 
 export const joinSession = (sessionId: number) =>
