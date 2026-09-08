@@ -308,6 +308,9 @@ export interface MinigameAnswerView {
   submitted_at: string;
   seconds_to_answer: number;
   answer_text?: string;
+  // Verdict manuel du MSP, prioritaire sur le rapprochement automatique texte
+  // ↔ correct_answer. Même masquage que answer_text tant que non révélé.
+  marked_correct?: boolean | null;
 }
 
 export interface MinigameQuestionView {
@@ -318,6 +321,11 @@ export interface MinigameQuestionView {
   created_at: string;
   activated_at: string | null;
   closed_at: string | null;
+  duration_seconds: number | null;
+  ends_at: string | null;
+  // Masquée (absente) tant que la question n'est pas révélée pour un joueur
+  // non-admin ; `null` reste possible si le MSP n'a saisi aucune réponse.
+  correct_answer?: string | null;
   answers: MinigameAnswerView[];
 }
 

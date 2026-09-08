@@ -26,6 +26,13 @@ async function buildQuestionView(
   const participantById = new Map(participants.map((p) => [p.user_id, p]));
   const activatedAtMs = new Date(question.activated_at ?? question.created_at).getTime();
 
+  // Dès que tout le monde a répondu (ou que la question est clôturée, par
+  // timer ou par le MSP), les réponses des autres joueurs deviennent visibles
+  // par tous — avant ça, seuls le MSP et l'auteur voient le texte.
+  const allAnswered =
+    participants.length > 0 && participants.every((p) => answers.some((a) => a.user_id === p.user_id));
+  const revealed = question.status === 'closed' || allAnswered;
+
   const answerViews: MinigameAnswerView[] = answers.map((a) => {
     const submittedAtMs = new Date(a.submitted_at).getTime();
     const secondsToAnswer = Math.max(0, Math.round((submittedAtMs - activatedAtMs) / 1000));
@@ -38,13 +45,18 @@ async function buildQuestionView(
       submitted_at: a.submitted_at,
       seconds_to_answer: secondsToAnswer,
     };
-    if (viewer.role === 'admin' || a.user_id === viewer.id) {
+    if (viewer.role === 'admin' || a.user_id === viewer.id || revealed) {
       view.answer_text = a.answer_text;
+      view.marked_correct = a.marked_correct;
     }
     return view;
   });
 
-  return { ...question, answers: answerViews };
+  return {
+    ...question,
+    correct_answer: viewer.role === 'admin' || revealed ? question.correct_answer : undefined,
+    answers: answerViews,
+  };
 }
 
 async function buildSessionDetail(sessionId: number, viewer: AuthenticatedUser) {
@@ -55,6 +67,7 @@ async function buildSessionDetail(sessionId: number, viewer: AuthenticatedUser) 
     return buildFlappyBirdDetail(sessionId, viewer.id, viewer.role === 'admin');
   }
 
+  await minigameService.expireQuestionIfNeeded(sessionId);
   const participants = await minigameService.getSessionParticipants(sessionId);
   const latestQuestion = await minigameService.getLatestQuestion(sessionId);
 
@@ -206,6 +219,7 @@ export async function listQuestions(req: Request<{ id: string }>, res: Response)
     return;
   }
 
+  await minigameService.expireQuestionIfNeeded(sessionId);
   const participants = await minigameService.getSessionParticipants(sessionId);
   const questions = await minigameService.listQuestions(sessionId);
   const views = await Promise.all(
@@ -319,7 +333,12 @@ export async function removeParticipant(
 
 interface AskQuestionBody {
   prompt?: string;
+  durationSeconds?: number;
+  correctAnswer?: string;
 }
+
+const MAX_QUESTION_DURATION_SECONDS = 3600;
+const MAX_CORRECT_ANSWER_LENGTH = 255;
 
 export async function askQuestion(
   req: Request<{ id: string }, {}, AskQuestionBody>,
@@ -336,6 +355,27 @@ export async function askQuestion(
     return;
   }
 
+  const durationSecondsRaw = req.body?.durationSeconds;
+  let durationSeconds: number | null = null;
+  if (durationSecondsRaw !== undefined && durationSecondsRaw !== null) {
+    if (
+      !Number.isInteger(durationSecondsRaw) ||
+      durationSecondsRaw <= 0 ||
+      durationSecondsRaw > MAX_QUESTION_DURATION_SECONDS
+    ) {
+      res.status(400).json({ error: 'La durée doit être un entier entre 1 et 3600 secondes' });
+      return;
+    }
+    durationSeconds = durationSecondsRaw;
+  }
+
+  const correctAnswerRaw = req.body?.correctAnswer?.trim();
+  if (correctAnswerRaw && correctAnswerRaw.length > MAX_CORRECT_ANSWER_LENGTH) {
+    res.status(400).json({ error: 'La réponse correcte ne doit pas dépasser 255 caractères' });
+    return;
+  }
+  const correctAnswer = correctAnswerRaw || null;
+
   const session = await minigameService.getSessionById(sessionId);
   if (!session) {
     res.status(404).json({ error: 'Session introuvable' });
@@ -346,7 +386,7 @@ export async function askQuestion(
     return;
   }
 
-  await minigameService.askQuestion(sessionId, prompt);
+  await minigameService.askQuestion(sessionId, prompt, durationSeconds, correctAnswer);
   const detail = await buildSessionDetail(sessionId, req.user!);
   res.status(201).json(detail);
 }
@@ -398,6 +438,7 @@ export async function submitAnswer(
     return;
   }
 
+  await minigameService.expireQuestionIfNeeded(sessionId);
   const question = await minigameService.getQuestionById(questionId);
   if (!question || question.session_id !== sessionId) {
     res.status(404).json({ error: 'Question introuvable' });
@@ -424,6 +465,50 @@ export async function submitAnswer(
 
   const detail = await buildSessionDetail(sessionId, req.user!);
   res.status(201).json(detail);
+}
+
+interface GradeAnswerBody {
+  correct?: boolean | null;
+}
+
+/**
+ * Verdict manuel du MSP sur la réponse d'un joueur — prioritaire côté client
+ * sur le simple rapprochement texte avec `correct_answer` (voir
+ * buildQuestionView pour la visibilité du texte/verdict).
+ */
+export async function gradeAnswer(
+  req: Request<{ id: string; questionId: string; userId: string }, {}, GradeAnswerBody>,
+  res: Response
+): Promise<void> {
+  const sessionId = Number(req.params.id);
+  const questionId = Number(req.params.questionId);
+  const userId = Number(req.params.userId);
+  if (!Number.isInteger(sessionId) || !Number.isInteger(questionId) || !Number.isInteger(userId)) {
+    res.status(400).json({ error: 'Identifiant invalide' });
+    return;
+  }
+
+  const correct = req.body?.correct;
+  if (correct !== null && correct !== undefined && typeof correct !== 'boolean') {
+    res.status(400).json({ error: 'correct doit être un booléen ou null' });
+    return;
+  }
+
+  const question = await minigameService.getQuestionById(questionId);
+  if (!question || question.session_id !== sessionId) {
+    res.status(404).json({ error: 'Question introuvable' });
+    return;
+  }
+
+  const answer = await minigameService.getAnswer(questionId, userId);
+  if (!answer) {
+    res.status(404).json({ error: 'Réponse introuvable' });
+    return;
+  }
+
+  await minigameService.gradeAnswer(questionId, userId, correct ?? null);
+  const detail = await buildSessionDetail(sessionId, req.user!);
+  res.json(detail);
 }
 
 interface AwardBody {

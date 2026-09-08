@@ -1,10 +1,48 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useConfirm } from '../hooks/useConfirm.jsx';
 import Avatar from './Avatar.jsx';
 import UserNameTag from './UserNameTag.jsx';
+import VolumeSlider from './VolumeSlider.jsx';
 import * as minigamesApi from '../api/minigames.js';
 import * as leaderboardApi from '../api/leaderboard.js';
+import * as sound from '../lib/sound.js';
 import type { LeaderboardEntry, MinigameQuestionView, MinigameSessionDetail } from '../types.js';
+
+const TICK_INTERVAL_MS = 1000;
+
+/** Tempo (ms entre deux tics) de la musique de tension — accélère à l'approche de l'échéance. */
+function tensionTempoMs(remainingSeconds: number): number {
+  if (remainingSeconds <= 5) return 150;
+  if (remainingSeconds <= 10) return 250;
+  if (remainingSeconds <= 20) return 400;
+  return 700;
+}
+
+/** Compare une réponse à la réponse correcte saisie par le MSP (insensible à la casse/aux espaces). */
+function matchesCorrectAnswer(correctAnswer: string | null | undefined, answerText: string | undefined): boolean {
+  if (!correctAnswer || answerText === undefined) return false;
+  return answerText.trim().toLowerCase() === correctAnswer.trim().toLowerCase();
+}
+
+/**
+ * Verdict final affiché pour une réponse : le rapprochement texte avec
+ * `correct_answer` n'est qu'une première vérification indicative — dès que le
+ * MSP a tranché manuellement (`marked_correct`), son verdict prime dessus.
+ * Renvoie `null` quand il n'y a rien à afficher (pas de réponse, ou aucune
+ * réponse correcte configurée et pas de verdict manuel).
+ */
+function effectiveCorrectness(
+  correctAnswer: string | null | undefined,
+  answer: { answer_text?: string; marked_correct?: boolean | null } | undefined
+): boolean | null {
+  if (!answer) return null;
+  if (answer.marked_correct === true) return true;
+  if (answer.marked_correct === false) return false;
+  if (correctAnswer && answer.answer_text !== undefined) {
+    return matchesCorrectAnswer(correctAnswer, answer.answer_text);
+  }
+  return null;
+}
 
 interface Props {
   sessionId: number;
@@ -35,7 +73,11 @@ export default function QuizSessionDetail({
   const [busy, setBusy] = useState(false);
   const [selectedPlayerId, setSelectedPlayerId] = useState('');
   const [prompt, setPrompt] = useState('');
+  const [durationSeconds, setDurationSeconds] = useState('');
+  const [correctAnswer, setCorrectAnswer] = useState('');
   const [awardAmounts, setAwardAmounts] = useState<Record<number, string>>({});
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const revealedRef = useRef(false);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -44,6 +86,11 @@ export default function QuizSessionDetail({
       .then(setPlayers)
       .catch(() => setPlayers([]));
   }, [isAdmin]);
+
+  useEffect(() => {
+    const tick = setInterval(() => setNowMs(Date.now()), TICK_INTERVAL_MS);
+    return () => clearInterval(tick);
+  }, []);
 
   const participants = session.participants ?? [];
   const currentQuestion = session.currentQuestion ?? null;
@@ -54,7 +101,43 @@ export default function QuizSessionDetail({
     (p) => !participants.some((part) => part.user_id === p.id)
   );
 
+  const allAnswered =
+    !!currentQuestion &&
+    participants.length > 0 &&
+    participants.every((p) => currentQuestion.answers.some((a) => a.user_id === p.user_id));
+  const answersRevealed = currentQuestion?.status === 'closed' || allAnswered;
+
+  const remainingSeconds =
+    currentQuestion?.status === 'active' && currentQuestion.ends_at
+      ? Math.max(0, Math.ceil((new Date(currentQuestion.ends_at).getTime() - nowMs) / 1000))
+      : null;
+
+  // Musique de tension pendant une question chronométrée en cours, tant que les
+  // réponses ne sont pas encore révélées ; jingle de révélation une seule fois
+  // au moment où elles le deviennent (réponses de tous reçues, timer écoulé ou
+  // MSP a clôturé).
+  useEffect(() => {
+    if (currentQuestion?.status === 'active' && remainingSeconds !== null && !answersRevealed) {
+      sound.setQuizTensionTempo(tensionTempoMs(remainingSeconds));
+    } else {
+      sound.stopQuizTension();
+    }
+    return () => sound.stopQuizTension();
+  }, [currentQuestion?.status, remainingSeconds, answersRevealed]);
+
+  useEffect(() => {
+    revealedRef.current = false;
+  }, [currentQuestion?.id]);
+
+  useEffect(() => {
+    if (answersRevealed && !revealedRef.current) {
+      revealedRef.current = true;
+      sound.playQuizReveal();
+    }
+  }, [answersRevealed]);
+
   async function handleJoin() {
+    sound.unlockAudio();
     setJoining(true);
     onError(null);
     try {
@@ -70,6 +153,7 @@ export default function QuizSessionDetail({
   async function handleSubmitAnswer(e: FormEvent) {
     e.preventDefault();
     if (!currentQuestion || !answerText.trim()) return;
+    sound.unlockAudio();
     setSubmitting(true);
     onError(null);
     try {
@@ -114,12 +198,26 @@ export default function QuizSessionDetail({
   async function handleAskQuestion(e: FormEvent) {
     e.preventDefault();
     if (!prompt.trim()) return;
+    const trimmedDuration = durationSeconds.trim();
+    const parsedDuration = trimmedDuration ? Number(trimmedDuration) : undefined;
+    if (parsedDuration !== undefined && (!Number.isInteger(parsedDuration) || parsedDuration <= 0)) {
+      onError('La durée doit être un entier positif de secondes');
+      return;
+    }
+    sound.unlockAudio();
     setBusy(true);
     onError(null);
     try {
-      const data = await minigamesApi.askQuestion(sessionId, prompt.trim());
+      const data = await minigamesApi.askQuestion(
+        sessionId,
+        prompt.trim(),
+        parsedDuration,
+        correctAnswer.trim() || undefined
+      );
       onSessionChange(data);
       setPrompt('');
+      setDurationSeconds('');
+      setCorrectAnswer('');
     } catch (err) {
       onError(err instanceof Error ? err.message : 'Erreur inconnue');
     } finally {
@@ -129,10 +227,28 @@ export default function QuizSessionDetail({
 
   async function handleCloseQuestion() {
     if (!currentQuestion) return;
+    sound.unlockAudio();
     setBusy(true);
     onError(null);
     try {
       const data = await minigamesApi.closeQuestion(sessionId, currentQuestion.id);
+      onSessionChange(data);
+    } catch (err) {
+      onError(err instanceof Error ? err.message : 'Erreur inconnue');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleGradeAnswer(targetUserId: number, correct: boolean) {
+    if (!currentQuestion) return;
+    const current = currentQuestion.answers.find((a) => a.user_id === targetUserId)?.marked_correct;
+    // Recliquer sur le même verdict l'annule et retombe sur le rapprochement automatique.
+    const next = current === correct ? null : correct;
+    setBusy(true);
+    onError(null);
+    try {
+      const data = await minigamesApi.gradeAnswer(sessionId, currentQuestion.id, targetUserId, next);
       onSessionChange(data);
     } catch (err) {
       onError(err instanceof Error ? err.message : 'Erreur inconnue');
@@ -242,6 +358,24 @@ export default function QuizSessionDetail({
               placeholder="Question à afficher aux joueurs"
               className="flex-1 min-w-[160px] rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
             />
+            <input
+              type="number"
+              min={1}
+              max={3600}
+              value={durationSeconds}
+              onChange={(e) => setDurationSeconds(e.target.value)}
+              placeholder="Timer (s, optionnel)"
+              title="Durée en secondes avant clôture automatique des réponses — laisser vide pour aucun timer"
+              className="w-40 rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            />
+            <input
+              type="text"
+              value={correctAnswer}
+              onChange={(e) => setCorrectAnswer(e.target.value)}
+              placeholder="Bonne réponse (optionnel)"
+              title="Affichée automatiquement à tous à la révélation des réponses — laisser vide pour ne rien afficher"
+              className="flex-1 min-w-[160px] rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            />
             <button
               type="submit"
               disabled={busy}
@@ -260,21 +394,45 @@ export default function QuizSessionDetail({
 
       {currentQuestion ? (
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl shadow-md p-6 mb-6">
-          <div className="flex items-center justify-between mb-1">
-            <p className="text-xs text-zinc-500 uppercase">
-              {currentQuestion.status === 'active' ? 'Question en cours' : 'Dernière question'}
-            </p>
-            {isAdmin && currentQuestion.status === 'active' && (
-              <button
-                onClick={handleCloseQuestion}
-                disabled={busy}
-                className="text-sm bg-zinc-800 hover:bg-zinc-700 text-zinc-200 px-3 py-1.5 rounded-md transition disabled:opacity-50"
-              >
-                Clôturer les réponses
-              </button>
-            )}
+          <div className="flex items-center justify-between mb-1 gap-2">
+            <div className="flex items-center gap-2">
+              <p className="text-xs text-zinc-500 uppercase">
+                {currentQuestion.status === 'active' ? 'Question en cours' : 'Dernière question'}
+              </p>
+              {remainingSeconds !== null && (
+                <span
+                  className={`text-xs font-mono px-2 py-0.5 rounded-full ${
+                    remainingSeconds <= 5
+                      ? 'bg-red-500/15 text-red-400'
+                      : remainingSeconds <= 10
+                        ? 'bg-amber-500/15 text-amber-400'
+                        : 'bg-zinc-800 text-zinc-300'
+                  }`}
+                >
+                  ⏱ {remainingSeconds}s
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <VolumeSlider />
+              {isAdmin && currentQuestion.status === 'active' && (
+                <button
+                  onClick={handleCloseQuestion}
+                  disabled={busy}
+                  className="text-sm bg-zinc-800 hover:bg-zinc-700 text-zinc-200 px-3 py-1.5 rounded-md transition disabled:opacity-50"
+                >
+                  Clôturer les réponses
+                </button>
+              )}
+            </div>
           </div>
-          <p className="text-lg text-zinc-100 mb-4">{currentQuestion.prompt}</p>
+          <p className="text-lg text-zinc-100 mb-2">{currentQuestion.prompt}</p>
+
+          {currentQuestion.correct_answer && (
+            <p className="text-sm text-emerald-400 mb-4">
+              ✅ Bonne réponse : « {currentQuestion.correct_answer} »
+            </p>
+          )}
 
           {myParticipant && currentQuestion.status === 'active' && !myAnswer && (
             <form onSubmit={handleSubmitAnswer} className="flex flex-wrap gap-2">
@@ -310,6 +468,70 @@ export default function QuizSessionDetail({
             <div className="space-y-2 mt-3">
               {participants.map((p) => {
                 const answer = currentQuestion?.answers.find((a) => a.user_id === p.user_id);
+                const verdict = effectiveCorrectness(currentQuestion?.correct_answer, answer);
+                return (
+                  <div
+                    key={p.id}
+                    className="flex items-center justify-between gap-2 bg-zinc-800/40 rounded-lg px-3 py-2 text-sm"
+                  >
+                    <span className="flex items-center gap-1.5 min-w-0">
+                      <Avatar
+                        username={p.username}
+                        avatarUrl={p.avatar_url}
+                        size={20}
+                        frameUrl={p.equipped_cosmetics.find((c) => c.slot === 'avatar_frame')?.image_url}
+                      />
+                      <UserNameTag username={p.username} equipped={p.equipped_cosmetics} className="text-zinc-200" />
+                    </span>
+                    {answer ? (
+                      <span className="flex items-center gap-2 flex-shrink-0">
+                        <span className={verdict === null ? 'text-emerald-400' : verdict ? 'text-emerald-400' : 'text-red-400'}>
+                          {verdict === null ? '✓' : verdict ? '✅' : '❌'} {answer.seconds_to_answer}s — « {answer.answer_text} »
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => handleGradeAnswer(p.user_id, true)}
+                            disabled={busy}
+                            title="Marquer correct"
+                            className={`w-6 h-6 flex items-center justify-center rounded transition disabled:opacity-50 ${
+                              answer.marked_correct === true
+                                ? 'bg-emerald-500 text-zinc-950'
+                                : 'bg-zinc-700 hover:bg-zinc-600 text-zinc-300'
+                            }`}
+                          >
+                            ✓
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleGradeAnswer(p.user_id, false)}
+                            disabled={busy}
+                            title="Marquer incorrect"
+                            className={`w-6 h-6 flex items-center justify-center rounded transition disabled:opacity-50 ${
+                              answer.marked_correct === false
+                                ? 'bg-red-500 text-zinc-950'
+                                : 'bg-zinc-700 hover:bg-zinc-600 text-zinc-300'
+                            }`}
+                          >
+                            ✗
+                          </button>
+                        </span>
+                      </span>
+                    ) : (
+                      <span className="text-zinc-500">en attente…</span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {!isAdmin && answersRevealed && (
+            <div className="space-y-2 mt-3">
+              <p className="text-xs text-zinc-500 uppercase mb-1">Réponses des joueurs</p>
+              {participants.map((p) => {
+                const answer = currentQuestion?.answers.find((a) => a.user_id === p.user_id);
+                const verdict = effectiveCorrectness(currentQuestion?.correct_answer, answer);
                 return (
                   <div
                     key={p.id}
@@ -325,11 +547,12 @@ export default function QuizSessionDetail({
                       <UserNameTag username={p.username} equipped={p.equipped_cosmetics} className="text-zinc-200" />
                     </span>
                     {answer ? (
-                      <span className="text-emerald-400">
-                        ✓ {answer.seconds_to_answer}s — « {answer.answer_text} »
+                      <span className={verdict === null ? 'text-emerald-400' : verdict ? 'text-emerald-400' : 'text-red-400'}>
+                        {verdict === null ? '✓' : verdict ? '✅' : '❌'} {answer.seconds_to_answer}s
+                        {answer.answer_text ? ` — « ${answer.answer_text} »` : ''}
                       </span>
                     ) : (
-                      <span className="text-zinc-500">en attente…</span>
+                      <span className="text-zinc-500">n'a pas répondu</span>
                     )}
                   </div>
                 );
@@ -485,28 +708,37 @@ export default function QuizSessionDetail({
           <div className="space-y-3">
             {pastQuestions.map((q) => (
               <div key={q.id} className="bg-zinc-900 border border-zinc-800 rounded-xl shadow-md p-4">
-                <p className="text-zinc-100 mb-2">{q.prompt}</p>
+                <p className="text-zinc-100 mb-1">{q.prompt}</p>
+                {q.correct_answer && (
+                  <p className="text-xs text-emerald-400 mb-2">
+                    ✅ Bonne réponse : « {q.correct_answer} »
+                  </p>
+                )}
                 {q.answers.length === 0 ? (
                   <p className="text-sm text-zinc-500">Personne n'a répondu.</p>
                 ) : (
                   <ul className="space-y-1">
-                    {q.answers.map((a) => (
-                      <li key={a.user_id} className="flex items-center justify-between text-sm">
-                        <span className="flex items-center gap-1.5 min-w-0">
-                          <Avatar
-                            username={a.username}
-                            avatarUrl={a.avatar_url}
-                            size={18}
-                            frameUrl={a.equipped_cosmetics.find((c) => c.slot === 'avatar_frame')?.image_url}
-                          />
-                          <UserNameTag username={a.username} equipped={a.equipped_cosmetics} className="text-zinc-300" />
-                        </span>
-                        <span className="text-zinc-500">
-                          {a.seconds_to_answer}s
-                          {a.answer_text ? ` — « ${a.answer_text} »` : ''}
-                        </span>
-                      </li>
-                    ))}
+                    {q.answers.map((a) => {
+                      const isCorrect = effectiveCorrectness(q.correct_answer, a);
+                      return (
+                        <li key={a.user_id} className="flex items-center justify-between text-sm">
+                          <span className="flex items-center gap-1.5 min-w-0">
+                            <Avatar
+                              username={a.username}
+                              avatarUrl={a.avatar_url}
+                              size={18}
+                              frameUrl={a.equipped_cosmetics.find((c) => c.slot === 'avatar_frame')?.image_url}
+                            />
+                            <UserNameTag username={a.username} equipped={a.equipped_cosmetics} className="text-zinc-300" />
+                          </span>
+                          <span className={isCorrect === null ? 'text-zinc-500' : isCorrect ? 'text-emerald-400' : 'text-red-400'}>
+                            {isCorrect !== null && (isCorrect ? '✅ ' : '❌ ')}
+                            {a.seconds_to_answer}s
+                            {a.answer_text ? ` — « ${a.answer_text} »` : ''}
+                          </span>
+                        </li>
+                      );
+                    })}
                   </ul>
                 )}
               </div>

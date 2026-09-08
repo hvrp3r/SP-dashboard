@@ -290,6 +290,9 @@ export interface MinigameQuestionRow {
   created_at: string;
   activated_at: string | null;
   closed_at: string | null;
+  duration_seconds: number | null;
+  ends_at: string | null;
+  correct_answer: string | null;
 }
 
 export interface MinigameAnswerRow {
@@ -298,6 +301,8 @@ export interface MinigameAnswerRow {
   user_id: number;
   answer_text: string;
   submitted_at: string;
+  // NULL = pas encore tranché par le MSP — voir migration 061.
+  marked_correct: boolean | null;
 }
 
 export interface MinigameAnswerView {
@@ -308,9 +313,16 @@ export interface MinigameAnswerView {
   submitted_at: string;
   seconds_to_answer: number;
   answer_text?: string;
+  // Verdict manuel du MSP, prioritaire sur le rapprochement automatique texte
+  // ↔ `correct_answer` côté client. Même gating de visibilité que answer_text.
+  marked_correct?: boolean | null;
 }
 
-export interface MinigameQuestionView extends MinigameQuestionRow {
+export interface MinigameQuestionView extends Omit<MinigameQuestionRow, 'correct_answer'> {
+  // Masquée (undefined) tant que la question n'est pas révélée pour un joueur
+  // non-admin — voir buildQuestionView. `null` reste possible : aucune
+  // réponse correcte n'a été saisie par le MSP.
+  correct_answer?: string | null;
   answers: MinigameAnswerView[];
 }
 

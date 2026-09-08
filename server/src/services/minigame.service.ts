@@ -245,9 +245,15 @@ export async function getQuestionById(id: number): Promise<MinigameQuestionRow |
 /**
  * Publie une nouvelle question en direct pour la session. Ferme automatiquement
  * la question active précédente s'il y en avait une (une seule question visible
- * par les joueurs à la fois).
+ * par les joueurs à la fois). `durationSeconds` est optionnel : si fourni, la
+ * question se clôture d'elle-même à l'expiration (voir `expireQuestionIfNeeded`).
  */
-export async function askQuestion(sessionId: number, prompt: string): Promise<MinigameQuestionRow> {
+export async function askQuestion(
+  sessionId: number,
+  prompt: string,
+  durationSeconds: number | null = null,
+  correctAnswer: string | null = null
+): Promise<MinigameQuestionRow> {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -257,10 +263,14 @@ export async function askQuestion(sessionId: number, prompt: string): Promise<Mi
       [sessionId]
     );
     const { rows } = await client.query<MinigameQuestionRow>(
-      `INSERT INTO minigame_questions (session_id, prompt, status, activated_at)
-       VALUES ($1, $2, 'active', NOW())
+      `INSERT INTO minigame_questions (session_id, prompt, status, activated_at, duration_seconds, ends_at, correct_answer)
+       VALUES (
+         $1, $2, 'active', NOW(), $3,
+         CASE WHEN $3::int IS NOT NULL THEN NOW() + make_interval(secs => $3) ELSE NULL END,
+         $4
+       )
        RETURNING *`,
-      [sessionId, prompt]
+      [sessionId, prompt, durationSeconds, correctAnswer]
     );
     await client.query('COMMIT');
     return rows[0] as MinigameQuestionRow;
@@ -270,6 +280,19 @@ export async function askQuestion(sessionId: number, prompt: string): Promise<Mi
   } finally {
     client.release();
   }
+}
+
+/**
+ * Clôture la question active de la session si son timer a expiré — check à la
+ * lecture, même principe que `challenge.service.ts#expirePendingChallenges`
+ * (pas de cron). À appeler avant toute lecture de la question courante.
+ */
+export async function expireQuestionIfNeeded(sessionId: number): Promise<void> {
+  await pool.query(
+    `UPDATE minigame_questions SET status = 'closed', closed_at = NOW()
+     WHERE session_id = $1 AND status = 'active' AND ends_at IS NOT NULL AND ends_at <= NOW()`,
+    [sessionId]
+  );
 }
 
 export async function closeQuestion(questionId: number): Promise<MinigameQuestionRow | null> {
@@ -297,6 +320,26 @@ export async function getAnswer(
   const { rows } = await pool.query<MinigameAnswerRow>(
     'SELECT * FROM minigame_answers WHERE question_id = $1 AND user_id = $2',
     [questionId, userId]
+  );
+  return rows[0] ?? null;
+}
+
+/**
+ * Verdict manuel du MSP sur une réponse — prioritaire sur le simple
+ * rapprochement texte avec `correct_answer` (faute de frappe, formulation
+ * différente mais correcte, etc.). `correct = null` annule le verdict et
+ * retombe sur le rapprochement automatique.
+ */
+export async function gradeAnswer(
+  questionId: number,
+  userId: number,
+  correct: boolean | null
+): Promise<MinigameAnswerRow | null> {
+  const { rows } = await pool.query<MinigameAnswerRow>(
+    `UPDATE minigame_answers SET marked_correct = $1
+     WHERE question_id = $2 AND user_id = $3
+     RETURNING *`,
+    [correct, questionId, userId]
   );
   return rows[0] ?? null;
 }
