@@ -25,6 +25,9 @@ export const CONFIG_SECTIONS: ConfigSection[] = [
       'sudoku_max_attempts_easy',
       'sudoku_max_attempts_medium',
       'sudoku_max_attempts_hard',
+      'sudoku_hide_feedback_easy',
+      'sudoku_hide_feedback_medium',
+      'sudoku_hide_feedback_hard',
     ],
   },
   {

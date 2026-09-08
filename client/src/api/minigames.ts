@@ -48,8 +48,17 @@ export const removeParticipant = (sessionId: number, participantId: number) =>
     `/api/minigames/${sessionId}/participants/${participantId}`
   );
 
-export const askQuestion = (sessionId: number, prompt: string) =>
-  apiClient.post<MinigameSessionDetail>(`/api/minigames/${sessionId}/questions`, { prompt });
+export const askQuestion = (
+  sessionId: number,
+  prompt: string,
+  durationSeconds?: number,
+  correctAnswer?: string
+) =>
+  apiClient.post<MinigameSessionDetail>(`/api/minigames/${sessionId}/questions`, {
+    prompt,
+    durationSeconds,
+    correctAnswer,
+  });
 
 export const closeQuestion = (sessionId: number, questionId: number) =>
   apiClient.post<MinigameSessionDetail>(
@@ -60,6 +69,17 @@ export const submitAnswer = (sessionId: number, questionId: number, answerText: 
   apiClient.post<MinigameSessionDetail>(
     `/api/minigames/${sessionId}/questions/${questionId}/answer`,
     { answerText }
+  );
+
+export const gradeAnswer = (
+  sessionId: number,
+  questionId: number,
+  userId: number,
+  correct: boolean | null
+) =>
+  apiClient.post<MinigameSessionDetail>(
+    `/api/minigames/${sessionId}/questions/${questionId}/answers/${userId}/grade`,
+    { correct }
   );
 
 export const awardParticipants = (

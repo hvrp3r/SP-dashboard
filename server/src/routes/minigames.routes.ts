@@ -25,6 +25,12 @@ router.post(
   minigamesController.closeQuestion
 );
 router.post('/:id/questions/:questionId/answer', requireAuth, minigamesController.submitAnswer);
+router.post(
+  '/:id/questions/:questionId/answers/:userId/grade',
+  requireAuth,
+  requireAdmin,
+  minigamesController.gradeAnswer
+);
 router.post('/:id/award', requireAuth, requireAdmin, minigamesController.awardParticipants);
 router.post('/:id/close', requireAuth, requireAdmin, minigamesController.closeSession);
 

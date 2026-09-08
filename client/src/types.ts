@@ -308,6 +308,9 @@ export interface MinigameAnswerView {
   submitted_at: string;
   seconds_to_answer: number;
   answer_text?: string;
+  // Verdict manuel du MSP, prioritaire sur le rapprochement automatique texte
+  // ↔ correct_answer. Même masquage que answer_text tant que non révélé.
+  marked_correct?: boolean | null;
 }
 
 export interface MinigameQuestionView {
@@ -318,6 +321,11 @@ export interface MinigameQuestionView {
   created_at: string;
   activated_at: string | null;
   closed_at: string | null;
+  duration_seconds: number | null;
+  ends_at: string | null;
+  // Masquée (absente) tant que la question n'est pas révélée pour un joueur
+  // non-admin ; `null` reste possible si le MSP n'a saisi aucune réponse.
+  correct_answer?: string | null;
   answers: MinigameAnswerView[];
 }
 
@@ -935,15 +943,21 @@ export interface SudokuChoosingView {
   status: 'choosing';
   rewards: Record<SudokuDifficulty, number>;
   maxAttempts: Record<SudokuDifficulty, number>;
+  hideFeedback: Record<SudokuDifficulty, boolean>;
 }
 
-/** Une tentative passée du joueur — pas de détail cellule par cellule ici (déjà vu au moment du check), juste de quoi tracer l'historique. */
+/**
+ * Une tentative passée du joueur. `cellCorrect` vaut `null` quand le MSP a
+ * caché le détail case par case pour cette difficulté — seul `wrongCount`
+ * (nombre de cases fausses) est alors disponible.
+ */
 export interface SudokuAttemptSummary {
   attemptNumber: number;
   isCorrect: boolean;
   createdAt: string;
   guess: string;
-  cellCorrect: boolean[];
+  cellCorrect: boolean[] | null;
+  wrongCount: number;
 }
 
 /** Vue publique du puzzle du jour une fois la difficulté choisie : la solution n'est incluse qu'en fin de partie. */
@@ -957,13 +971,16 @@ export interface SudokuGameView {
   attempts: SudokuAttemptSummary[];
   rewardSp: number;
   solution: string | null;
+  hideFeedback: boolean;
 }
 
 export type SudokuTodayView = SudokuChoosingView | SudokuGameView;
 
+/** `cellCorrect` vaut `null` si le MSP a caché le détail case par case pour cette difficulté — seul `wrongCount` est alors fourni. */
 export interface SudokuCheckResult {
   solved: boolean;
-  cellCorrect: boolean[];
+  cellCorrect: boolean[] | null;
+  wrongCount: number;
   status: SudokuGameStatus;
   attemptsUsed: number;
   maxAttempts: number;

@@ -264,6 +264,123 @@ export function playHeartbeatBeat(): void {
   bassThump(now + 0.16, 0.09);
 }
 
+let quizTensionInterval: ReturnType<typeof setInterval> | null = null;
+let quizTensionIntervalMs = 0;
+let quizTensionBeat = 0;
+
+/**
+ * (Re)démarre la boucle de tic-tac de tension du quiz au tempo demandé (ms
+ * entre deux tics), façon horloge de "Qui veut gagner des millions ?" — le
+ * tempo est recalculé par l'appelant selon le temps restant du timer de
+ * question (accélère à l'approche de zéro). No-op si déjà au même tempo.
+ */
+/**
+ * Tic-tac d'horloge mécanique (impulsion de bruit filtrée en passe-bande +
+ * un léger "corps" grave qui lui donne du poids) plutôt qu'un bip carré
+ * électronique — plus proche d'un vrai réveil que d'un jeu 8-bit.
+ * `accent` alterne un tic un peu plus haut/marqué et un tac plus sourd,
+ * comme les deux temps d'une vraie horloge.
+ */
+function clockTick(startTime: number, accent: boolean): void {
+  if (volume <= 0) return;
+  const audio = getContext();
+  if (!audio) return;
+  const peak = accent ? 0.11 : 0.075;
+
+  const bufferSize = Math.max(1, Math.floor(audio.sampleRate * 0.025));
+  const buffer = audio.createBuffer(1, bufferSize, audio.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < bufferSize; i++) {
+    data[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize);
+  }
+  const noise = audio.createBufferSource();
+  noise.buffer = buffer;
+  const filter = audio.createBiquadFilter();
+  filter.type = 'bandpass';
+  filter.frequency.setValueAtTime(accent ? 2600 : 1900, startTime);
+  filter.Q.value = 2.5;
+  const noiseGain = audio.createGain();
+  noiseGain.gain.setValueAtTime(peak * volume, startTime);
+  noiseGain.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.03);
+  noise.connect(filter);
+  filter.connect(noiseGain);
+  noiseGain.connect(audio.destination);
+  noise.start(startTime);
+  noise.stop(startTime + 0.035);
+
+  const osc = audio.createOscillator();
+  const gain = audio.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(accent ? 210 : 160, startTime);
+  osc.frequency.exponentialRampToValueAtTime(accent ? 110 : 85, startTime + 0.05);
+  gain.gain.setValueAtTime(peak * 0.55 * volume, startTime);
+  gain.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.055);
+  osc.connect(gain);
+  gain.connect(audio.destination);
+  osc.start(startTime);
+  osc.stop(startTime + 0.06);
+}
+
+export function setQuizTensionTempo(intervalMs: number): void {
+  if (quizTensionInterval && quizTensionIntervalMs === intervalMs) return;
+  if (quizTensionInterval) clearInterval(quizTensionInterval);
+  quizTensionIntervalMs = intervalMs;
+  quizTensionBeat = 0;
+  const beat = () => {
+    const audio = getContext();
+    if (audio) {
+      clockTick(audio.currentTime, quizTensionBeat % 2 === 0);
+    }
+    quizTensionBeat++;
+  };
+  beat();
+  quizTensionInterval = setInterval(beat, intervalMs);
+}
+
+/** Arrête la boucle de tension du quiz (question close, réponses révélées, ou changement de page). */
+export function stopQuizTension(): void {
+  if (quizTensionInterval) {
+    clearInterval(quizTensionInterval);
+    quizTensionInterval = null;
+  }
+  quizTensionIntervalMs = 0;
+}
+
+/** Petit carillon (harmoniques sinusoïdales, façon cloche) à une note donnée. */
+function bellChime(freq: number, startTime: number, duration: number, peak: number): void {
+  const audio = getContext();
+  if (!audio) return;
+  // Fondamentale + deux harmoniques légèrement désaccordées : donne un grain
+  // de cloche chaud plutôt qu'un bip pur, sans matériel audio externe.
+  [
+    { mult: 1, share: 0.55 },
+    { mult: 2.01, share: 0.28 },
+    { mult: 3.98, share: 0.17 },
+  ].forEach(({ mult, share }) => {
+    const osc = audio.createOscillator();
+    const gain = audio.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(freq * mult, startTime);
+    gain.gain.setValueAtTime(0, startTime);
+    gain.gain.linearRampToValueAtTime(peak * share * volume, startTime + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
+    osc.connect(gain);
+    gain.connect(audio.destination);
+    osc.start(startTime);
+    osc.stop(startTime + duration + 0.05);
+  });
+}
+
+/** Carillon chaleureux de révélation quand les réponses des autres joueurs deviennent visibles. */
+export function playQuizReveal(): void {
+  const audio = getContext();
+  if (!audio) return;
+  const now = audio.currentTime;
+  bellChime(523.25, now, 0.5, 0.13);
+  bellChime(659.25, now + 0.1, 0.55, 0.13);
+  bellChime(783.99, now + 0.2, 0.9, 0.16);
+}
+
 /** "Cha-ching" de caisse enregistreuse à un retrait Crash réussi. */
 export function playCashRegister(): void {
   const audio = getContext();

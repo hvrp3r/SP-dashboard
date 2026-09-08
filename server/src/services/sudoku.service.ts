@@ -46,6 +46,18 @@ const MAX_ATTEMPTS_DEFAULT: Record<SudokuDifficulty, number> = {
   hard: 5,
 };
 
+const HIDE_FEEDBACK_CONFIG_KEY: Record<SudokuDifficulty, string> = {
+  easy: 'sudoku_hide_feedback_easy',
+  medium: 'sudoku_hide_feedback_medium',
+  hard: 'sudoku_hide_feedback_hard',
+};
+
+const HIDE_FEEDBACK_DEFAULT: Record<SudokuDifficulty, boolean> = {
+  easy: false,
+  medium: false,
+  hard: false,
+};
+
 const DIFFICULTY_LABEL: Record<SudokuDifficulty, string> = {
   easy: 'facile',
   medium: 'moyenne',
@@ -120,6 +132,19 @@ function getMaxAttempts(difficulty: SudokuDifficulty): Promise<number> {
   return configService.getConfigNumber(MAX_ATTEMPTS_CONFIG_KEY[difficulty], MAX_ATTEMPTS_DEFAULT[difficulty]);
 }
 
+async function getHideFeedbackByDifficulty(): Promise<Record<SudokuDifficulty, boolean>> {
+  const [easy, medium, hard] = await Promise.all([
+    configService.getConfigBool(HIDE_FEEDBACK_CONFIG_KEY.easy, HIDE_FEEDBACK_DEFAULT.easy),
+    configService.getConfigBool(HIDE_FEEDBACK_CONFIG_KEY.medium, HIDE_FEEDBACK_DEFAULT.medium),
+    configService.getConfigBool(HIDE_FEEDBACK_CONFIG_KEY.hard, HIDE_FEEDBACK_DEFAULT.hard),
+  ]);
+  return { easy, medium, hard };
+}
+
+function getHideFeedback(difficulty: SudokuDifficulty): Promise<boolean> {
+  return configService.getConfigBool(HIDE_FEEDBACK_CONFIG_KEY[difficulty], HIDE_FEEDBACK_DEFAULT[difficulty]);
+}
+
 async function getMyAttempts(puzzleId: number, userId: number): Promise<SudokuAttemptRow[]> {
   const { rows } = await pool.query<SudokuAttemptRow>(
     'SELECT * FROM sudoku_attempts WHERE puzzle_id = $1 AND user_id = $2 ORDER BY attempt_number ASC',
@@ -133,21 +158,39 @@ function computeCellCorrect(guess: string, solution: string): boolean[] {
   return guess.split('').map((ch, i) => ch !== '0' && ch === solution[i]);
 }
 
-function toAttemptSummaries(attempts: SudokuAttemptRow[], solution: string): SudokuAttemptSummary[] {
-  return attempts.map((a) => ({
-    attemptNumber: a.attempt_number,
-    isCorrect: a.is_correct,
-    createdAt: a.created_at,
-    guess: a.guess,
-    cellCorrect: computeCellCorrect(a.guess, solution),
-  }));
+function countWrongCells(guess: string, cellCorrect: boolean[]): number {
+  return cellCorrect.reduce((count, correct, i) => count + (guess[i] !== '0' && !correct ? 1 : 0), 0);
+}
+
+/**
+ * `hideFeedback` (config MSP par difficulté) cache le détail case par case —
+ * `cellCorrect` vaut alors `null` et seul `wrongCount` (nombre de cases
+ * fausses, sans dire lesquelles) est fourni au client.
+ */
+function toAttemptSummaries(
+  attempts: SudokuAttemptRow[],
+  solution: string,
+  hideFeedback: boolean
+): SudokuAttemptSummary[] {
+  return attempts.map((a) => {
+    const cellCorrect = computeCellCorrect(a.guess, solution);
+    return {
+      attemptNumber: a.attempt_number,
+      isCorrect: a.is_correct,
+      createdAt: a.created_at,
+      guess: a.guess,
+      cellCorrect: hideFeedback ? null : cellCorrect,
+      wrongCount: countWrongCells(a.guess, cellCorrect),
+    };
+  });
 }
 
 function buildGameView(
   puzzle: SudokuDailyPuzzleRow,
   attempts: SudokuAttemptRow[],
   maxAttempts: number,
-  rewardSp: number
+  rewardSp: number,
+  hideFeedback: boolean
 ): SudokuGameView {
   const won = attempts.some((a) => a.is_correct);
   const status: SudokuGameStatus = won ? 'won' : attempts.length >= maxAttempts ? 'lost' : 'in_progress';
@@ -158,9 +201,10 @@ function buildGameView(
     givens: puzzle.givens,
     maxAttempts,
     attemptsUsed: attempts.length,
-    attempts: toAttemptSummaries(attempts, puzzle.solution),
+    attempts: toAttemptSummaries(attempts, puzzle.solution, hideFeedback),
     rewardSp,
     solution: status === 'in_progress' ? null : puzzle.solution,
+    hideFeedback,
   };
 }
 
@@ -175,17 +219,22 @@ export async function getTodayView(userId: number, seasonId: number | null): Pro
   const choice = await getMyChoice(userId, dateStr);
 
   if (!choice) {
-    const [rewards, maxAttempts] = await Promise.all([getRewardsByDifficulty(), getMaxAttemptsByDifficulty()]);
-    return { status: 'choosing', rewards, maxAttempts };
+    const [rewards, maxAttempts, hideFeedback] = await Promise.all([
+      getRewardsByDifficulty(),
+      getMaxAttemptsByDifficulty(),
+      getHideFeedbackByDifficulty(),
+    ]);
+    return { status: 'choosing', rewards, maxAttempts, hideFeedback };
   }
 
-  const [puzzle, rewardSp, maxAttempts] = await Promise.all([
+  const [puzzle, rewardSp, maxAttempts, hideFeedback] = await Promise.all([
     getOrCreateDailyPuzzle(choice.difficulty, seasonId),
     configService.getConfigNumber(REWARD_CONFIG_KEY[choice.difficulty], REWARD_DEFAULT[choice.difficulty]),
     getMaxAttempts(choice.difficulty),
+    getHideFeedback(choice.difficulty),
   ]);
   const attempts = await getMyAttempts(puzzle.id, userId);
-  return buildGameView(puzzle, attempts, maxAttempts, rewardSp);
+  return buildGameView(puzzle, attempts, maxAttempts, rewardSp, hideFeedback);
 }
 
 /**
@@ -235,13 +284,14 @@ export async function chooseDifficulty(
     client.release();
   }
 
-  const [puzzle, rewardSp, maxAttempts] = await Promise.all([
+  const [puzzle, rewardSp, maxAttempts, hideFeedback] = await Promise.all([
     getOrCreateDailyPuzzle(difficulty, seasonId),
     configService.getConfigNumber(REWARD_CONFIG_KEY[difficulty], REWARD_DEFAULT[difficulty]),
     getMaxAttempts(difficulty),
+    getHideFeedback(difficulty),
   ]);
   const attempts = await getMyAttempts(puzzle.id, userId);
-  return buildGameView(puzzle, attempts, maxAttempts, rewardSp);
+  return buildGameView(puzzle, attempts, maxAttempts, rewardSp, hideFeedback);
 }
 
 /**
@@ -267,10 +317,11 @@ export async function checkGrid(
     throw Object.assign(new Error('Choisis d’abord une difficulté'), { status: 400 });
   }
 
-  const [puzzle, rewardSp, maxAttempts] = await Promise.all([
+  const [puzzle, rewardSp, maxAttempts, hideFeedback] = await Promise.all([
     getOrCreateDailyPuzzle(choice.difficulty, seasonId),
     configService.getConfigNumber(REWARD_CONFIG_KEY[choice.difficulty], REWARD_DEFAULT[choice.difficulty]),
     getMaxAttempts(choice.difficulty),
+    getHideFeedback(choice.difficulty),
   ]);
 
   const client = await pool.connect();
@@ -292,6 +343,7 @@ export async function checkGrid(
 
     const cellCorrect = computeCellCorrect(guess, puzzle.solution);
     const isCorrect = cellCorrect.every(Boolean);
+    const wrongCount = countWrongCells(guess, cellCorrect);
     const attemptNumber = existingAttempts.length + 1;
 
     const { rows: insertedRows } = await client.query<{ created_at: string }>(
@@ -317,13 +369,21 @@ export async function checkGrid(
 
     const status: SudokuGameStatus = isCorrect ? 'won' : attemptNumber >= maxAttempts ? 'lost' : 'in_progress';
     const attempts = [
-      ...toAttemptSummaries(existingAttempts, puzzle.solution),
-      { attemptNumber, isCorrect, createdAt: insertedAt, guess, cellCorrect },
+      ...toAttemptSummaries(existingAttempts, puzzle.solution, hideFeedback),
+      {
+        attemptNumber,
+        isCorrect,
+        createdAt: insertedAt,
+        guess,
+        cellCorrect: hideFeedback ? null : cellCorrect,
+        wrongCount,
+      },
     ];
 
     return {
       solved: isCorrect,
-      cellCorrect,
+      cellCorrect: hideFeedback ? null : cellCorrect,
+      wrongCount,
       status,
       attemptsUsed: attemptNumber,
       maxAttempts,
