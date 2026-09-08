@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import * as minigamesController from '../controllers/minigames.controller.js';
 import * as flappybirdController from '../controllers/flappybird.controller.js';
+import * as speedrunController from '../controllers/speedrun.controller.js';
 
 const router = Router();
 
@@ -51,5 +52,27 @@ router.post(
   flappybirdController.closeAndDistribute
 );
 router.post('/:id/flappybird/cancel', requireAuth, requireAdmin, flappybirdController.cancelSession);
+
+router.get(
+  '/speedrun/search-games',
+  requireAuth,
+  requireAdmin,
+  speedrunController.searchGames
+);
+router.post('/:id/speedrun/attempts', requireAuth, speedrunController.submitAttempt);
+router.put('/:id/speedrun/rewards', requireAuth, requireAdmin, speedrunController.updateRewards);
+router.post(
+  '/:id/speedrun/attempts/:attemptId/exclude',
+  requireAuth,
+  requireAdmin,
+  speedrunController.excludeAttempt
+);
+router.post(
+  '/:id/speedrun/close-and-distribute',
+  requireAuth,
+  requireAdmin,
+  speedrunController.closeAndDistribute
+);
+router.post('/:id/speedrun/cancel', requireAuth, requireAdmin, speedrunController.cancelSession);
 
 export default router;

@@ -134,6 +134,24 @@ export function playLose(): void {
   tone(233, now + 0.12, 0.28, 'sawtooth', 0.07);
 }
 
+/** Petit "ding" clair joué au Sudoku quand un chiffre saisi est validé correct par le serveur. */
+export function playCorrect(): void {
+  const audio = getContext();
+  if (!audio) return;
+  const now = audio.currentTime;
+  tone(880, now, 0.07, 'sine', 0.09);
+  tone(1318.5, now + 0.05, 0.12, 'sine', 0.1);
+}
+
+/** Petit "buzz" bref joué au Sudoku quand un chiffre saisi est faux (compte comme une erreur). */
+export function playWrong(): void {
+  const audio = getContext();
+  if (!audio) return;
+  const now = audio.currentTime;
+  tone(180, now, 0.12, 'sawtooth', 0.08);
+  tone(140, now + 0.06, 0.14, 'sawtooth', 0.07);
+}
+
 export function playPush(): void {
   const audio = getContext();
   if (!audio) return;

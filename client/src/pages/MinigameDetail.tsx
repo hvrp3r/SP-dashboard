@@ -6,6 +6,7 @@ import * as minigamesApi from '../api/minigames.js';
 import { gameTypeLabel } from '../lib/minigameLabels.js';
 import QuizSessionDetail from '../components/QuizSessionDetail.jsx';
 import FlappyBirdSessionDetail from '../components/FlappyBirdSessionDetail.jsx';
+import SpeedrunSessionDetail from '../components/SpeedrunSessionDetail.jsx';
 import type { MinigameQuestionView, MinigameSessionDetail } from '../types.js';
 
 const POLL_INTERVAL_MS = 2000;
@@ -33,8 +34,8 @@ export default function MinigameDetail() {
       setSession(data);
       setError(null);
       // listQuestions est un endpoint quiz-only ; l'appeler pour une session
-      // flappy_bird n'apporterait qu'un aller-retour inutile à chaque poll.
-      if (data.game_type !== 'flappy_bird') {
+      // flappy_bird/speedrun n'apporterait qu'un aller-retour inutile à chaque poll.
+      if (data.game_type === 'quiz') {
         const history = await minigamesApi.listQuestions(sessionId);
         setQuestions(history);
       }
@@ -100,6 +101,15 @@ export default function MinigameDetail() {
 
             {session.game_type === 'flappy_bird' ? (
               <FlappyBirdSessionDetail
+                sessionId={sessionId}
+                session={session}
+                isAdmin={isAdmin}
+                userId={user?.id}
+                onSessionChange={setSession}
+                onError={setError}
+              />
+            ) : session.game_type === 'speedrun' ? (
+              <SpeedrunSessionDetail
                 sessionId={sessionId}
                 session={session}
                 isAdmin={isAdmin}

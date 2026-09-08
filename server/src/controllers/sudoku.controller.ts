@@ -37,14 +37,15 @@ export async function chooseDifficulty(
   res.status(201).json(view);
 }
 
-interface CheckBody {
-  grid?: string;
+interface SubmitCellBody {
+  cellIndex?: number;
+  digit?: string;
 }
 
-export async function checkGrid(req: Request<{}, {}, CheckBody>, res: Response): Promise<void> {
-  const grid = req.body?.grid;
-  if (typeof grid !== 'string' || grid.length === 0) {
-    res.status(400).json({ error: 'Grille manquante' });
+export async function submitCell(req: Request<{}, {}, SubmitCellBody>, res: Response): Promise<void> {
+  const { cellIndex, digit } = req.body ?? {};
+  if (typeof cellIndex !== 'number' || typeof digit !== 'string') {
+    res.status(400).json({ error: 'Case ou chiffre manquant' });
     return;
   }
 
@@ -52,14 +53,14 @@ export async function checkGrid(req: Request<{}, {}, CheckBody>, res: Response):
 
   let result;
   try {
-    result = await sudokuService.checkGrid(req.user!.id, activeSeason?.id ?? null, grid);
+    result = await sudokuService.submitCell(req.user!.id, activeSeason?.id ?? null, cellIndex, digit);
   } catch (err) {
     const status = (err as { status?: number }).status ?? 500;
     res.status(status).json({ error: err instanceof Error ? err.message : 'Erreur serveur' });
     return;
   }
 
-  if (result.solved && result.rewardGranted) {
+  if (result.status === 'won' && result.rewardGranted) {
     await notificationService.createNotification({
       userId: req.user!.id,
       type: 'sp_gained',

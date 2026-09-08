@@ -5,6 +5,8 @@ import * as userService from '../services/user.service.js';
 import * as notificationService from '../services/notification.service.js';
 import * as discordService from '../services/discord.service.js';
 import { buildFlappyBirdDetail } from './flappybird.controller.js';
+import { buildSpeedrunDetail } from './speedrun.controller.js';
+import { isValidHttpUrl } from '../utils/url.js';
 import {
   MINIGAME_GAME_TYPES,
   type AuthenticatedUser,
@@ -66,6 +68,9 @@ async function buildSessionDetail(sessionId: number, viewer: AuthenticatedUser) 
   if (session.game_type === 'flappy_bird') {
     return buildFlappyBirdDetail(sessionId, viewer.id, viewer.role === 'admin');
   }
+  if (session.game_type === 'speedrun') {
+    return buildSpeedrunDetail(sessionId, viewer.id, viewer.role === 'admin');
+  }
 
   await minigameService.expireQuestionIfNeeded(sessionId);
   const participants = await minigameService.getSessionParticipants(sessionId);
@@ -87,6 +92,8 @@ interface CreateSessionBody {
   reward1st?: number;
   reward2nd?: number;
   reward3rd?: number;
+  gameImageUrl?: string;
+  gameExternalUrl?: string;
 }
 
 export async function createSession(
@@ -125,7 +132,7 @@ export async function createSession(
   let reward2nd: number | null = null;
   let reward3rd: number | null = null;
 
-  if (gameType === 'flappy_bird') {
+  if (gameType === 'flappy_bird' || gameType === 'speedrun') {
     const endsAtRaw = req.body?.endsAt;
     const parsedEndsAt = endsAtRaw ? new Date(endsAtRaw) : null;
     if (!parsedEndsAt || Number.isNaN(parsedEndsAt.getTime()) || parsedEndsAt <= new Date()) {
@@ -150,6 +157,30 @@ export async function createSession(
     reward3rd = r3 as number;
   }
 
+  // Rattachement optionnel à une fiche jeu speedrun.com (voir speedruncom.service.ts) —
+  // jamais requis : le MSP peut toujours saisir titre/description à la main sans
+  // passer par la recherche, auquel cas ces deux champs restent null.
+  let gameImageUrl: string | null = null;
+  let gameExternalUrl: string | null = null;
+  if (gameType === 'speedrun') {
+    const gameImageUrlRaw = req.body?.gameImageUrl?.trim();
+    if (gameImageUrlRaw) {
+      if (!isValidHttpUrl(gameImageUrlRaw)) {
+        res.status(400).json({ error: "L'image du jeu doit être une URL http(s) valide" });
+        return;
+      }
+      gameImageUrl = gameImageUrlRaw;
+    }
+    const gameExternalUrlRaw = req.body?.gameExternalUrl?.trim();
+    if (gameExternalUrlRaw) {
+      if (!isValidHttpUrl(gameExternalUrlRaw)) {
+        res.status(400).json({ error: 'Le lien du jeu doit être une URL http(s) valide' });
+        return;
+      }
+      gameExternalUrl = gameExternalUrlRaw;
+    }
+  }
+
   const activeSeason = await seasonService.getActiveSeason();
 
   const session = await minigameService.createSession({
@@ -163,6 +194,8 @@ export async function createSession(
     reward1st,
     reward2nd,
     reward3rd,
+    gameImageUrl,
+    gameExternalUrl,
   });
 
   const recipientIds = await userService.listAllIds(req.user!.id);

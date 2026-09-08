@@ -21,6 +21,8 @@ interface CreateSessionInput {
   reward1st?: number | null;
   reward2nd?: number | null;
   reward3rd?: number | null;
+  gameImageUrl?: string | null;
+  gameExternalUrl?: string | null;
 }
 
 export async function createSession({
@@ -34,14 +36,29 @@ export async function createSession({
   reward1st = null,
   reward2nd = null,
   reward3rd = null,
+  gameImageUrl = null,
+  gameExternalUrl = null,
 }: CreateSessionInput): Promise<MinigameSessionRow> {
   const { rows } = await pool.query<MinigameSessionRow>(
     `INSERT INTO minigame_sessions
        (season_id, game_type, title, description, entry_fee, status, created_by,
-        ends_at, reward_1st, reward_2nd, reward_3rd)
-     VALUES ($1, $2, $3, $4, $5, 'open', $6, $7, $8, $9, $10)
+        ends_at, reward_1st, reward_2nd, reward_3rd, game_image_url, game_external_url)
+     VALUES ($1, $2, $3, $4, $5, 'open', $6, $7, $8, $9, $10, $11, $12)
      RETURNING *`,
-    [seasonId, gameType, title, description, entryFee, createdBy, endsAt, reward1st, reward2nd, reward3rd]
+    [
+      seasonId,
+      gameType,
+      title,
+      description,
+      entryFee,
+      createdBy,
+      endsAt,
+      reward1st,
+      reward2nd,
+      reward3rd,
+      gameImageUrl,
+      gameExternalUrl,
+    ]
   );
   return rows[0] as MinigameSessionRow;
 }

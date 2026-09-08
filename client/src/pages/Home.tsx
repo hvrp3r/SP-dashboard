@@ -28,7 +28,7 @@ function motusStatusText(motus: MotusGame): string {
 function sudokuStatusText(sudoku: SudokuTodayView): string {
   if (sudoku.status === 'choosing') return 'Choisis ta difficulté';
   if (sudoku.status === 'in_progress') {
-    return `${sudoku.attemptsUsed}/${sudoku.maxAttempts} tentative${sudoku.attemptsUsed > 1 ? 's' : ''} utilisée${sudoku.attemptsUsed > 1 ? 's' : ''}`;
+    return `${sudoku.mistakesUsed}/${sudoku.maxMistakes} erreur${sudoku.mistakesUsed > 1 ? 's' : ''}`;
   }
   if (sudoku.status === 'won') return `Gagné ! +${sudoku.rewardSp} SP`;
   return 'Perdu pour aujourd\'hui';

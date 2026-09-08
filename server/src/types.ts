@@ -218,7 +218,7 @@ export interface ChallengeEntry extends ChallengeRow {
 
 export type MinigameStatus = 'open' | 'closed' | 'cancelled';
 
-export const MINIGAME_GAME_TYPES = ['quiz', 'flappy_bird'] as const;
+export const MINIGAME_GAME_TYPES = ['quiz', 'flappy_bird', 'speedrun'] as const;
 export type MinigameGameType = (typeof MINIGAME_GAME_TYPES)[number];
 
 export interface MinigameSessionRow {
@@ -238,6 +238,8 @@ export interface MinigameSessionRow {
   reward_3rd: number | null;
   cancelled_at: string | null;
   cancelled_by: number | null;
+  game_image_url: string | null;
+  game_external_url: string | null;
 }
 
 export interface MinigameParticipantRow {
@@ -276,6 +278,41 @@ export interface FlappyBirdLeaderboardEntry {
   avatar_url: string | null;
   best_score: number;
   /** played_at de la tentative qui a établi best_score — sert au départage (premier arrivé). */
+  achieved_at: string;
+  equipped_cosmetics: EquippedCosmetic[];
+}
+
+export interface SpeedrunAttemptRow {
+  id: number;
+  session_id: number;
+  user_id: number;
+  time_ms: number;
+  video_url: string;
+  submitted_at: string;
+  excluded_at: string | null;
+  excluded_by: number | null;
+}
+
+export interface SpeedrunAttemptEntry extends SpeedrunAttemptRow {
+  username: string;
+}
+
+/** Résultat simplifié d'une recherche de jeu sur speedrun.com — voir speedruncom.service.ts. */
+export interface SpeedrunComGameResult {
+  id: string;
+  name: string;
+  weblink: string;
+  imageUrl: string | null;
+  description: string;
+}
+
+export interface SpeedrunLeaderboardEntry {
+  user_id: number;
+  username: string;
+  avatar_url: string | null;
+  best_time_ms: number;
+  video_url: string;
+  /** submitted_at de la tentative qui a établi best_time_ms — sert au départage (premier arrivé). */
   achieved_at: string;
   equipped_cosmetics: EquippedCosmetic[];
 }
@@ -1027,12 +1064,14 @@ export interface SudokuPlayerChoiceRow {
   chosen_at: string;
 }
 
+/** Une soumission = une seule case (index + chiffre), plus jamais une grille entière — voir migration 065. */
 export interface SudokuAttemptRow {
   id: number;
   puzzle_id: number;
   user_id: number;
   attempt_number: number;
-  guess: string;
+  cell_index: number;
+  digit: string;
   is_correct: boolean;
   created_at: string;
 }
@@ -1043,58 +1082,40 @@ export type SudokuGameStatus = 'in_progress' | 'won' | 'lost';
 export interface SudokuChoosingView {
   status: 'choosing';
   rewards: Record<SudokuDifficulty, number>;
-  maxAttempts: Record<SudokuDifficulty, number>;
-  hideFeedback: Record<SudokuDifficulty, boolean>;
+  maxMistakes: Record<SudokuDifficulty, number>;
 }
 
 /**
- * Une tentative passée du joueur, grille soumise incluse pour permettre de la
- * réafficher — `cellCorrect` ne révèle jamais les chiffres de la solution,
- * seulement si chaque case remplie était juste, donc sûr à renvoyer même en
- * cours de partie (même principe que le résultat d'un `check` en direct).
- * `cellCorrect` vaut `null` quand le MSP a activé `sudoku_hide_feedback_*`
- * pour cette difficulté : seul `wrongCount` (nombre de cases fausses) est
- * alors disponible, pas le détail case par case.
+ * Vue publique du puzzle du jour une fois la difficulté choisie : la solution
+ * n'est incluse qu'en fin de partie. `validated` est une grille de 81
+ * caractères (même format que `givens`) portant le chiffre de chaque case
+ * déjà validée correcte par le joueur (verrouillée, comme un indice) et '0'
+ * ailleurs — c'est la source de vérité pour reconstruire la grille après un
+ * rechargement ; le reste (saisies pas encore validées) n'est qu'un
+ * brouillon local (localStorage côté client, jamais fait confiance côté
+ * serveur).
  */
-export interface SudokuAttemptSummary {
-  attemptNumber: number;
-  isCorrect: boolean;
-  createdAt: string;
-  guess: string;
-  cellCorrect: boolean[] | null;
-  wrongCount: number;
-}
-
-/** Vue publique du puzzle du jour une fois la difficulté choisie : la solution n'est incluse qu'en fin de partie. */
 export interface SudokuGameView {
   status: SudokuGameStatus;
   puzzleDate: string;
   difficulty: SudokuDifficulty;
   givens: string;
-  maxAttempts: number;
-  attemptsUsed: number;
-  attempts: SudokuAttemptSummary[];
+  maxMistakes: number;
+  mistakesUsed: number;
+  validated: string;
   rewardSp: number;
   solution: string | null;
-  hideFeedback: boolean;
 }
 
 export type SudokuTodayView = SudokuChoosingView | SudokuGameView;
 
-/**
- * Résultat d'une soumission (consomme une tentative) : correction cellule par
- * cellule (case vide jamais correcte), sauf si `sudoku_hide_feedback_*` est
- * actif pour cette difficulté — `cellCorrect` vaut alors `null` et seul
- * `wrongCount` est renvoyé.
- */
-export interface SudokuCheckResult {
-  solved: boolean;
-  cellCorrect: boolean[] | null;
-  wrongCount: number;
+/** Résultat de la soumission d'une case unique — juste, elle se verrouille ; fausse, elle compte comme une erreur. */
+export interface SudokuSubmitResult {
+  correct: boolean;
+  cellIndex: number;
   status: SudokuGameStatus;
-  attemptsUsed: number;
-  maxAttempts: number;
-  attempts: SudokuAttemptSummary[];
+  mistakesUsed: number;
+  maxMistakes: number;
   rewardSp: number;
   rewardGranted: boolean;
   solution: string | null;
@@ -1108,13 +1129,7 @@ export interface SudokuTodayAdminEntry {
   completions: number;
 }
 
-/**
- * Vue MSP : une soumission d'un joueur, tous jours et difficultés confondus,
- * même principe que MotusAttemptHistoryEntry — sauf que la grille soumise
- * (`guess`) n'est pas exposée : contrairement à un mot Motus, un dump de 81
- * chiffres n'a aucune valeur de lecture pour le MSP, seul attempt_number /
- * is_correct compte.
- */
+/** Vue MSP : une soumission (une case) d'un joueur, tous jours et difficultés confondus. */
 export interface SudokuAttemptHistoryEntry {
   id: number;
   user_id: number;
@@ -1123,6 +1138,8 @@ export interface SudokuAttemptHistoryEntry {
   puzzle_date: string;
   difficulty: SudokuDifficulty;
   attempt_number: number;
+  cell_index: number;
+  digit: string;
   is_correct: boolean;
   created_at: string;
 }
