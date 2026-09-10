@@ -1093,8 +1093,6 @@ export interface RouletteBet {
   /** Requis (0-36) uniquement pour `type: 'straight'`. */
   number?: number | null;
   amount: number;
-  /** Gain total (mise incluse) pour ce pari, 0 si perdant — rempli au règlement, absent tant que le pari n'est que proposé par le client. */
-  payout?: number;
 }
 
 export interface RoulettePayoutInfo {
@@ -1103,36 +1101,55 @@ export interface RoulettePayoutInfo {
   multiplier_x100: number;
 }
 
+export type RouletteRoundStatus = 'betting' | 'spinning' | 'finished';
+
+/**
+ * Manche partagée entre tous les joueurs (même pattern que blackjack_sessions
+ * / crash_rounds) : une seule ligne "vivante" à la fois par saison, l'état
+ * avance "à la lecture" (betting -> spinning -> finished), sans cron ni
+ * websocket. `winning_number` est tiré à la création mais masqué (`null`)
+ * tant que `status !== 'finished'` — voir toPublicView côté service.
+ */
 export interface RouletteRoundRow {
   id: number;
-  user_id: number;
   season_id: number | null;
-  bets: RouletteBet[];
-  winning_number: number;
-  total_wager: number;
-  total_payout: number;
-  bet_transaction_id: number | null;
-  payout_transaction_id: number | null;
+  status: RouletteRoundStatus;
+  winning_number: number | null;
+  starts_at: string | null;
+  spin_ends_at: string | null;
+  finished_at: string | null;
   created_at: string;
 }
 
-export interface RouletteSpinResult {
-  round: RouletteRoundRow;
-  balance: number;
-  enabled: boolean;
-}
-
-export interface RouletteHistoryEntry {
+/** Un pari d'un joueur dans une manche — sert à la fois la table en direct (paris de tous les joueurs) et l'historique. */
+export interface RouletteBetEntry {
   id: number;
+  round_id: number;
   user_id: number;
-  bets: RouletteBet[];
-  winning_number: number;
-  total_wager: number;
-  total_payout: number;
+  type: RouletteBetType;
+  number: number | null;
+  amount: number;
+  /** `null` tant que la manche n'est pas `finished`. */
+  payout: number | null;
   created_at: string;
   username: string;
   avatar_url: string | null;
   equipped_cosmetics: EquippedCosmetic[];
+}
+
+export interface RouletteRoundPublicView extends RouletteRoundRow {
+  bets: RouletteBetEntry[];
+}
+
+export interface RouletteActionResult {
+  round: RouletteRoundPublicView;
+  balance: number;
+  enabled: boolean;
+}
+
+/** Une ligne d'historique = un pari d'une manche déjà résolue, avec le numéro gagnant de cette manche. */
+export interface RouletteHistoryEntry extends RouletteBetEntry {
+  winning_number: number;
 }
 
 export type MotusLetterState = 'correct' | 'present' | 'absent';

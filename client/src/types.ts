@@ -1008,7 +1008,6 @@ export interface RouletteBet {
   type: RouletteBetType;
   number?: number | null;
   amount: number;
-  payout?: number;
 }
 
 export interface RoulettePayoutInfo {
@@ -1017,36 +1016,45 @@ export interface RoulettePayoutInfo {
   multiplier_x100: number;
 }
 
-export interface RouletteRound {
+export type RouletteRoundStatus = 'betting' | 'spinning' | 'finished';
+
+export interface RouletteRoundRow {
   id: number;
-  user_id: number;
   season_id: number | null;
-  bets: RouletteBet[];
-  winning_number: number;
-  total_wager: number;
-  total_payout: number;
-  bet_transaction_id: number | null;
-  payout_transaction_id: number | null;
+  status: RouletteRoundStatus;
+  winning_number: number | null;
+  starts_at: string | null;
+  spin_ends_at: string | null;
+  finished_at: string | null;
   created_at: string;
 }
 
-export interface RouletteSpinResult {
-  round: RouletteRound;
-  balance: number;
-  enabled: boolean;
-}
-
-export interface RouletteHistoryEntry {
+export interface RouletteBetEntry {
   id: number;
+  round_id: number;
   user_id: number;
-  bets: RouletteBet[];
-  winning_number: number;
-  total_wager: number;
-  total_payout: number;
+  type: RouletteBetType;
+  number: number | null;
+  amount: number;
+  payout: number | null;
   created_at: string;
   username: string;
   avatar_url: string | null;
   equipped_cosmetics: EquippedCosmetic[];
+}
+
+export interface RouletteRoundPublicView extends RouletteRoundRow {
+  bets: RouletteBetEntry[];
+}
+
+export interface RouletteActionResult {
+  round: RouletteRoundPublicView;
+  balance: number;
+  enabled: boolean;
+}
+
+export interface RouletteHistoryEntry extends RouletteBetEntry {
+  winning_number: number;
 }
 
 export type MotusLetterState = 'correct' | 'present' | 'absent';

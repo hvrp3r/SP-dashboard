@@ -1,10 +1,17 @@
 import { apiClient } from './client.js';
-import type { RouletteBet, RoulettePayoutInfo, RouletteHistoryEntry, RouletteSpinResult } from '../types.js';
+import type {
+  RouletteActionResult,
+  RouletteBet,
+  RoulettePayoutInfo,
+  RouletteHistoryEntry,
+} from '../types.js';
+
+export const getCurrent = () => apiClient.get<RouletteActionResult>('/api/roulette/current');
 
 export const getPayouts = () => apiClient.get<RoulettePayoutInfo[]>('/api/roulette/payouts');
 
-export const spin = (bets: RouletteBet[]) =>
-  apiClient.post<RouletteSpinResult>('/api/roulette/spin', { bets });
+export const placeBet = (bets: RouletteBet[]) =>
+  apiClient.post<RouletteActionResult>('/api/roulette/bet', { bets });
 
 export const getHistory = (limit?: number, mine?: boolean) => {
   const params = new URLSearchParams();
