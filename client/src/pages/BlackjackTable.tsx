@@ -129,8 +129,15 @@ function netResult(hand: { bet_amount: number; outcome: BlackjackHand['outcome']
   }
 }
 
+/** Délai (ms) avant de répercuter le solde ailleurs (header) après une manche
+ * résolue par un hit/stand — le temps que les dernières cartes distribuées
+ * (croupier compris) terminent leur animation (voir dealCard/BlackjackSeat),
+ * pour ne pas laisser le header spoiler l'issue avant même que la table ne
+ * l'affiche. */
+const BALANCE_REVEAL_HOLD_MS = 800;
+
 export default function BlackjackTable() {
-  const { user, setUser } = useAuth();
+  const { user, setUser, holdBalanceSync } = useAuth();
   const spectators = useSpectators('blackjack');
   useAnnounceChatRoom({ room: 'blackjack', roomKey: '', label: 'Blackjack', icon: '🃏' });
   const [session, setSession] = useState<BlackjackSession | null>(null);
@@ -146,6 +153,54 @@ export default function BlackjackTable() {
   const [history, setHistory] = useState<BlackjackHistoryEntry[]>([]);
   const [historyScope, setHistoryScope] = useState<HistoryScope>('all');
   const [rtp, setRtp] = useState<number | null>(null);
+
+  // Solde en attente de révélation (voir BALANCE_REVEAL_HOLD_MS) : tant qu'il
+  // est défini, un nouveau solde reçu (ex: le sondage périodique `load`)
+  // remplace juste la valeur en attente plutôt que d'être appliqué tout de
+  // suite, pour ne pas court-circuiter le délai en cours.
+  const balanceRevealRef = useRef<{ release: () => void; balance: number; timer: ReturnType<typeof setTimeout> } | null>(
+    null
+  );
+
+  const applyBalanceNow = useCallback(
+    (balance: number) => {
+      if (balanceRevealRef.current) {
+        balanceRevealRef.current.balance = balance;
+        return;
+      }
+      setUser((prev) => (prev ? { ...prev, sp_balance: balance } : prev));
+    },
+    [setUser]
+  );
+
+  const holdAndRevealBalance = useCallback(
+    (balance: number) => {
+      if (balanceRevealRef.current) {
+        clearTimeout(balanceRevealRef.current.timer);
+        balanceRevealRef.current.balance = balance;
+      } else {
+        balanceRevealRef.current = { release: holdBalanceSync(), balance, timer: undefined as unknown as ReturnType<typeof setTimeout> };
+      }
+      balanceRevealRef.current.timer = setTimeout(() => {
+        const entry = balanceRevealRef.current;
+        balanceRevealRef.current = null;
+        if (!entry) return;
+        setUser((prev) => (prev ? { ...prev, sp_balance: entry.balance } : prev));
+        entry.release();
+      }, BALANCE_REVEAL_HOLD_MS);
+    },
+    [holdBalanceSync, setUser]
+  );
+
+  useEffect(() => {
+    return () => {
+      if (balanceRevealRef.current) {
+        clearTimeout(balanceRevealRef.current.timer);
+        balanceRevealRef.current.release();
+        balanceRevealRef.current = null;
+      }
+    };
+  }, []);
 
   const loadHistory = useCallback(() => {
     blackjackApi
@@ -163,7 +218,7 @@ export default function BlackjackTable() {
       const result = await blackjackApi.getCurrentSession();
       setSession(result.session);
       setBlackjackEnabled(result.enabled);
-      if (user) setUser({ ...user, sp_balance: result.balance });
+      applyBalanceNow(result.balance);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur inconnue');
@@ -238,7 +293,7 @@ export default function BlackjackTable() {
       const result = await blackjackApi.join(amount);
       setSession(result.session);
       setBlackjackEnabled(result.enabled);
-      if (user) setUser({ ...user, sp_balance: result.balance });
+      applyBalanceNow(result.balance);
       setBetAmount('');
       gamblingApi.getStatus().then(setStatus).catch(() => {});
     } catch (err) {
@@ -256,7 +311,9 @@ export default function BlackjackTable() {
       const result = await blackjackApi.hit();
       setSession(result.session);
       setBlackjackEnabled(result.enabled);
-      if (user) setUser({ ...user, sp_balance: result.balance });
+      const mine = result.session?.hands.find((h) => h.user_id === user?.id);
+      if (mine?.outcome) holdAndRevealBalance(result.balance);
+      else applyBalanceNow(result.balance);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur inconnue');
     } finally {
@@ -272,7 +329,9 @@ export default function BlackjackTable() {
       const result = await blackjackApi.stand();
       setSession(result.session);
       setBlackjackEnabled(result.enabled);
-      if (user) setUser({ ...user, sp_balance: result.balance });
+      const mine = result.session?.hands.find((h) => h.user_id === user?.id);
+      if (mine?.outcome) holdAndRevealBalance(result.balance);
+      else applyBalanceNow(result.balance);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur inconnue');
     } finally {

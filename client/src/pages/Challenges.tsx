@@ -56,7 +56,7 @@ const POLL_INTERVAL_MS = 5000;
 const COIN_FLIP_POLL_INTERVAL_MS = 1000;
 
 export default function Challenges() {
-  const { user } = useAuth();
+  const { user, holdBalanceSync } = useAuth();
   const [challenges, setChallenges] = useState<Challenge[]>([]);
   const [players, setPlayers] = useState<LeaderboardEntry[]>([]);
   const [quota, setQuota] = useState<ChallengeQuota | null>(null);
@@ -76,9 +76,18 @@ export default function Challenges() {
   // le statut passe directement pending -> resolved sans étape "accepted" visible).
   const [flippingIds, setFlippingIds] = useState<Set<number>>(new Set());
   const prevStatusRef = useRef<Map<number, ChallengeStatus>>(new Map());
+  // Le résultat (et les SP gagnés/perdus) est déjà connu côté serveur dès
+  // l'acceptation — geler le solde affiché ailleurs (header) le temps de
+  // l'animation, sinon le sondage périodique de useAuth spoilerait l'issue
+  // avant que la pièce ne se pose. Une entrée par défi en cours d'animation
+  // (plusieurs pile ou face peuvent tourner en même temps).
+  const flipReleaseRef = useRef<Map<number, () => void>>(new Map());
 
   /** Démarre l'animation de la pièce pour ce défi (idempotent si déjà en cours). */
   function startFlip(id: number) {
+    if (!flipReleaseRef.current.has(id)) {
+      flipReleaseRef.current.set(id, holdBalanceSync());
+    }
     setFlippingIds((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
     setTimeout(() => {
       setFlippingIds((prev) => {
@@ -87,6 +96,8 @@ export default function Challenges() {
         next.delete(id);
         return next;
       });
+      flipReleaseRef.current.get(id)?.();
+      flipReleaseRef.current.delete(id);
     }, COIN_FLIP_DURATION_MS);
   }
 
@@ -125,6 +136,13 @@ export default function Challenges() {
       .getLeaderboard('sp_balance')
       .then(setPlayers)
       .catch(() => setPlayers([]));
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      flipReleaseRef.current.forEach((release) => release());
+      flipReleaseRef.current.clear();
+    };
   }, []);
 
   const hasPendingCoinFlip = challenges.some((c) => c.type === 'coin_flip' && c.status === 'pending');

@@ -127,7 +127,7 @@ export default function GamblingCrateDetail() {
   const { id } = useParams<{ id: string }>();
   const crateId = Number(id);
   const navigate = useNavigate();
-  const { user, setUser } = useAuth();
+  const { user, setUser, holdBalanceSync } = useAuth();
   const confirm = useConfirm();
   const isAdmin = user?.role === 'admin';
   const spectators = useSpectators('crates', id);
@@ -149,6 +149,7 @@ export default function GamblingCrateDetail() {
   const [pendingWinner, setPendingWinner] = useState<GamblingCrateReward | null>(null);
   const [pendingWinnerCosmetic, setPendingWinnerCosmetic] = useState<Cosmetic | null>(null);
   const pendingResultRef = useRef<GamblingOpenResult | null>(null);
+  const releaseBalanceHoldRef = useRef<(() => void) | null>(null);
 
   const [editName, setEditName] = useState('');
   const [editDescription, setEditDescription] = useState('');
@@ -205,6 +206,15 @@ export default function GamblingCrateDetail() {
     load();
   }, [load]);
 
+  // Filet de sécurité si le joueur quitte la page en plein rouleau : sans ça,
+  // le solde resterait gelé pour toute l'app (voir holdBalanceSync).
+  useEffect(() => {
+    return () => {
+      releaseBalanceHoldRef.current?.();
+      releaseBalanceHoldRef.current = null;
+    };
+  }, []);
+
   useEffect(() => {
     gamblingApi.getStatus().then(setStatus).catch(() => {});
   }, [crateId]);
@@ -247,6 +257,11 @@ export default function GamblingCrateDetail() {
     setOpening(true);
     setError(null);
     setLastResult(null);
+    // Gèle le solde affiché ailleurs (header) pendant tout le rouleau : sinon le
+    // sondage de fond de useAuth pourrait le mettre à jour avant l'atterrissage
+    // et spoiler le résultat.
+    releaseBalanceHoldRef.current?.();
+    releaseBalanceHoldRef.current = holdBalanceSync();
     try {
       const result = await gamblingApi.openCrate(crateId);
       pendingResultRef.current = result;
@@ -256,18 +271,26 @@ export default function GamblingCrateDetail() {
       setStatus((prev) =>
         prev ? { ...prev, spentToday: result.spentToday, maxWagerPerDay: result.maxWagerPerDay } : prev
       );
-      if (user) setUser({ ...user, sp_balance: result.balance });
+      // Le solde n'est répercuté dans le header qu'à l'atterrissage du rouleau
+      // (handleReelLanded) — le mettre à jour ici spoilerait le résultat avant
+      // la fin de l'animation.
       setCrate((prev) => (prev ? { ...prev, myOpenCount: prev.myOpenCount + 1 } : prev));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur inconnue');
       setOpening(false);
+      releaseBalanceHoldRef.current?.();
+      releaseBalanceHoldRef.current = null;
     }
   }
 
   function handleReelLanded() {
-    setLastResult(pendingResultRef.current);
+    const result = pendingResultRef.current;
+    setLastResult(result);
     pendingResultRef.current = null;
     setOpening(false);
+    if (result && user) setUser({ ...user, sp_balance: result.balance });
+    releaseBalanceHoldRef.current?.();
+    releaseBalanceHoldRef.current = null;
     loadOpens();
   }
 

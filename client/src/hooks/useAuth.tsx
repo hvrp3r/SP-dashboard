@@ -2,9 +2,12 @@ import {
   createContext,
   useContext,
   useEffect,
+  useRef,
   useState,
   useCallback,
+  type Dispatch,
   type ReactNode,
+  type SetStateAction,
 } from 'react';
 import * as authApi from '../api/auth.js';
 import * as cosmeticsApi from '../api/cosmetics.js';
@@ -19,7 +22,18 @@ interface AuthContextValue {
   login: (email: string, password: string) => Promise<User>;
   register: (username: string, email: string, password: string) => Promise<User>;
   logout: () => Promise<void>;
-  setUser: (user: User) => void;
+  setUser: Dispatch<SetStateAction<User | null>>;
+  /**
+   * Gèle le solde SP affiché (header/profil) tant qu'au moins un appel n'a pas
+   * relâché sa prise (compteur, plusieurs animations concurrentes possibles —
+   * ex: deux caisses ouvertes dans des onglets différents) — appelé par les
+   * pages de jeu le temps d'une animation de révélation (rouleau de caisse,
+   * pièce, cartes de blackjack…) pour que le sondage de fond de 15s
+   * (voir plus bas) ne fasse pas sauter le solde avant la fin de l'animation.
+   * Ne gèle jamais les autres champs (streak, avatar...), qui continuent de se
+   * rafraîchir normalement. Retourne la fonction à appeler pour relâcher.
+   */
+  holdBalanceSync: () => () => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -30,6 +44,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [equippedCosmetics, setEquippedCosmetics] = useState<EquippedCosmetic[]>([]);
+
+  const balanceHoldCountRef = useRef(0);
+  const pendingUserRef = useRef<User | null>(null);
+
+  const holdBalanceSync = useCallback(() => {
+    balanceHoldCountRef.current += 1;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      balanceHoldCountRef.current = Math.max(0, balanceHoldCountRef.current - 1);
+      if (balanceHoldCountRef.current === 0 && pendingUserRef.current) {
+        setUser(pendingUserRef.current);
+        pendingUserRef.current = null;
+      }
+    };
+  }, []);
 
   function refreshEquipped() {
     cosmeticsApi
@@ -67,7 +98,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const interval = setInterval(async () => {
       try {
         const me = await authApi.getMe();
-        setUser(me);
+        if (balanceHoldCountRef.current > 0) {
+          // Une animation de révélation est en cours ailleurs (caisse, bataille,
+          // blackjack, pile ou face...) : on garde tout à jour sauf le solde,
+          // appliqué d'un coup au relâchement (voir holdBalanceSync).
+          pendingUserRef.current = me;
+          setUser((prev) => (prev ? { ...me, sp_balance: prev.sp_balance } : me));
+        } else {
+          setUser(me);
+        }
       } catch {
         // Ignoré : le prochain sondage réessaiera.
       }
@@ -100,7 +139,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, loading, equippedCosmetics, login, register, logout, setUser }}
+      value={{ user, loading, equippedCosmetics, login, register, logout, setUser, holdBalanceSync }}
     >
       {children}
     </AuthContext.Provider>
