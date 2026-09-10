@@ -3,7 +3,7 @@ import * as chatService from '../services/chat.service.js';
 import * as eventService from '../services/event.service.js';
 import type { ChatRoom } from '../types.js';
 
-const VALID_ROOMS: ChatRoom[] = ['global', 'crates', 'blackjack', 'crash', 'tower', 'event'];
+const VALID_ROOMS: ChatRoom[] = ['global', 'crates', 'blackjack', 'crash', 'tower', 'roulette', 'event'];
 const MAX_MESSAGE_LENGTH = 500;
 
 /** roomKey n'a de sens que pour la room 'event' (id de la session) — les autres

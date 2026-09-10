@@ -19,6 +19,7 @@ const CASINO_ICONS: Record<GamblingGameId, string> = {
   crash: '📈',
   tower: '🗼',
   battles: '⚔️',
+  roulette: '🎡',
 };
 
 const dropdownSectionLabelClass =

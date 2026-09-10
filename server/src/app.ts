@@ -14,6 +14,7 @@ import gamblingBattlesRoutes from './routes/gamblingBattles.routes.js';
 import blackjackRoutes from './routes/blackjack.routes.js';
 import crashRoutes from './routes/crash.routes.js';
 import towerRoutes from './routes/tower.routes.js';
+import rouletteRoutes from './routes/roulette.routes.js';
 import motusRoutes from './routes/motus.routes.js';
 import sudokuRoutes from './routes/sudoku.routes.js';
 import notificationsRoutes from './routes/notifications.routes.js';
@@ -57,6 +58,7 @@ export function createApp(): Express {
   app.use('/api/blackjack', blackjackRoutes);
   app.use('/api/crash', crashRoutes);
   app.use('/api/tower', towerRoutes);
+  app.use('/api/roulette', rouletteRoutes);
   app.use('/api/motus', motusRoutes);
   app.use('/api/sudoku', sudokuRoutes);
   app.use('/api/notifications', notificationsRoutes);

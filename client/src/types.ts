@@ -787,7 +787,7 @@ export interface GamblingBattleListEntry extends GamblingBattle {
   winners: GamblingBattleWinnerEntry[];
 }
 
-export type GamblingSpectatorRoom = 'crates' | 'blackjack' | 'crash' | 'tower';
+export type GamblingSpectatorRoom = 'crates' | 'blackjack' | 'crash' | 'tower' | 'roulette';
 
 export interface GamblingSpectatorEntry {
   user_id: number;
@@ -796,7 +796,7 @@ export interface GamblingSpectatorEntry {
   equipped_cosmetics: EquippedCosmetic[];
 }
 
-export type ChatRoom = 'global' | 'crates' | 'blackjack' | 'crash' | 'tower' | 'event';
+export type ChatRoom = 'global' | 'crates' | 'blackjack' | 'crash' | 'tower' | 'roulette' | 'event';
 
 export interface ChatMessage {
   id: number;
@@ -872,7 +872,7 @@ export interface BlackjackHistoryEntry {
   equipped_cosmetics: EquippedCosmetic[];
 }
 
-export type GamblingGameId = 'crates' | 'blackjack' | 'crash' | 'tower' | 'battles';
+export type GamblingGameId = 'crates' | 'blackjack' | 'crash' | 'tower' | 'battles' | 'roulette';
 
 export interface GamblingGameInfo {
   id: GamblingGameId;
@@ -987,6 +987,66 @@ export interface TowerDifficultyInfo {
   cells_per_floor: number;
   mines_per_floor: number;
   multipliers_x100: number[];
+}
+
+export type RouletteBetType =
+  | 'straight'
+  | 'red'
+  | 'black'
+  | 'odd'
+  | 'even'
+  | 'low'
+  | 'high'
+  | 'dozen1'
+  | 'dozen2'
+  | 'dozen3'
+  | 'col1'
+  | 'col2'
+  | 'col3';
+
+export interface RouletteBet {
+  type: RouletteBetType;
+  number?: number | null;
+  amount: number;
+  payout?: number;
+}
+
+export interface RoulettePayoutInfo {
+  type: RouletteBetType;
+  label: string;
+  multiplier_x100: number;
+}
+
+export interface RouletteRound {
+  id: number;
+  user_id: number;
+  season_id: number | null;
+  bets: RouletteBet[];
+  winning_number: number;
+  total_wager: number;
+  total_payout: number;
+  bet_transaction_id: number | null;
+  payout_transaction_id: number | null;
+  created_at: string;
+}
+
+export interface RouletteSpinResult {
+  round: RouletteRound;
+  balance: number;
+  enabled: boolean;
+}
+
+export interface RouletteHistoryEntry {
+  id: number;
+  user_id: number;
+  bets: RouletteBet[];
+  winning_number: number;
+  total_wager: number;
+  total_payout: number;
+  created_at: string;
+  username: string;
+  avatar_url: string | null;
+  equipped_cosmetics: EquippedCosmetic[];
 }
 
 export type MotusLetterState = 'correct' | 'present' | 'absent';

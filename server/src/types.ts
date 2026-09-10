@@ -646,7 +646,7 @@ export interface GamblingOpenEntry extends GamblingOpenRow {
   equipped_cosmetics: EquippedCosmetic[];
 }
 
-export type GamblingSpectatorRoom = 'crates' | 'blackjack' | 'crash' | 'tower';
+export type GamblingSpectatorRoom = 'crates' | 'blackjack' | 'crash' | 'tower' | 'roulette';
 
 export interface GamblingSpectatorEntry {
   user_id: number;
@@ -655,7 +655,7 @@ export interface GamblingSpectatorEntry {
   equipped_cosmetics: EquippedCosmetic[];
 }
 
-export type ChatRoom = 'global' | 'crates' | 'blackjack' | 'crash' | 'tower' | 'event';
+export type ChatRoom = 'global' | 'crates' | 'blackjack' | 'crash' | 'tower' | 'roulette' | 'event';
 
 export interface ChatMessageRow {
   id: number;
@@ -858,7 +858,7 @@ export interface GamblingBattleListEntry extends GamblingBattleRow {
   winners: GamblingBattleWinnerEntry[];
 }
 
-export type GamblingGameId = 'crates' | 'blackjack' | 'crash' | 'tower' | 'battles';
+export type GamblingGameId = 'crates' | 'blackjack' | 'crash' | 'tower' | 'battles' | 'roulette';
 
 export interface GamblingGameInfo {
   id: GamblingGameId;
@@ -1065,6 +1065,74 @@ export interface TowerDifficultyInfo {
   cells_per_floor: number;
   mines_per_floor: number;
   multipliers_x100: number[];
+}
+
+/**
+ * Roulette européenne (zéro unique). `straight` porte un numéro (0-36) ; les
+ * autres types sont des chances simples/multiples sans numéro associé.
+ * Multiplicateurs entiers x100 (retour total mise incluse) — même convention
+ * que Tower/Crash.
+ */
+export type RouletteBetType =
+  | 'straight'
+  | 'red'
+  | 'black'
+  | 'odd'
+  | 'even'
+  | 'low'
+  | 'high'
+  | 'dozen1'
+  | 'dozen2'
+  | 'dozen3'
+  | 'col1'
+  | 'col2'
+  | 'col3';
+
+export interface RouletteBet {
+  type: RouletteBetType;
+  /** Requis (0-36) uniquement pour `type: 'straight'`. */
+  number?: number | null;
+  amount: number;
+  /** Gain total (mise incluse) pour ce pari, 0 si perdant — rempli au règlement, absent tant que le pari n'est que proposé par le client. */
+  payout?: number;
+}
+
+export interface RoulettePayoutInfo {
+  type: RouletteBetType;
+  label: string;
+  multiplier_x100: number;
+}
+
+export interface RouletteRoundRow {
+  id: number;
+  user_id: number;
+  season_id: number | null;
+  bets: RouletteBet[];
+  winning_number: number;
+  total_wager: number;
+  total_payout: number;
+  bet_transaction_id: number | null;
+  payout_transaction_id: number | null;
+  created_at: string;
+}
+
+export interface RouletteSpinResult {
+  round: RouletteRoundRow;
+  balance: number;
+  enabled: boolean;
+}
+
+export interface RouletteHistoryEntry {
+  id: number;
+  user_id: number;
+  bets: RouletteBet[];
+  winning_number: number;
+  total_wager: number;
+  total_payout: number;
+  created_at: string;
+  username: string;
+  avatar_url: string | null;
+  equipped_cosmetics: EquippedCosmetic[];
 }
 
 export type MotusLetterState = 'correct' | 'present' | 'absent';
