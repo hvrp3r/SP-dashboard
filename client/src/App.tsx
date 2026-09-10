@@ -21,6 +21,7 @@ import GamblingBattleDetail from './pages/GamblingBattleDetail.jsx';
 import BlackjackTable from './pages/BlackjackTable.jsx';
 import Crash from './pages/Crash.jsx';
 import Tower from './pages/Tower.jsx';
+import Roulette from './pages/Roulette.jsx';
 import Motus from './pages/Motus.jsx';
 import Sudoku from './pages/Sudoku.jsx';
 import PlayerStats from './pages/PlayerStats.jsx';
@@ -227,6 +228,14 @@ export default function App() {
           element={
             <PrivateRoute>
               <Crash />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/gambling/roulette"
+          element={
+            <PrivateRoute>
+              <Roulette />
             </PrivateRoute>
           }
         />
