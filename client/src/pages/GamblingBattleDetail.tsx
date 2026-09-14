@@ -95,7 +95,7 @@ export default function GamblingBattleDetail() {
   const { id } = useParams<{ id: string }>();
   const battleId = Number(id);
   const navigate = useNavigate();
-  const { user, setUser } = useAuth();
+  const { user, setUser, holdBalanceSync } = useAuth();
   const confirm = useConfirm();
 
   const [battle, setBattle] = useState<GamblingBattlePublicView | null>(null);
@@ -136,6 +136,16 @@ export default function GamblingBattleDetail() {
     const interval = setInterval(load, ms);
     return () => clearInterval(interval);
   }, [load, battle?.status]);
+
+  // Gèle le solde affiché ailleurs (header) tant que la bataille anime ses
+  // rouleaux — sinon le sondage de fond de useAuth pourrait révéler le gain
+  // du vainqueur avant que le dernier rouleau ne se pose (voir revealed_sp_total
+  // côté serveur pour le même souci sur le total affiché par joueur).
+  useEffect(() => {
+    if (battle?.status !== 'in_progress') return;
+    const release = holdBalanceSync();
+    return () => release();
+  }, [battle?.status, holdBalanceSync]);
 
   useEffect(() => {
     gamblingApi.getStatus().then(setStatus).catch(() => {});

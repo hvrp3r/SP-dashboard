@@ -5,14 +5,14 @@ import RankBadge from './RankBadge.jsx';
 import Avatar from './Avatar.jsx';
 import UserNameTag from './UserNameTag.jsx';
 import FlappyBirdEmbed from './FlappyBirdEmbed.jsx';
-import type { MinigameSessionDetail } from '../types.js';
+import type { EventSessionDetail } from '../types.js';
 
 interface Props {
   sessionId: number;
-  session: MinigameSessionDetail;
+  session: EventSessionDetail;
   isAdmin: boolean;
   userId: number | undefined;
-  onSessionChange: (session: MinigameSessionDetail) => void;
+  onSessionChange: (session: EventSessionDetail) => void;
   onError: (message: string | null) => void;
 }
 
@@ -163,10 +163,10 @@ export default function FlappyBirdSessionDetail({
 
   async function handleCancelSession() {
     const ok = await confirm({
-      title: 'Annuler le mini-jeu',
+      title: 'Annuler l’événement',
       message:
         'La session sera clôturée immédiatement sans distribuer aucun gain, même si des joueurs ont déjà tenté leur chance. Cette action est définitive.',
-      confirmLabel: 'Annuler le mini-jeu',
+      confirmLabel: 'Annuler l’événement',
       danger: true,
     });
     if (!ok) return;
@@ -405,10 +405,10 @@ export default function FlappyBirdSessionDetail({
               <button
                 onClick={handleCancelSession}
                 disabled={busy}
-                title="Annuler le mini-jeu sans distribuer de gain, à tout moment pendant qu'il est ouvert"
+                title="Annuler l'événement sans distribuer de gain, à tout moment pendant qu'il est ouvert"
                 className="bg-red-950/40 hover:bg-red-950/60 text-red-400 font-semibold px-4 py-2 rounded-md transition disabled:opacity-50 border border-red-900/50"
               >
-                Annuler le mini-jeu
+                Annuler l'événement
               </button>
             </div>
           )}

@@ -34,6 +34,7 @@ export const CONFIG_SECTIONS: ConfigSection[] = [
       'blackjack_enabled',
       'crash_enabled',
       'tower_enabled',
+      'roulette_enabled',
       'gambling_max_wager_per_day',
     ],
   },

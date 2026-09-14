@@ -71,7 +71,7 @@ async function listBattleCrates(battleId: number): Promise<GamblingBattleCrateEn
 
 async function listParticipants(
   battleId: number,
-  visibleSteps: number
+  completedSteps: number
 ): Promise<GamblingBattleParticipantEntry[]> {
   const { rows } = await pool.query<
     Omit<GamblingBattleParticipantEntry, 'equipped_cosmetics' | 'revealed_sp_total'>
@@ -92,7 +92,7 @@ async function listParticipants(
      JOIN gambling_crate_rewards r ON r.id = bo.reward_id
      WHERE bc.battle_id = $1 AND bc.position < $2 AND r.type = 'sp'
      GROUP BY bo.participant_id`,
-    [battleId, visibleSteps]
+    [battleId, completedSteps]
   );
   const totalByParticipant = new Map(totals.map((t) => [t.participant_id, Number(t.total ?? 0)]));
 
@@ -164,11 +164,29 @@ function visibleStepsFor(battle: GamblingBattleRow, totalSteps: number): number 
   return Math.min(totalSteps, stepsElapsed + 1);
 }
 
+/**
+ * Étapes réellement *terminées* (rouleau posé), par opposition à
+ * visibleStepsFor qui inclut l'étape en cours d'animation pour que le rouleau
+ * sache déjà où s'arrêter. Sert uniquement au total SP affiché par joueur :
+ * l'inclure trop tôt (avec le +1 de visibleStepsFor) ferait sauter le score
+ * avant que l'animation du rouleau en cours ne soit terminée, ce qui spoile
+ * le résultat et donne l'impression d'un score qui saute tout seul.
+ */
+function completedStepsFor(battle: GamblingBattleRow, totalSteps: number): number {
+  if (battle.status === 'waiting' || battle.status === 'cancelled') return 0;
+  if (battle.status === 'completed') return totalSteps;
+  if (!battle.started_at) return 0;
+  const elapsedMs = Math.max(0, Date.now() - new Date(battle.started_at).getTime());
+  const stepsElapsed = Math.floor(elapsedMs / STEP_DURATION_MS);
+  return Math.min(totalSteps, stepsElapsed);
+}
+
 async function buildPublicView(battle: GamblingBattleRow): Promise<GamblingBattlePublicView> {
   const crates = await listBattleCrates(battle.id);
   const visibleSteps = visibleStepsFor(battle, crates.length);
+  const completedSteps = completedStepsFor(battle, crates.length);
   const [participants, opens, winners] = await Promise.all([
-    listParticipants(battle.id, visibleSteps),
+    listParticipants(battle.id, completedSteps),
     listVisibleOpens(battle.id, visibleSteps),
     battle.status === 'completed' ? listWinners(battle.id) : Promise.resolve([]),
   ]);

@@ -5,7 +5,7 @@ import type {
   SpeedrunAttemptEntry,
   SpeedrunAttemptRow,
   SpeedrunLeaderboardEntry,
-  MinigameSessionRow,
+  EventSessionRow,
 } from '../types.js';
 
 export async function submitAttempt(
@@ -107,9 +107,9 @@ export async function listAttemptUserIds(sessionId: number): Promise<number[]> {
 export async function cancelSession(
   sessionId: number,
   cancelledBy: number
-): Promise<MinigameSessionRow | null> {
-  const { rows } = await pool.query<MinigameSessionRow>(
-    `UPDATE minigame_sessions
+): Promise<EventSessionRow | null> {
+  const { rows } = await pool.query<EventSessionRow>(
+    `UPDATE event_sessions
      SET status = 'cancelled', cancelled_at = NOW(), cancelled_by = $1
      WHERE id = $2 AND game_type = 'speedrun' AND status = 'open'
      RETURNING *`,
@@ -121,9 +121,9 @@ export async function cancelSession(
 export async function updateRewards(
   sessionId: number,
   rewards: { reward1st: number; reward2nd: number; reward3rd: number }
-): Promise<MinigameSessionRow | null> {
-  const { rows } = await pool.query<MinigameSessionRow>(
-    `UPDATE minigame_sessions SET reward_1st = $1, reward_2nd = $2, reward_3rd = $3
+): Promise<EventSessionRow | null> {
+  const { rows } = await pool.query<EventSessionRow>(
+    `UPDATE event_sessions SET reward_1st = $1, reward_2nd = $2, reward_3rd = $3
      WHERE id = $4 AND game_type = 'speedrun' AND status = 'open'
      RETURNING *`,
     [rewards.reward1st, rewards.reward2nd, rewards.reward3rd, sessionId]
@@ -142,13 +142,13 @@ export async function updateRewards(
  */
 export async function closeAndDistribute(
   sessionId: number
-): Promise<{ session: MinigameSessionRow; awarded: { userId: number; amount: number; rank: number }[] } | null> {
+): Promise<{ session: EventSessionRow; awarded: { userId: number; amount: number; rank: number }[] } | null> {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
 
-    const { rows: claimed } = await client.query<MinigameSessionRow>(
-      `UPDATE minigame_sessions
+    const { rows: claimed } = await client.query<EventSessionRow>(
+      `UPDATE event_sessions
        SET status = 'closed', closed_at = NOW()
        WHERE id = $1 AND game_type = 'speedrun' AND status = 'open'
          AND ends_at IS NOT NULL AND ends_at <= NOW()
@@ -186,7 +186,7 @@ export async function closeAndDistribute(
       await spService.creditSP({
         userId: entry.user_id,
         amount,
-        type: 'minigame_reward',
+        type: 'event_reward',
         seasonId: session.season_id,
         relatedId: session.id,
         note: session.title ?? 'Speedrun',

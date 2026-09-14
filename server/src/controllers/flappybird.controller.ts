@@ -1,14 +1,14 @@
 import type { Request, Response } from 'express';
-import * as minigameService from '../services/minigame.service.js';
+import * as eventService from '../services/event.service.js';
 import * as flappybirdService from '../services/flappybird.service.js';
 import * as notificationService from '../services/notification.service.js';
 import { signFlappyBirdAttemptToken, verifyFlappyBirdAttemptToken } from '../utils/jwt.js';
-import type { MinigameSessionRow } from '../types.js';
+import type { EventSessionRow } from '../types.js';
 
 const RANK_LABELS = ['1er', '2e', '3e'];
 
 /** Précondition commune à `startAttempt` et `submitScore` : session jouable maintenant. */
-function getPlayableSessionError(session: MinigameSessionRow | null): string | null {
+function getPlayableSessionError(session: EventSessionRow | null): string | null {
   if (!session) return 'Session introuvable';
   if (session.game_type !== 'flappy_bird') return 'Cette session n’est pas une session Flappy Bird';
   if (session.status !== 'open') return 'Cette session est clôturée';
@@ -25,7 +25,7 @@ export async function startAttempt(req: Request<{ id: string }>, res: Response):
     return;
   }
 
-  const session = await minigameService.getSessionById(sessionId);
+  const session = await eventService.getSessionById(sessionId);
   const error = getPlayableSessionError(session);
   if (error) {
     res.status(session ? 400 : 404).json({ error });
@@ -59,7 +59,7 @@ export async function reportPoint(
     return;
   }
 
-  const session = await minigameService.getSessionById(sessionId);
+  const session = await eventService.getSessionById(sessionId);
   const playableError = getPlayableSessionError(session);
   if (playableError) {
     res.status(session ? 400 : 404).json({ error: playableError });
@@ -91,7 +91,7 @@ export async function submitScore(
     return;
   }
 
-  const session = await minigameService.getSessionById(sessionId);
+  const session = await eventService.getSessionById(sessionId);
   const playableError = getPlayableSessionError(session);
   if (playableError) {
     res.status(session ? 400 : 404).json({ error: playableError });
@@ -141,7 +141,7 @@ export async function updateRewards(
     return;
   }
 
-  const session = await minigameService.getSessionById(sessionId);
+  const session = await eventService.getSessionById(sessionId);
   if (!session || session.game_type !== 'flappy_bird') {
     res.status(404).json({ error: 'Session introuvable' });
     return;
@@ -194,7 +194,7 @@ export async function closeAndDistribute(req: Request<{ id: string }>, res: Resp
     return;
   }
 
-  const session = await minigameService.getSessionById(sessionId);
+  const session = await eventService.getSessionById(sessionId);
   if (!session || session.game_type !== 'flappy_bird') {
     res.status(404).json({ error: 'Session introuvable' });
     return;
@@ -218,7 +218,7 @@ export async function closeAndDistribute(req: Request<{ id: string }>, res: Resp
         message: `Tu as fini ${RANK_LABELS[a.rank - 1] ?? `${a.rank}e`} au Flappy Bird ${
           result.session.title ?? ''
         } — +${a.amount} SP`.trim(),
-        link: `/mini-jeux/${sessionId}`,
+        link: `/evenements/${sessionId}`,
       })
     )
   );
@@ -234,7 +234,7 @@ export async function cancelSession(req: Request<{ id: string }>, res: Response)
     return;
   }
 
-  const session = await minigameService.getSessionById(sessionId);
+  const session = await eventService.getSessionById(sessionId);
   if (!session || session.game_type !== 'flappy_bird') {
     res.status(404).json({ error: 'Session introuvable' });
     return;
@@ -255,9 +255,9 @@ export async function cancelSession(req: Request<{ id: string }>, res: Response)
     userIds.map((userId) =>
       notificationService.createNotification({
         userId,
-        type: 'minigame_cancelled',
-        message: `Le mini-jeu ${cancelled.title ?? 'Flappy Bird'} a été annulé par le MSP — aucun gain ne sera distribué.`,
-        link: `/mini-jeux/${sessionId}`,
+        type: 'event_cancelled',
+        message: `L'événement ${cancelled.title ?? 'Flappy Bird'} a été annulé par le MSP — aucun gain ne sera distribué.`,
+        link: `/evenements/${sessionId}`,
       })
     )
   );
@@ -266,9 +266,9 @@ export async function cancelSession(req: Request<{ id: string }>, res: Response)
   res.json(detail);
 }
 
-/** Construit la vue détail Flappy Bird — appelée depuis ce contrôleur et depuis minigames.controller.ts. */
+/** Construit la vue détail Flappy Bird — appelée depuis ce contrôleur et depuis events.controller.ts. */
 export async function buildFlappyBirdDetail(sessionId: number, viewerId: number, isAdmin: boolean) {
-  const session = await minigameService.getSessionById(sessionId);
+  const session = await eventService.getSessionById(sessionId);
   if (!session) return null;
 
   const leaderboard = await flappybirdService.getLeaderboard(sessionId);

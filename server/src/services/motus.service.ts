@@ -392,7 +392,7 @@ export async function listHistory(limit: number): Promise<MotusHistoryEntry[]> {
 
 /**
  * Vue MSP : toutes les soumissions de tous les joueurs, tous jours confondus,
- * les plus récentes d'abord — même principe que les réponses de mini-jeu
+ * les plus récentes d'abord — même principe que les réponses d'événement
  * (texte visible seulement par le MSP et l'auteur) sauf qu'ici c'est le MSP
  * qui consulte, donc aucune restriction de contenu à appliquer.
  */

@@ -8,6 +8,7 @@ import * as notificationService from '../services/notification.service.js';
 import { BLACKJACK_RTP_PERCENT } from '../services/blackjack.service.js';
 import { CRASH_RTP_PERCENT } from '../services/crash.service.js';
 import { TOWER_RTP_PERCENT } from '../services/tower.service.js';
+import { ROULETTE_RTP_PERCENT } from '../services/roulette.service.js';
 import type {
   CosmeticRarity,
   CosmeticSlot,
@@ -21,7 +22,7 @@ import type {
 const VALID_REWARD_TYPES: GamblingRewardType[] = ['sp', 'custom', 'cosmetic'];
 const VALID_COSMETIC_SLOTS: CosmeticSlot[] = ['avatar_frame', 'banner', 'name_color', 'title', 'name_font'];
 const VALID_COSMETIC_RARITIES: CosmeticRarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
-const VALID_SPECTATOR_ROOMS: GamblingSpectatorRoom[] = ['crates', 'blackjack', 'crash', 'tower'];
+const VALID_SPECTATOR_ROOMS: GamblingSpectatorRoom[] = ['crates', 'blackjack', 'crash', 'tower', 'roulette'];
 
 /** roomKey n'a de sens que pour la room 'crates' (id de la caisse) — les jeux
  * singleton partagent une seule table entre tous les joueurs. */
@@ -503,11 +504,12 @@ export async function openCrate(req: Request<{ id: string }>, res: Response): Pr
  * pas bloqué en accès direct).
  */
 export async function listGames(req: Request, res: Response): Promise<void> {
-  const [cratesEnabled, blackjackEnabled, crashEnabled, towerEnabled] = await Promise.all([
+  const [cratesEnabled, blackjackEnabled, crashEnabled, towerEnabled, rouletteEnabled] = await Promise.all([
     configService.getConfigBool('gambling_enabled', true),
     configService.getConfigBool('blackjack_enabled', false),
     configService.getConfigBool('crash_enabled', false),
     configService.getConfigBool('tower_enabled', false),
+    configService.getConfigBool('roulette_enabled', false),
   ]);
   const games: GamblingGameInfo[] = [
     {
@@ -555,6 +557,14 @@ export async function listGames(req: Request, res: Response): Promise<void> {
       path: '/gambling/tower',
       enabled: towerEnabled,
       rtp: TOWER_RTP_PERCENT,
+    },
+    {
+      id: 'roulette',
+      name: 'Roulette',
+      description: 'Mise sur un numéro, une couleur ou une chance simple, et lance la roue.',
+      path: '/gambling/roulette',
+      enabled: rouletteEnabled,
+      rtp: ROULETTE_RTP_PERCENT,
     },
   ];
   res.json(games);

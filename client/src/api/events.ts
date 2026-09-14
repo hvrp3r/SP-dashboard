@@ -1,19 +1,19 @@
 import { apiClient } from './client.js';
 import type {
-  MinigameQuestionView,
-  MinigameSession,
-  MinigameSessionDetail,
-  MinigameStatus,
+  EventQuestionView,
+  EventSession,
+  EventSessionDetail,
+  EventStatus,
 } from '../types.js';
 
-export const listSessions = (status?: MinigameStatus) =>
-  apiClient.get<MinigameSession[]>(`/api/minigames${status ? `?status=${status}` : ''}`);
+export const listSessions = (status?: EventStatus) =>
+  apiClient.get<EventSession[]>(`/api/events${status ? `?status=${status}` : ''}`);
 
 export const getSession = (id: number) =>
-  apiClient.get<MinigameSessionDetail>(`/api/minigames/${id}`);
+  apiClient.get<EventSessionDetail>(`/api/events/${id}`);
 
 export const listQuestions = (sessionId: number) =>
-  apiClient.get<MinigameQuestionView[]>(`/api/minigames/${sessionId}/questions`);
+  apiClient.get<EventQuestionView[]>(`/api/events/${sessionId}/questions`);
 
 interface CreateDeadlineRewardOptions {
   endsAt: string;
@@ -25,30 +25,41 @@ interface CreateDeadlineRewardOptions {
   gameExternalUrl?: string;
 }
 
+interface CreateTournamentOptions {
+  tournamentFormat: string;
+  tournamentMaxTeams: number;
+  tournamentTeamSize: number;
+  reward1st: number;
+  reward2nd: number;
+  reward3rd: number;
+}
+
 export const createSession = (
   gameType: string,
   title: string,
   description?: string,
   entryFee?: number,
-  deadlineRewards?: CreateDeadlineRewardOptions
+  deadlineRewards?: CreateDeadlineRewardOptions,
+  tournamentOptions?: CreateTournamentOptions
 ) =>
-  apiClient.post<MinigameSession>('/api/minigames', {
+  apiClient.post<EventSession>('/api/events', {
     gameType,
     title,
     description,
     entryFee,
     ...deadlineRewards,
+    ...tournamentOptions,
   });
 
 export const joinSession = (sessionId: number) =>
-  apiClient.post<MinigameSessionDetail>(`/api/minigames/${sessionId}/join`);
+  apiClient.post<EventSessionDetail>(`/api/events/${sessionId}/join`);
 
 export const addParticipant = (sessionId: number, userId: number) =>
-  apiClient.post<MinigameSessionDetail>(`/api/minigames/${sessionId}/participants`, { userId });
+  apiClient.post<EventSessionDetail>(`/api/events/${sessionId}/participants`, { userId });
 
 export const removeParticipant = (sessionId: number, participantId: number) =>
-  apiClient.delete<MinigameSessionDetail>(
-    `/api/minigames/${sessionId}/participants/${participantId}`
+  apiClient.delete<EventSessionDetail>(
+    `/api/events/${sessionId}/participants/${participantId}`
   );
 
 export const askQuestion = (
@@ -57,20 +68,20 @@ export const askQuestion = (
   durationSeconds?: number,
   correctAnswer?: string
 ) =>
-  apiClient.post<MinigameSessionDetail>(`/api/minigames/${sessionId}/questions`, {
+  apiClient.post<EventSessionDetail>(`/api/events/${sessionId}/questions`, {
     prompt,
     durationSeconds,
     correctAnswer,
   });
 
 export const closeQuestion = (sessionId: number, questionId: number) =>
-  apiClient.post<MinigameSessionDetail>(
-    `/api/minigames/${sessionId}/questions/${questionId}/close`
+  apiClient.post<EventSessionDetail>(
+    `/api/events/${sessionId}/questions/${questionId}/close`
   );
 
 export const submitAnswer = (sessionId: number, questionId: number, answerText: string) =>
-  apiClient.post<MinigameSessionDetail>(
-    `/api/minigames/${sessionId}/questions/${questionId}/answer`,
+  apiClient.post<EventSessionDetail>(
+    `/api/events/${sessionId}/questions/${questionId}/answer`,
     { answerText }
   );
 
@@ -80,15 +91,15 @@ export const gradeAnswer = (
   userId: number,
   correct: boolean | null
 ) =>
-  apiClient.post<MinigameSessionDetail>(
-    `/api/minigames/${sessionId}/questions/${questionId}/answers/${userId}/grade`,
+  apiClient.post<EventSessionDetail>(
+    `/api/events/${sessionId}/questions/${questionId}/answers/${userId}/grade`,
     { correct }
   );
 
 export const awardParticipants = (
   sessionId: number,
   awards: { participantId: number; amount: number }[]
-) => apiClient.post<MinigameSessionDetail>(`/api/minigames/${sessionId}/award`, { awards });
+) => apiClient.post<EventSessionDetail>(`/api/events/${sessionId}/award`, { awards });
 
 export const closeSession = (sessionId: number) =>
-  apiClient.post<MinigameSessionDetail>(`/api/minigames/${sessionId}/close`);
+  apiClient.post<EventSessionDetail>(`/api/events/${sessionId}/close`);

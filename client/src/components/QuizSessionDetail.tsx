@@ -3,10 +3,10 @@ import { useConfirm } from '../hooks/useConfirm.jsx';
 import Avatar from './Avatar.jsx';
 import UserNameTag from './UserNameTag.jsx';
 import VolumeSlider from './VolumeSlider.jsx';
-import * as minigamesApi from '../api/minigames.js';
+import * as eventsApi from '../api/events.js';
 import * as leaderboardApi from '../api/leaderboard.js';
 import * as sound from '../lib/sound.js';
-import type { LeaderboardEntry, MinigameQuestionView, MinigameSessionDetail } from '../types.js';
+import type { LeaderboardEntry, EventQuestionView, EventSessionDetail } from '../types.js';
 
 const TICK_INTERVAL_MS = 1000;
 
@@ -46,11 +46,11 @@ function effectiveCorrectness(
 
 interface Props {
   sessionId: number;
-  session: MinigameSessionDetail;
-  questions: MinigameQuestionView[];
+  session: EventSessionDetail;
+  questions: EventQuestionView[];
   isAdmin: boolean;
   userId: number | undefined;
-  onSessionChange: (session: MinigameSessionDetail) => void;
+  onSessionChange: (session: EventSessionDetail) => void;
   onError: (message: string | null) => void;
 }
 
@@ -141,7 +141,7 @@ export default function QuizSessionDetail({
     setJoining(true);
     onError(null);
     try {
-      const data = await minigamesApi.joinSession(sessionId);
+      const data = await eventsApi.joinSession(sessionId);
       onSessionChange(data);
     } catch (err) {
       onError(err instanceof Error ? err.message : 'Erreur inconnue');
@@ -157,7 +157,7 @@ export default function QuizSessionDetail({
     setSubmitting(true);
     onError(null);
     try {
-      const data = await minigamesApi.submitAnswer(sessionId, currentQuestion.id, answerText.trim());
+      const data = await eventsApi.submitAnswer(sessionId, currentQuestion.id, answerText.trim());
       onSessionChange(data);
       setAnswerText('');
     } catch (err) {
@@ -172,7 +172,7 @@ export default function QuizSessionDetail({
     setBusy(true);
     onError(null);
     try {
-      const data = await minigamesApi.addParticipant(sessionId, Number(selectedPlayerId));
+      const data = await eventsApi.addParticipant(sessionId, Number(selectedPlayerId));
       onSessionChange(data);
       setSelectedPlayerId('');
     } catch (err) {
@@ -186,7 +186,7 @@ export default function QuizSessionDetail({
     setBusy(true);
     onError(null);
     try {
-      const data = await minigamesApi.removeParticipant(sessionId, participantId);
+      const data = await eventsApi.removeParticipant(sessionId, participantId);
       onSessionChange(data);
     } catch (err) {
       onError(err instanceof Error ? err.message : 'Erreur inconnue');
@@ -208,7 +208,7 @@ export default function QuizSessionDetail({
     setBusy(true);
     onError(null);
     try {
-      const data = await minigamesApi.askQuestion(
+      const data = await eventsApi.askQuestion(
         sessionId,
         prompt.trim(),
         parsedDuration,
@@ -231,7 +231,7 @@ export default function QuizSessionDetail({
     setBusy(true);
     onError(null);
     try {
-      const data = await minigamesApi.closeQuestion(sessionId, currentQuestion.id);
+      const data = await eventsApi.closeQuestion(sessionId, currentQuestion.id);
       onSessionChange(data);
     } catch (err) {
       onError(err instanceof Error ? err.message : 'Erreur inconnue');
@@ -248,7 +248,7 @@ export default function QuizSessionDetail({
     setBusy(true);
     onError(null);
     try {
-      const data = await minigamesApi.gradeAnswer(sessionId, currentQuestion.id, targetUserId, next);
+      const data = await eventsApi.gradeAnswer(sessionId, currentQuestion.id, targetUserId, next);
       onSessionChange(data);
     } catch (err) {
       onError(err instanceof Error ? err.message : 'Erreur inconnue');
@@ -270,7 +270,7 @@ export default function QuizSessionDetail({
     setBusy(true);
     onError(null);
     try {
-      const data = await minigamesApi.awardParticipants(sessionId, awards);
+      const data = await eventsApi.awardParticipants(sessionId, awards);
       onSessionChange(data);
       setAwardAmounts({});
     } catch (err) {
@@ -291,7 +291,7 @@ export default function QuizSessionDetail({
     setBusy(true);
     onError(null);
     try {
-      const data = await minigamesApi.closeSession(sessionId);
+      const data = await eventsApi.closeSession(sessionId);
       onSessionChange(data);
     } catch (err) {
       onError(err instanceof Error ? err.message : 'Erreur inconnue');
@@ -311,8 +311,8 @@ export default function QuizSessionDetail({
           {joining
             ? 'Inscription…'
             : session.entry_fee
-              ? `Rejoindre le mini-jeu (-${session.entry_fee} SP)`
-              : 'Rejoindre le mini-jeu'}
+              ? `Rejoindre l'événement (-${session.entry_fee} SP)`
+              : 'Rejoindre l’événement'}
         </button>
       )}
 
@@ -461,7 +461,7 @@ export default function QuizSessionDetail({
           )}
 
           {!myParticipant && !isAdmin && (
-            <p className="text-sm text-zinc-500">Rejoins le mini-jeu pour répondre.</p>
+            <p className="text-sm text-zinc-500">Rejoins l'événement pour répondre.</p>
           )}
 
           {isAdmin && (

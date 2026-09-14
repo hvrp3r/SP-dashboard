@@ -8,11 +8,14 @@ import * as configService from './config.service.js';
 
 const GAME_TYPE_LABELS: Record<string, string> = {
   quiz: 'Quiz',
+  flappy_bird: 'Flappy Bird',
+  speedrun: 'Speedrun',
+  tournament: 'Tournoi',
 };
 
 const EMBED_COLOR = 0x22c55e; // vert émeraude, couleur d'accent de l'app
 
-export async function sendMinigameLaunchedAlert(session: {
+export async function sendEventLaunchedAlert(session: {
   id: number;
   title: string;
   gameType: string;
@@ -26,7 +29,7 @@ export async function sendMinigameLaunchedAlert(session: {
 
   const roleId = process.env.DISCORD_ALERT_ROLE_ID;
   const clientOrigin = process.env.CLIENT_ORIGIN;
-  const link = clientOrigin ? `${clientOrigin}/mini-jeux/${session.id}` : null;
+  const link = clientOrigin ? `${clientOrigin}/evenements/${session.id}` : null;
   const entryLabel = session.entryFee ? `${session.entryFee} SP` : 'Free';
 
   const payload = {
@@ -34,7 +37,7 @@ export async function sendMinigameLaunchedAlert(session: {
     allowed_mentions: roleId ? { roles: [roleId] } : { parse: [] },
     embeds: [
       {
-        title: '🎮 Nouveau mini-jeu disponible',
+        title: '🎮 Nouvel événement disponible',
         description: `**${session.title}**`,
         color: EMBED_COLOR,
         fields: [
@@ -58,7 +61,7 @@ export async function sendMinigameLaunchedAlert(session: {
       console.error(`Discord webhook a répondu ${res.status}: ${await res.text()}`);
     }
   } catch (err) {
-    // Une alerte Discord ratée ne doit jamais faire échouer la création du mini-jeu.
+    // Une alerte Discord ratée ne doit jamais faire échouer la création de l'événement.
     console.error('Échec de l’envoi de l’alerte Discord :', err);
   }
 }

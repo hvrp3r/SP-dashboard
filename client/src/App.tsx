@@ -6,8 +6,8 @@ import Home from './pages/Home.jsx';
 import Profile from './pages/Profile.jsx';
 import Leaderboard from './pages/Leaderboard.jsx';
 import Challenges from './pages/Challenges.jsx';
-import Minigames from './pages/Minigames.jsx';
-import MinigameDetail from './pages/MinigameDetail.jsx';
+import Events from './pages/Events.jsx';
+import EventDetail from './pages/EventDetail.jsx';
 import Suggestions from './pages/Suggestions.jsx';
 import SuggestionDetail from './pages/SuggestionDetail.jsx';
 import GamblingHome from './pages/GamblingHome.jsx';
@@ -21,6 +21,7 @@ import GamblingBattleDetail from './pages/GamblingBattleDetail.jsx';
 import BlackjackTable from './pages/BlackjackTable.jsx';
 import Crash from './pages/Crash.jsx';
 import Tower from './pages/Tower.jsx';
+import Roulette from './pages/Roulette.jsx';
 import Motus from './pages/Motus.jsx';
 import Sudoku from './pages/Sudoku.jsx';
 import PlayerStats from './pages/PlayerStats.jsx';
@@ -103,18 +104,18 @@ export default function App() {
           }
         />
         <Route
-          path="/mini-jeux"
+          path="/evenements"
           element={
             <PrivateRoute>
-              <Minigames />
+              <Events />
             </PrivateRoute>
           }
         />
         <Route
-          path="/mini-jeux/:id"
+          path="/evenements/:id"
           element={
             <PrivateRoute>
-              <MinigameDetail />
+              <EventDetail />
             </PrivateRoute>
           }
         />
@@ -227,6 +228,14 @@ export default function App() {
           element={
             <PrivateRoute>
               <Crash />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/gambling/roulette"
+          element={
+            <PrivateRoute>
+              <Roulette />
             </PrivateRoute>
           }
         />
