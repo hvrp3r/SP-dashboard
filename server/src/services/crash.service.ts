@@ -553,6 +553,10 @@ export async function cashOut(
  * défaut (`userId = null`), ou filtré sur un seul joueur. Toujours joint
  * username/avatar/cosmétiques équipés, même en mode "un seul joueur" — même
  * convention que blackjack/tower `listHistory`, pour un composant client unique.
+ *
+ * Limité aux manches `crashed` : un retrait pose `resolved_at` dès le cash-out,
+ * alors que la manche est encore `running` — sans ce filtre, l'entrée exposerait
+ * `crash_point_x100` aux joueurs encore en course (même raison que `toPublicView`).
  */
 export async function listHistory(
   limit: number,
@@ -564,7 +568,9 @@ export async function listHistory(
      FROM crash_bets b
      JOIN crash_rounds r ON r.id = b.round_id
      JOIN users u ON u.id = b.user_id
-     WHERE b.resolved_at IS NOT NULL AND ($1::int IS NULL OR b.user_id = $1)
+     WHERE b.resolved_at IS NOT NULL
+       AND r.status = 'crashed'
+       AND ($1::int IS NULL OR b.user_id = $1)
      ORDER BY b.resolved_at DESC
      LIMIT $2`,
     [userId, limit]
