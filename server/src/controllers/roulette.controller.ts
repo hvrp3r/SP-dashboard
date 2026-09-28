@@ -6,16 +6,22 @@ export async function getPayouts(req: Request, res: Response): Promise<void> {
   res.json(rouletteService.listPayouts());
 }
 
-interface SpinBody {
+export async function getCurrent(req: Request, res: Response): Promise<void> {
+  const activeSeason = await seasonService.getActiveSeason();
+  const result = await rouletteService.getCurrentRoundView(req.user!.id, activeSeason?.id ?? null);
+  res.json(result);
+}
+
+interface PlaceBetBody {
   bets?: unknown;
 }
 
-export async function spin(req: Request<{}, {}, SpinBody>, res: Response): Promise<void> {
+export async function placeBet(req: Request<{}, {}, PlaceBetBody>, res: Response): Promise<void> {
   const activeSeason = await seasonService.getActiveSeason();
 
   let result;
   try {
-    result = await rouletteService.spin(req.user!.id, req.body?.bets, activeSeason?.id ?? null);
+    result = await rouletteService.placeBet(req.user!.id, req.body?.bets, activeSeason?.id ?? null);
   } catch (err) {
     const status = (err as { status?: number }).status ?? 500;
     res.status(status).json({ error: err instanceof Error ? err.message : 'Erreur serveur' });

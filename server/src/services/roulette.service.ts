@@ -1,3 +1,4 @@
+import type { PoolClient } from 'pg';
 import { pool } from '../db/pool.js';
 import * as spService from './sp.service.js';
 import * as configService from './config.service.js';
@@ -5,25 +6,31 @@ import * as cosmeticsService from './cosmetics.service.js';
 import { startOfDayLocalAsUTC } from '../utils/localDate.js';
 import type {
   RouletteBet,
+  RouletteBetEntry,
   RouletteBetType,
   RouletteHistoryEntry,
   RoulettePayoutInfo,
+  RouletteActionResult,
+  RouletteRoundPublicView,
   RouletteRoundRow,
-  RouletteSpinResult,
 } from '../types.js';
 
 /**
  * Roulette européenne à zéro unique : RTP mathématiquement identique pour
- * chaque type de pari (36/37 ≈ 97.3%), contrairement au Tower/Crash dont le
- * RTP est calibré à la main — même raisonnement que pour n'importe quelle
- * roulette casino sans règle "en prison"/partage (volontairement absente ici,
- * pour garder la mécanique simple).
+ * chaque type de pari (36/37 ≈ 97.3%) — pas de règle "en prison"/partage,
+ * volontairement absente pour garder la mécanique simple.
  */
 export const ROULETTE_RTP_PERCENT = 97;
 
+/** Fenêtre de mise commune à tous les joueurs, déclenchée par la 1ère mise (même principe que Blackjack : une table vide ne fait pas tourner de compte à rebours). */
+const BETTING_WINDOW_SECONDS = 20;
+/** Durée de l'animation de la roue, identique pour tous les joueurs (spin_ends_at est un horodatage serveur, pas un délai client). */
+const SPIN_DURATION_SECONDS = 5;
+/** Délai pendant lequel une manche `finished` reste affichée avant qu'une nouvelle `betting` la remplace. */
+const RESULTS_DISPLAY_SECONDS = 6;
+
 const RED_NUMBERS = new Set([1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36]);
 
-/** Retour total (x100, mise incluse) pour chaque type de pari. */
 const BET_PAYOUTS_X100: Record<RouletteBetType, number> = {
   straight: 3600,
   red: 200,
@@ -78,7 +85,11 @@ async function getBalance(userId: number): Promise<number> {
   return rows[0]?.sp_balance ?? 0;
 }
 
-/** Lève une erreur 400 si le tableau de paris est mal formé — jamais fait confiance au client au-delà de ça (le règlement recalcule tout côté serveur). */
+function isOlderThan(ts: string | null, seconds: number): boolean {
+  if (!ts) return true;
+  return Date.now() - new Date(ts).getTime() > seconds * 1000;
+}
+
 function validateBets(bets: unknown): RouletteBet[] {
   if (!Array.isArray(bets) || bets.length === 0) {
     throw Object.assign(new Error('Aucun pari posé'), { status: 400 });
@@ -102,7 +113,7 @@ function validateBets(bets: unknown): RouletteBet[] {
       }
       return { type: type as RouletteBetType, number: number as number, amount: amount as number };
     }
-    return { type: type as RouletteBetType, amount: amount as number };
+    return { type: type as RouletteBetType, number: null, amount: amount as number };
   });
 }
 
@@ -112,7 +123,7 @@ function numberColor(n: number): 'red' | 'black' | 'green' {
 }
 
 /** Gain total (mise incluse) d'un pari donné pour un numéro gagnant — 0 si perdant. */
-function resolveBetPayout(bet: RouletteBet, winningNumber: number): number {
+function resolveBetPayout(bet: { type: RouletteBetType; number: number | null; amount: number }, winningNumber: number): number {
   const multiplier = BET_PAYOUTS_X100[bet.type];
   const wins = (() => {
     switch (bet.type) {
@@ -149,25 +160,189 @@ function resolveBetPayout(bet: RouletteBet, winningNumber: number): number {
   return wins ? Math.floor((bet.amount * multiplier) / 100) : 0;
 }
 
-export async function spin(
+function toPublicView(round: RouletteRoundRow, bets: RouletteBetEntry[]): RouletteRoundPublicView {
+  return {
+    ...round,
+    winning_number: round.status === 'finished' ? round.winning_number : null,
+    bets,
+  };
+}
+
+async function getLatestRoundRow(seasonId: number | null): Promise<RouletteRoundRow | null> {
+  const { rows } = await pool.query<RouletteRoundRow>(
+    `SELECT * FROM roulette_rounds
+     WHERE season_id IS NOT DISTINCT FROM $1
+     ORDER BY created_at DESC LIMIT 1`,
+    [seasonId]
+  );
+  return rows[0] ?? null;
+}
+
+async function createRound(seasonId: number | null): Promise<RouletteRoundRow> {
+  const winningNumber = Math.floor(Math.random() * 37);
+  const { rows } = await pool.query<RouletteRoundRow>(
+    'INSERT INTO roulette_rounds (season_id, winning_number) VALUES ($1, $2) RETURNING *',
+    [seasonId, winningNumber]
+  );
+  return rows[0] as RouletteRoundRow;
+}
+
+async function listRoundBets(roundId: number): Promise<RouletteBetEntry[]> {
+  const { rows } = await pool.query<Omit<RouletteBetEntry, 'equipped_cosmetics'>>(
+    `SELECT b.*, u.username, u.avatar_url
+     FROM roulette_bets b
+     JOIN users u ON u.id = b.user_id
+     WHERE b.round_id = $1
+     ORDER BY b.created_at ASC`,
+    [roundId]
+  );
+  const equippedByUser = await cosmeticsService.getEquippedForUsers(rows.map((r) => r.user_id));
+  return rows.map((row) => ({ ...row, equipped_cosmetics: equippedByUser.get(row.user_id) ?? [] }));
+}
+
+/**
+ * Règle tous les paris de la manche (verrouillés), crédite les gains, puis
+ * passe la manche `finished`. Appelée avec une manche déjà verrouillée
+ * (`FOR UPDATE`) par l'appelant — même contrat que resolveRound côté
+ * Blackjack.
+ */
+async function resolveRound(client: PoolClient, round: RouletteRoundRow): Promise<RouletteRoundRow> {
+  const { rows: bets } = await client.query<{ id: number; user_id: number; type: RouletteBetType; number: number | null; amount: number }>(
+    'SELECT * FROM roulette_bets WHERE round_id = $1 FOR UPDATE',
+    [round.id]
+  );
+
+  for (const bet of bets) {
+    const payout = resolveBetPayout(bet, round.winning_number as number);
+    let payoutTransactionId: number | null = null;
+    if (payout > 0) {
+      const tx = await spService.creditSP({
+        userId: bet.user_id,
+        amount: payout,
+        type: 'gambling_win',
+        seasonId: round.season_id,
+        relatedId: bet.id,
+        note: `Roulette — numéro ${round.winning_number} (mise ${bet.amount} SP)`,
+        client,
+      });
+      payoutTransactionId = tx.id;
+    }
+    await client.query('UPDATE roulette_bets SET payout = $1, payout_transaction_id = $2 WHERE id = $3', [
+      payout,
+      payoutTransactionId,
+      bet.id,
+    ]);
+  }
+
+  const { rows } = await client.query<RouletteRoundRow>(
+    `UPDATE roulette_rounds SET status = 'finished', finished_at = NOW() WHERE id = $1 RETURNING *`,
+    [round.id]
+  );
+  return rows[0] as RouletteRoundRow;
+}
+
+/**
+ * Avance l'état de la manche si le temps est écoulé : ouverture des mises ->
+ * lancement de la roue (`starts_at` dépassé), puis lancement -> résolution
+ * (`spin_ends_at` dépassé). Appelée avec une manche déjà verrouillée
+ * (`FOR UPDATE`) par l'appelant. Même pattern que advanceSession
+ * (blackjack.service.ts) / advanceRound (crash.service.ts) — état avancé "à
+ * la lecture", pas de cron.
+ */
+async function advanceRound(client: PoolClient, round: RouletteRoundRow): Promise<RouletteRoundRow> {
+  let current = round;
+
+  if (current.status === 'betting' && current.starts_at && new Date(current.starts_at) <= new Date()) {
+    const { rows } = await client.query<RouletteRoundRow>(
+      `UPDATE roulette_rounds SET status = 'spinning', spin_ends_at = NOW() + ($1 || ' seconds')::interval WHERE id = $2 RETURNING *`,
+      [String(SPIN_DURATION_SECONDS), current.id]
+    );
+    current = rows[0] as RouletteRoundRow;
+  }
+
+  if (current.status === 'spinning' && current.spin_ends_at && new Date(current.spin_ends_at) <= new Date()) {
+    current = await resolveRound(client, current);
+  }
+
+  return current;
+}
+
+async function syncRound(roundId: number): Promise<RouletteRoundRow> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query<RouletteRoundRow>(
+      'SELECT * FROM roulette_rounds WHERE id = $1 FOR UPDATE',
+      [roundId]
+    );
+    let round = rows[0];
+    if (!round) {
+      throw Object.assign(new Error('Manche introuvable'), { status: 404 });
+    }
+    round = await advanceRound(client, round);
+    await client.query('COMMIT');
+    return round;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+async function resolveCurrentRound(seasonId: number | null): Promise<RouletteRoundRow> {
+  let latest = await getLatestRoundRow(seasonId);
+  if (!latest || (latest.status === 'finished' && isOlderThan(latest.finished_at, RESULTS_DISPLAY_SECONDS))) {
+    latest = await createRound(seasonId);
+  }
+  return syncRound(latest.id);
+}
+
+export async function getCurrentRoundView(
+  userId: number,
+  seasonId: number | null
+): Promise<RouletteActionResult> {
+  const round = await resolveCurrentRound(seasonId);
+  const bets = await listRoundBets(round.id);
+  const [balance, enabled] = await Promise.all([getBalance(userId), isRouletteEnabled()]);
+  return { round: toPublicView(round, bets), balance, enabled };
+}
+
+/**
+ * Pose un ou plusieurs paris sur la manche courante. Pas de `roundId` en
+ * entrée : le serveur résout toujours "la" manche courante lui-même, pour
+ * éviter qu'un client mise sur une table déjà périmée côté UI (même
+ * principe que joinSession côté Blackjack).
+ */
+export async function placeBet(
   userId: number,
   betsInput: unknown,
   seasonId: number | null
-): Promise<RouletteSpinResult> {
+): Promise<RouletteActionResult> {
   const enabled = await isRouletteEnabled();
   if (!enabled) {
     throw Object.assign(new Error('La Roulette est désactivée par le MSP'), { status: 403 });
   }
-
   const bets = validateBets(betsInput);
   const totalWager = bets.reduce((sum, b) => sum + b.amount, 0);
   const maxWagerPerDay = await configService.getConfigNumber('gambling_max_wager_per_day', 50);
+
+  const latest = await resolveCurrentRound(seasonId);
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
 
     await client.query('SELECT id FROM users WHERE id = $1 FOR UPDATE', [userId]);
+
+    const { rows: roundRows } = await client.query<RouletteRoundRow>(
+      'SELECT * FROM roulette_rounds WHERE id = $1 FOR UPDATE',
+      [latest.id]
+    );
+    const round = roundRows[0];
+    if (!round || round.status !== 'betting') {
+      throw Object.assign(new Error('Les mises sont closes, le prochain tour arrive'), { status: 409 });
+    }
 
     const { rows: spentRows } = await client.query<{ spent: string | null }>(
       `SELECT SUM(-amount) AS spent FROM sp_transactions
@@ -184,53 +359,52 @@ export async function spin(
       );
     }
 
-    const winningNumber = Math.floor(Math.random() * 37);
-    const settledBets: RouletteBet[] = bets.map((bet) => ({
-      ...bet,
-      payout: resolveBetPayout(bet, winningNumber),
-    }));
-    const totalPayout = settledBets.reduce((sum, b) => sum + (b.payout ?? 0), 0);
-
-    const { rows: roundRows } = await client.query<RouletteRoundRow>(
-      `INSERT INTO roulette_rounds (user_id, season_id, bets, winning_number, total_wager, total_payout)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-      [userId, seasonId, JSON.stringify(settledBets), winningNumber, totalWager, totalPayout]
+    const { rows: countRows } = await client.query<{ count: string }>(
+      'SELECT COUNT(*) FROM roulette_bets WHERE round_id = $1',
+      [round.id]
     );
-    const round = roundRows[0] as RouletteRoundRow;
+    const isFirstBetAtTable = Number(countRows[0]?.count ?? 0) === 0;
 
-    const betTx = await spService.debitSP({
-      userId,
-      amount: totalWager,
-      type: 'gambling_spend',
-      seasonId,
-      relatedId: round.id,
-      note: `Mise Roulette (${bets.length} pari${bets.length > 1 ? 's' : ''}, ${totalWager} SP)`,
-      client,
-    });
-    round.bet_transaction_id = betTx.id;
+    for (const bet of bets) {
+      const { rows: betRows } = await client.query<{ id: number }>(
+        `INSERT INTO roulette_bets (round_id, user_id, type, number, amount)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (round_id, user_id, type, COALESCE(number, -1))
+         DO UPDATE SET amount = roulette_bets.amount + EXCLUDED.amount
+         RETURNING id`,
+        [round.id, userId, bet.type, bet.number, bet.amount]
+      );
+      const betRow = betRows[0] as { id: number };
 
-    if (totalPayout > 0) {
-      const payoutTx = await spService.creditSP({
+      const betTx = await spService.debitSP({
         userId,
-        amount: totalPayout,
-        type: 'gambling_win',
-        seasonId,
-        relatedId: round.id,
-        note: `Roulette — numéro ${winningNumber} (mise ${totalWager} SP)`,
+        amount: bet.amount,
+        type: 'gambling_spend',
+        seasonId: round.season_id,
+        relatedId: betRow.id,
+        note: `Mise Roulette (${BET_LABELS[bet.type]}${bet.type === 'straight' ? ` ${bet.number}` : ''}, ${bet.amount} SP)`,
         client,
       });
-      round.payout_transaction_id = payoutTx.id;
+      await client.query('UPDATE roulette_bets SET bet_transaction_id = $1 WHERE id = $2', [
+        betTx.id,
+        betRow.id,
+      ]);
     }
 
-    await client.query(
-      `UPDATE roulette_rounds SET bet_transaction_id = $1, payout_transaction_id = $2 WHERE id = $3`,
-      [round.bet_transaction_id, round.payout_transaction_id, round.id]
-    );
+    let updatedRound = round;
+    if (isFirstBetAtTable) {
+      const { rows } = await client.query<RouletteRoundRow>(
+        `UPDATE roulette_rounds SET starts_at = NOW() + ($1 || ' seconds')::interval WHERE id = $2 RETURNING *`,
+        [String(BETTING_WINDOW_SECONDS), round.id]
+      );
+      updatedRound = rows[0] as RouletteRoundRow;
+    }
 
     const balance = await getBalance(userId);
     await client.query('COMMIT');
 
-    return { round, balance, enabled };
+    const betEntries = await listRoundBets(updatedRound.id);
+    return { round: toPublicView(updatedRound, betEntries), balance, enabled };
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;
@@ -243,26 +417,18 @@ export async function listHistory(
   limit: number,
   userId: number | null = null
 ): Promise<RouletteHistoryEntry[]> {
-  const { rows } = await pool.query<RouletteRoundRow & { username: string; avatar_url: string | null }>(
-    `SELECT r.*, u.username, u.avatar_url
-     FROM roulette_rounds r
-     JOIN users u ON u.id = r.user_id
-     WHERE ($1::int IS NULL OR r.user_id = $1)
-     ORDER BY r.created_at DESC
+  const { rows } = await pool.query<
+    Omit<RouletteBetEntry, 'equipped_cosmetics'> & { winning_number: number }
+  >(
+    `SELECT b.*, r.winning_number, u.username, u.avatar_url
+     FROM roulette_bets b
+     JOIN roulette_rounds r ON r.id = b.round_id AND r.status = 'finished'
+     JOIN users u ON u.id = b.user_id
+     WHERE ($1::int IS NULL OR b.user_id = $1)
+     ORDER BY b.created_at DESC
      LIMIT $2`,
     [userId, limit]
   );
   const equippedByUser = await cosmeticsService.getEquippedForUsers(rows.map((r) => r.user_id));
-  return rows.map((round) => ({
-    id: round.id,
-    user_id: round.user_id,
-    bets: round.bets,
-    winning_number: round.winning_number,
-    total_wager: round.total_wager,
-    total_payout: round.total_payout,
-    created_at: round.created_at,
-    username: round.username,
-    avatar_url: round.avatar_url,
-    equipped_cosmetics: equippedByUser.get(round.user_id) ?? [],
-  }));
+  return rows.map((row) => ({ ...row, equipped_cosmetics: equippedByUser.get(row.user_id) ?? [] }));
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth.jsx';
 import { useSpectators } from '../hooks/useSpectators.js';
@@ -18,15 +18,11 @@ import type {
   RouletteBetType,
   RouletteHistoryEntry,
   RoulettePayoutInfo,
-  RouletteRound,
+  RouletteRoundPublicView,
+  RouletteRoundStatus,
 } from '../types.js';
 
-/**
- * Rouge/noir dérive uniquement de la position physique du numéro sur une
- * roue européenne standard — ce n'est pas une règle de gain configurable par
- * le MSP (contrairement aux multiplicateurs, chargés depuis l'API), donc pas
- * de raison de la faire porter par le serveur.
- */
+/** Rouge/noir dérive uniquement de la position physique du numéro sur une roue européenne standard — pas une règle configurable par le MSP, donc pas besoin de la faire porter par le serveur. */
 const RED_NUMBERS = new Set([1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36]);
 function numberColor(n: number): 'red' | 'black' | 'green' {
   if (n === 0) return 'green';
@@ -38,113 +34,158 @@ function tileClass(n: number): string {
   if (c === 'red') return 'bg-rose-600 text-white';
   return 'bg-zinc-800 text-zinc-100';
 }
-
-type PlacedBet = RouletteBet & { key: string };
-function betKey(type: RouletteBetType, number?: number | null): string {
-  return `${type}:${number ?? ''}`;
+function wedgeColor(n: number): string {
+  const c = numberColor(n);
+  return c === 'green' ? '#059669' : c === 'red' ? '#e11d48' : '#27272a';
 }
 
-const OUTSIDE_BETS: { type: RouletteBetType; short: string }[] = [
-  { type: 'red', short: 'Rouge' },
-  { type: 'black', short: 'Noir' },
-  { type: 'odd', short: 'Impair' },
-  { type: 'even', short: 'Pair' },
-  { type: 'low', short: '1-18' },
-  { type: 'high', short: '19-36' },
-  { type: 'dozen1', short: '1ère douz.' },
-  { type: 'dozen2', short: '2ème douz.' },
-  { type: 'dozen3', short: '3ème douz.' },
-  { type: 'col1', short: 'Colonne 1' },
-  { type: 'col2', short: 'Colonne 2' },
-  { type: 'col3', short: 'Colonne 3' },
+/** Ordre réel des cases d'une roue européenne (zéro unique) — pas 0→36 dans l'ordre, c'est l'ordre physique sur la roue. */
+const WHEEL_ORDER = [
+  0, 32, 15, 19, 4, 21, 2, 25, 17, 34, 6, 27, 13, 36, 11, 30, 8, 23, 10, 5, 24, 16, 33, 1, 20, 14, 31,
+  9, 22, 18, 29, 7, 28, 12, 35, 3, 26,
 ];
+const WHEEL_STEP = 360 / WHEEL_ORDER.length;
+const WHEEL_GRADIENT = `conic-gradient(${WHEEL_ORDER.map(
+  (n, i) => `${wedgeColor(n)} ${i * WHEEL_STEP}deg ${(i + 1) * WHEEL_STEP}deg`
+).join(', ')})`;
 
-const REEL_ITEM_WIDTH = 56;
-const REEL_FILLER_COUNT = 28;
-const REEL_SPIN_MS = 3200;
+function polarToPercent(clockDeg: number, radiusPct: number): { left: number; top: number } {
+  const rad = ((clockDeg - 90) * Math.PI) / 180;
+  return { left: 50 + radiusPct * Math.cos(rad), top: 50 + radiusPct * Math.sin(rad) };
+}
 
-/** Bande de numéros qui défile puis s'arrête sur `winningNumber` (déjà connu
- * côté serveur avant même le début de l'animation — celle-ci est purement
- * cosmétique) — même idiom que GamblingReel.tsx (transform CSS + repos avant
- * lancement) mais simplifié : une simple transition CSS suffit, pas besoin
- * de piloter l'easing frame par frame. */
-function NumberReel({
-  spinToken,
+const FAST_SPIN_DURATION_S = 6;
+const FAST_SPIN_TURNS = 5;
+const SETTLE_DURATION_S = 1.6;
+const SETTLE_EXTRA_TURNS = 1;
+
+/**
+ * Le numéro gagnant reste caché côté serveur tant que la manche n'est pas
+ * `finished` (voir roulette.service.ts toPublicView) — impossible de viser
+ * un angle précis pendant `spinning`. La roue tourne donc "en aveugle" à
+ * vitesse constante (rotation linéaire) tout le temps que dure cette phase,
+ * puis un second mouvement, court et avec décélération, la fait pivoter
+ * jusqu'au bon secteur dès que le résultat est connu — deux animations CSS
+ * distinctes qui s'enchaînent sans à-coup (une transition CSS repart
+ * toujours de la position visuelle courante, jamais de l'ancienne cible).
+ */
+function RouletteWheel({
+  status,
   winningNumber,
-  onLanded,
 }: {
-  spinToken: number;
+  status: RouletteRoundStatus | undefined;
   winningNumber: number | null;
-  onLanded: () => void;
 }) {
-  const [items, setItems] = useState<number[]>([]);
-  const [offset, setOffset] = useState(0);
-  const [transitionOn, setTransitionOn] = useState(false);
-  const trackRef = useRef<HTMLDivElement>(null);
+  const [rotation, setRotation] = useState(0);
+  const [transitionSpec, setTransitionSpec] = useState({ duration: 0, ease: 'linear' });
+  const prevStatusRef = useRef<RouletteRoundStatus | null>(null);
 
   useEffect(() => {
-    if (spinToken === 0 || winningNumber === null) return;
-    const filler = Array.from({ length: REEL_FILLER_COUNT }, () => Math.floor(Math.random() * 37));
-    const reel = [...filler, winningNumber];
-    setItems(reel);
-    setTransitionOn(false);
-    setOffset(0);
-
-    // Aligne le CENTRE du dernier item (le gagnant) sur le marqueur central —
-    // le track démarre au centre du conteneur (`left-1/2`), donc l'item
-    // d'index i a son centre à `i*ITEM_WIDTH + ITEM_WIDTH/2` de ce point.
-    const targetOffset = (reel.length - 1) * REEL_ITEM_WIDTH + REEL_ITEM_WIDTH / 2;
-    let raf2 = 0;
-    const raf1 = requestAnimationFrame(() => {
-      raf2 = requestAnimationFrame(() => {
-        setTransitionOn(true);
-        setOffset(targetOffset);
+    const prev = prevStatusRef.current;
+    if (status === 'spinning' && prev !== 'spinning') {
+      setRotation((r) => r + FAST_SPIN_TURNS * 360);
+      setTransitionSpec({ duration: FAST_SPIN_DURATION_S, ease: 'linear' });
+    } else if (status === 'finished' && prev !== 'finished' && winningNumber !== null) {
+      const index = WHEEL_ORDER.indexOf(winningNumber);
+      const pocketCenter = index * WHEEL_STEP + WHEEL_STEP / 2;
+      setRotation((r) => {
+        const currentMod = ((r % 360) + 360) % 360;
+        const delta = (((pocketCenter - currentMod) % 360) + 360) % 360;
+        return r + delta + SETTLE_EXTRA_TURNS * 360;
       });
-    });
-
-    const timeout = setTimeout(() => {
-      sound.playTick();
-      onLanded();
-    }, REEL_SPIN_MS);
-
-    return () => {
-      cancelAnimationFrame(raf1);
-      cancelAnimationFrame(raf2);
-      clearTimeout(timeout);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [spinToken]);
-
-  if (items.length === 0) return null;
+      setTransitionSpec({ duration: SETTLE_DURATION_S, ease: 'cubic-bezier(0.15, 0.75, 0.25, 1)' });
+    }
+    prevStatusRef.current = status ?? null;
+  }, [status, winningNumber]);
 
   return (
-    <div className="relative w-full h-16 overflow-hidden rounded-lg bg-zinc-950 border border-zinc-800 mb-4">
+    <div className="relative w-56 h-56 mx-auto mb-4">
       <div
-        ref={trackRef}
-        className="absolute inset-y-0 left-1/2 flex items-center"
+        className="absolute inset-0 rounded-full border-4 border-zinc-700 shadow-lg"
         style={{
-          transform: `translateX(${-offset}px)`,
-          transition: transitionOn ? `transform ${REEL_SPIN_MS}ms cubic-bezier(0.1, 0.7, 0.2, 1)` : 'none',
+          background: WHEEL_GRADIENT,
+          transform: `rotate(${rotation}deg)`,
+          transition: `transform ${transitionSpec.duration}s ${transitionSpec.ease}`,
         }}
       >
-        {items.map((n, i) => (
-          <div
-            key={i}
-            className={`flex-shrink-0 flex items-center justify-center font-bold text-lg rounded ${tileClass(n)}`}
-            style={{ width: REEL_ITEM_WIDTH - 4, height: 40, margin: '0 2px' }}
-          >
-            {n}
-          </div>
-        ))}
+        {WHEEL_ORDER.map((n, i) => {
+          const mid = i * WHEEL_STEP + WHEEL_STEP / 2;
+          const { left, top } = polarToPercent(mid, 42);
+          return (
+            <span
+              key={n}
+              className="absolute text-[9px] font-bold text-white -translate-x-1/2 -translate-y-1/2 pointer-events-none"
+              style={{ left: `${left}%`, top: `${top}%` }}
+            >
+              {n}
+            </span>
+          );
+        })}
+        <div className="absolute inset-10 rounded-full bg-zinc-950 border-2 border-zinc-700 flex items-center justify-center">
+          <span className="text-2xl">🎡</span>
+        </div>
       </div>
-      <div className="pointer-events-none absolute inset-y-0 left-1/2 -translate-x-1/2 w-0.5 bg-amber-400/90" />
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-zinc-950 via-transparent to-zinc-950" />
+      <div
+        className="pointer-events-none absolute left-1/2 -translate-x-1/2 -top-1 w-0 h-0 border-l-[8px] border-l-transparent border-r-[8px] border-r-transparent border-t-[14px] border-t-amber-400"
+        style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.5))' }}
+      />
     </div>
   );
 }
 
-function formatMultiplier(x100: number): string {
-  return `x${(x100 / 100).toFixed(x100 % 100 === 0 ? 0 : 2)}`;
+function secondsUntil(iso: string | null, now: number): number {
+  if (!iso) return 0;
+  return Math.max(0, Math.ceil((new Date(iso).getTime() - now) / 1000));
+}
+
+type Mode = 'simple' | 'advanced';
+const MODE_STORAGE_KEY = 'roulette-mode';
+
+function OutsideBetButton({
+  label,
+  sub,
+  mine,
+  others,
+  disabled,
+  onClick,
+}: {
+  label: string;
+  sub?: string;
+  mine: number;
+  others: number;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className={`relative h-14 rounded-md text-xs font-semibold border transition active:scale-95 disabled:opacity-40 ${
+        mine > 0
+          ? 'border-amber-400 bg-amber-500/15 text-amber-300'
+          : 'border-zinc-700 bg-zinc-800/60 text-zinc-200 hover:border-zinc-600'
+      }`}
+    >
+      <span className="block">{label}</span>
+      {sub && <span className="block text-[10px] text-zinc-500">{sub}</span>}
+      {mine > 0 && <span className="absolute top-0.5 right-1 text-[10px] bg-black/40 rounded px-1">{mine}</span>}
+      {others > 0 && (
+        <span className="absolute bottom-0.5 left-1 text-[9px] text-zinc-500">
+          {others} joueur{others > 1 ? 's' : ''}
+        </span>
+      )}
+    </button>
+  );
+}
+
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="mb-4">
+      <h3 className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wide mb-1.5">{title}</h3>
+      {children}
+    </div>
+  );
 }
 
 export default function Roulette() {
@@ -152,28 +193,43 @@ export default function Roulette() {
   const spectators = useSpectators('roulette');
   useAnnounceChatRoom({ room: 'roulette', roomKey: '', label: 'Roulette', icon: '🎡' });
 
+  const [round, setRound] = useState<RouletteRoundPublicView | null>(null);
   const [rouletteEnabled, setRouletteEnabled] = useState(true);
+  const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState<GamblingStatus | null>(null);
   const [rtp, setRtp] = useState<number | null>(null);
   const [payouts, setPayouts] = useState<RoulettePayoutInfo[]>([]);
   const [history, setHistory] = useState<RouletteHistoryEntry[]>([]);
   const [historyScope, setHistoryScope] = useState<HistoryScope>('all');
-
-  const [placedBets, setPlacedBets] = useState<PlacedBet[]>([]);
+  const [mode, setMode] = useState<Mode>(() => {
+    try {
+      const stored = localStorage.getItem(MODE_STORAGE_KEY);
+      return stored === 'advanced' ? 'advanced' : 'simple';
+    } catch {
+      return 'simple';
+    }
+  });
   const [chipAmount, setChipAmount] = useState('1');
-  const [spinning, setSpinning] = useState(false);
+  const [straightNumber, setStraightNumber] = useState('0');
+  const [placing, setPlacing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [lastRound, setLastRound] = useState<RouletteRound | null>(null);
-  const [pendingBalance, setPendingBalance] = useState<number | null>(null);
-  const [spinToken, setSpinToken] = useState(0);
-  const [revealed, setRevealed] = useState(false);
+  const [now, setNow] = useState(Date.now());
   const [resultPopup, setResultPopup] = useState<{ key: number; amount: number } | null>(null);
 
-  const payoutByType = useMemo(() => new Map(payouts.map((p) => [p.type, p] as const)), [payouts]);
+  const prevStatusRef = useRef<RouletteRoundStatus | null>(null);
+
+  function setModeAndPersist(next: Mode) {
+    setMode(next);
+    try {
+      localStorage.setItem(MODE_STORAGE_KEY, next);
+    } catch {
+      /* stockage indisponible (navigation privée…) — pas bloquant, juste pas persisté */
+    }
+  }
 
   const loadHistory = useCallback(() => {
     rouletteApi
-      .getHistory(10, historyScope === 'mine')
+      .getHistory(15, historyScope === 'mine')
       .then(setHistory)
       .catch(() => {});
   }, [historyScope]);
@@ -182,96 +238,127 @@ export default function Roulette() {
     loadHistory();
   }, [loadHistory]);
 
+  const load = useCallback(async () => {
+    try {
+      const result = await rouletteApi.getCurrent();
+      setRound(result.round);
+      setRouletteEnabled(result.enabled);
+      if (user) setUser({ ...user, sp_balance: result.balance });
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erreur inconnue');
+    } finally {
+      setLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    load();
+    const interval = setInterval(load, 1000);
+    return () => clearInterval(interval);
+  }, [load]);
+
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, []);
+
   useEffect(() => {
     gamblingApi.getStatus().then(setStatus).catch(() => {});
     gamblingApi
       .listGames()
-      .then((games) => {
-        const g = games.find((x) => x.id === 'roulette');
-        setRtp(g?.rtp ?? null);
-        setRouletteEnabled(g?.enabled ?? false);
-      })
+      .then((games) => setRtp(games.find((g) => g.id === 'roulette')?.rtp ?? null))
       .catch(() => {});
     rouletteApi.getPayouts().then(setPayouts).catch(() => {});
   }, []);
 
-  const totalWager = placedBets.reduce((sum, b) => sum + b.amount, 0);
-  const canAfford = (user?.sp_balance ?? 0) >= totalWager;
+  // Réagit aux transitions de phase de la manche courante (son, popup de résultat, rafraîchissement budget/historique) — comparaison au statut précédemment observé, pas au statut brut à chaque poll.
+  useEffect(() => {
+    if (!round) return;
+    const prevStatus = prevStatusRef.current;
+
+    if (round.status === 'spinning' && prevStatus !== 'spinning') {
+      sound.playTick();
+    }
+
+    if (round.status === 'finished' && prevStatus !== 'finished') {
+      const myBets = round.bets.filter((b) => b.user_id === user?.id);
+      if (myBets.length > 0) {
+        const net = myBets.reduce((sum, b) => sum + (b.payout ?? 0) - b.amount, 0);
+        if (net > 0) sound.playWin();
+        else sound.playLose();
+        setResultPopup({ key: Date.now(), amount: net });
+        setTimeout(() => setResultPopup(null), 1800);
+      }
+      loadHistory();
+      gamblingApi.getStatus().then(setStatus).catch(() => {});
+    }
+
+    prevStatusRef.current = round.status;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [round?.id, round?.status]);
+
+  const payoutByType = useMemo(() => new Map(payouts.map((p) => [p.type, p] as const)), [payouts]);
+
+  const myBets = useMemo(() => round?.bets.filter((b) => b.user_id === user?.id) ?? [], [round, user?.id]);
+  const uniqueBettors = useMemo(() => {
+    if (!round) return [];
+    const seen = new Map<number, (typeof round.bets)[number]>();
+    for (const b of round.bets) if (!seen.has(b.user_id)) seen.set(b.user_id, b);
+    return [...seen.values()];
+  }, [round]);
+
+  function betAmountAtSpot(type: RouletteBetType, number?: number): number {
+    return myBets.find((b) => b.type === type && (b.number ?? null) === (number ?? null))?.amount ?? 0;
+  }
+  function othersAtSpot(type: RouletteBetType, number?: number): number {
+    if (!round) return 0;
+    const ids = new Set(
+      round.bets
+        .filter((b) => b.type === type && (b.number ?? null) === (number ?? null) && b.user_id !== user?.id)
+        .map((b) => b.user_id)
+    );
+    return ids.size;
+  }
+
+  const bettingOpen = round?.status === 'betting';
+  const secondsLeft = round?.status === 'betting' ? secondsUntil(round.starts_at, now) : 0;
+  const chipAmountNum = Math.floor(Number(chipAmount));
+  const canAfford = (user?.sp_balance ?? 0) >= (Number.isInteger(chipAmountNum) ? chipAmountNum : 0);
   const spentToday = status?.spentToday ?? 0;
   const maxWagerPerDay = status?.maxWagerPerDay ?? 0;
   const budgetLeft = Math.max(0, maxWagerPerDay - spentToday);
+  const canBet = bettingOpen && rouletteEnabled && !placing && canAfford && Number.isInteger(chipAmountNum) && chipAmountNum > 0;
 
-  function placeBet(type: RouletteBetType, number?: number) {
-    if (spinning) return;
+  async function submitBet(type: RouletteBetType, number?: number) {
+    if (!canBet) return;
     sound.unlockAudio();
-    const amount = Math.floor(Number(chipAmount));
-    if (!Number.isInteger(amount) || amount <= 0) return;
-    const key = betKey(type, number ?? null);
-    setPlacedBets((prev) => {
-      const existing = prev.find((b) => b.key === key);
-      if (existing) {
-        return prev.map((b) => (b.key === key ? { ...b, amount: b.amount + amount } : b));
-      }
-      return [...prev, { key, type, number: number ?? null, amount }];
-    });
+    sound.playChip();
+    setPlacing(true);
     setError(null);
-  }
-
-  function undoLastBet() {
-    if (spinning) return;
-    sound.unlockAudio();
-    setPlacedBets((prev) => prev.slice(0, -1));
-  }
-
-  function clearBets() {
-    if (spinning) return;
-    setPlacedBets([]);
-  }
-
-  async function handleSpin() {
-    if (spinning || placedBets.length === 0 || !canAfford || !rouletteEnabled) return;
-    sound.unlockAudio();
-    setSpinning(true);
-    setError(null);
-    setRevealed(false);
-    setLastRound(null);
     try {
-      const bets: RouletteBet[] = placedBets.map((b) => ({ type: b.type, number: b.number, amount: b.amount }));
-      const result = await rouletteApi.spin(bets);
-      setLastRound(result.round);
+      const bet: RouletteBet = type === 'straight' ? { type, number, amount: chipAmountNum } : { type, amount: chipAmountNum };
+      const result = await rouletteApi.placeBet([bet]);
+      setRound(result.round);
       setRouletteEnabled(result.enabled);
-      // Le solde n'est appliqué qu'à la fin de l'animation (onReelLanded), pour
-      // ne pas révéler le résultat (via le solde affiché) avant que la roue ne
-      // s'arrête visuellement — même si la manche est déjà réglée côté serveur.
-      setPendingBalance(result.balance);
-      setSpinToken((t) => t + 1);
+      if (user) setUser({ ...user, sp_balance: result.balance });
+      gamblingApi.getStatus().then(setStatus).catch(() => {});
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur inconnue');
-      setSpinning(false);
+    } finally {
+      setPlacing(false);
     }
   }
 
-  function onReelLanded() {
-    if (!lastRound || !user || pendingBalance === null) {
-      setSpinning(false);
-      return;
+  function statusLabel(): string {
+    if (!round) return '';
+    if (round.status === 'betting') {
+      return round.starts_at ? `Mises ouvertes — ${secondsLeft}s` : 'Pose la première mise pour lancer le tour';
     }
-    setRevealed(true);
-    setUser({ ...user, sp_balance: pendingBalance });
-    const net = lastRound.total_payout - lastRound.total_wager;
-    if (net > 0) sound.playWin();
-    else sound.playLose();
-    setResultPopup({ key: Date.now(), amount: net });
-    setTimeout(() => setResultPopup(null), 1200);
-    setPlacedBets([]);
-    setPendingBalance(null);
-    setSpinning(false);
-    loadHistory();
-    gamblingApi.getStatus().then(setStatus).catch(() => {});
+    if (round.status === 'spinning') return 'La roue tourne…';
+    return 'Résultat';
   }
-
-  const betAmountFor = (type: RouletteBetType, number?: number) =>
-    placedBets.find((b) => b.key === betKey(type, number ?? null))?.amount ?? 0;
 
   return (
     <div className="min-h-screen bg-zinc-950 py-10 px-4">
@@ -293,155 +380,256 @@ export default function Roulette() {
         </div>
 
         {error && <p className="mb-4 text-sm text-red-400">{error}</p>}
-        {!rouletteEnabled && (
-          <p className="mb-4 text-sm text-red-400">La Roulette est désactivée par le MSP.</p>
-        )}
+        {!rouletteEnabled && <p className="mb-4 text-sm text-red-400">La Roulette est désactivée par le MSP.</p>}
 
         <SpectatorsList spectators={spectators} />
 
         {status && <GamblingBudgetBar status={{ ...status, enabled: rouletteEnabled }} />}
 
         <div className="rounded-xl shadow-md p-4 mb-4 border-2 border-emerald-500/20 bg-zinc-900/80">
-          <NumberReel spinToken={spinToken} winningNumber={lastRound?.winning_number ?? null} onLanded={onReelLanded} />
-
-          {revealed && lastRound && (
-            <div className="relative text-center mb-4">
-              <p className="text-sm text-zinc-400">
-                Numéro gagnant :{' '}
-                <span className={`font-bold px-2 py-0.5 rounded ${tileClass(lastRound.winning_number)}`}>
-                  {lastRound.winning_number}
-                </span>
-              </p>
-              <p className={`text-sm font-medium mt-1 ${lastRound.total_payout > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                {lastRound.total_payout > 0
-                  ? `Gagné ${lastRound.total_payout} SP`
-                  : `Perdu ${lastRound.total_wager} SP`}
-              </p>
-              {resultPopup && (
-                <p
-                  key={resultPopup.key}
-                  className={`absolute left-1/2 -translate-x-1/2 -top-2 text-2xl font-black ${resultPopup.amount > 0 ? 'text-emerald-400' : 'text-red-400'}`}
-                  style={{ animation: 'floatUp 1.2s ease-out forwards' }}
-                >
-                  {resultPopup.amount > 0 ? `+${resultPopup.amount}` : resultPopup.amount} SP
-                </p>
-              )}
-            </div>
-          )}
-
-          {/* Numéros pleins */}
-          <div className="mb-3">
-            <button
-              type="button"
-              disabled={spinning}
-              onClick={() => placeBet('straight', 0)}
-              className={`relative w-full h-10 rounded-md font-bold mb-1.5 transition active:scale-95 disabled:opacity-40 ${tileClass(0)}`}
-            >
-              0
-              {betAmountFor('straight', 0) > 0 && (
-                <span className="absolute top-0.5 right-1 text-[10px] bg-black/40 rounded px-1">
-                  {betAmountFor('straight', 0)}
-                </span>
-              )}
-            </button>
-            <div className="grid grid-cols-6 gap-1">
-              {Array.from({ length: 36 }, (_, i) => i + 1).map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  disabled={spinning}
-                  onClick={() => placeBet('straight', n)}
-                  className={`relative h-10 rounded-md font-bold text-sm transition active:scale-95 disabled:opacity-40 hover:ring-1 hover:ring-amber-400/60 ${tileClass(n)}`}
-                >
-                  {n}
-                  {betAmountFor('straight', n) > 0 && (
-                    <span className="absolute top-0 right-0.5 text-[9px] bg-black/40 rounded px-1">
-                      {betAmountFor('straight', n)}
+          {loading ? (
+            <p className="text-zinc-500 text-center py-8">Chargement…</p>
+          ) : (
+            <>
+              <div className="relative text-center mb-2">
+                <p className="text-sm font-medium text-zinc-300">{statusLabel()}</p>
+                {round?.status === 'finished' && round.winning_number !== null && (
+                  <p className="text-xs text-zinc-500 mt-0.5">
+                    Numéro gagnant :{' '}
+                    <span className={`font-bold px-1.5 py-0.5 rounded ${tileClass(round.winning_number)}`}>
+                      {round.winning_number}
                     </span>
-                  )}
-                </button>
-              ))}
-            </div>
-          </div>
+                  </p>
+                )}
+                {resultPopup && (
+                  <p
+                    key={resultPopup.key}
+                    className={`absolute left-1/2 -translate-x-1/2 -top-2 text-2xl font-black ${resultPopup.amount > 0 ? 'text-emerald-400' : 'text-red-400'}`}
+                    style={{ animation: 'floatUp 1.8s ease-out forwards' }}
+                  >
+                    {resultPopup.amount > 0 ? `+${resultPopup.amount}` : resultPopup.amount} SP
+                  </p>
+                )}
+              </div>
 
-          {/* Chances extérieures */}
-          <div className="grid grid-cols-3 gap-1.5 mb-4">
-            {OUTSIDE_BETS.map(({ type, short }) => {
-              const info = payoutByType.get(type);
-              const amt = betAmountFor(type);
-              return (
-                <button
-                  key={type}
-                  type="button"
-                  disabled={spinning}
-                  onClick={() => placeBet(type)}
-                  className={`relative h-12 rounded-md text-xs font-semibold border transition active:scale-95 disabled:opacity-40 ${
-                    amt > 0
-                      ? 'border-amber-400 bg-amber-500/15 text-amber-300'
-                      : 'border-zinc-700 bg-zinc-800/60 text-zinc-200 hover:border-zinc-600'
-                  }`}
-                >
-                  <span className="block">{short}</span>
-                  {info && <span className="block text-[10px] text-zinc-500">{formatMultiplier(info.multiplier_x100)}</span>}
-                  {amt > 0 && (
-                    <span className="absolute top-0.5 right-1 text-[10px] bg-black/40 rounded px-1">{amt}</span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
+              <RouletteWheel status={round?.status} winningNumber={round?.winning_number ?? null} />
 
-          <div className="flex items-center gap-2 mb-3">
-            <input
-              type="number"
-              min={1}
-              value={chipAmount}
-              onChange={(e) => setChipAmount(e.target.value)}
-              disabled={spinning}
-              placeholder="Montant par mise"
-              className="flex-1 rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500/60"
-            />
-            <button
-              type="button"
-              onClick={undoLastBet}
-              disabled={spinning || placedBets.length === 0}
-              className="px-3 py-2 rounded-md border border-zinc-700 text-zinc-300 hover:border-zinc-600 disabled:opacity-40 text-sm"
-            >
-              Annuler
-            </button>
-            <button
-              type="button"
-              onClick={clearBets}
-              disabled={spinning || placedBets.length === 0}
-              className="px-3 py-2 rounded-md border border-zinc-700 text-zinc-300 hover:border-zinc-600 disabled:opacity-40 text-sm"
-            >
-              Tout effacer
-            </button>
-          </div>
+              {uniqueBettors.length > 0 && (
+                <div className="flex items-center gap-2 flex-wrap justify-center mb-4 text-xs text-zinc-500">
+                  <span>Misent en ce moment :</span>
+                  {uniqueBettors.map((b) => (
+                    <span key={b.user_id} className="flex items-center gap-1">
+                      <Avatar
+                        username={b.username}
+                        avatarUrl={b.avatar_url}
+                        size={20}
+                        frameUrl={b.equipped_cosmetics.find((c) => c.slot === 'avatar_frame')?.image_url}
+                      />
+                      <UserNameTag
+                        username={b.user_id === user?.id ? 'Toi' : b.username}
+                        equipped={b.equipped_cosmetics}
+                        className="text-xs text-zinc-400"
+                      />
+                    </span>
+                  ))}
+                </div>
+              )}
 
-          <p className="text-sm text-zinc-400 mb-2">
-            Total misé : <span className="font-semibold text-zinc-200">{totalWager} SP</span>
-          </p>
-          {totalWager > 0 && !canAfford && (
-            <p className="text-xs text-red-400 mb-2">Solde SP insuffisant.</p>
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min={1}
+                    value={chipAmount}
+                    onChange={(e) => setChipAmount(e.target.value)}
+                    disabled={!bettingOpen}
+                    placeholder="Jeton (SP)"
+                    className="w-28 rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/60"
+                  />
+                  {chipAmountNum > 0 && !canAfford && <span className="text-xs text-red-400">Solde insuffisant</span>}
+                </div>
+                <div className="flex items-center gap-0.5 bg-zinc-950 border border-zinc-800 rounded-full p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setModeAndPersist('simple')}
+                    className={`px-2.5 py-1 rounded-full text-xs font-medium transition ${mode === 'simple' ? 'bg-emerald-500 text-zinc-950' : 'text-zinc-500 hover:text-zinc-300'}`}
+                  >
+                    Simple
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setModeAndPersist('advanced')}
+                    className={`px-2.5 py-1 rounded-full text-xs font-medium transition ${mode === 'advanced' ? 'bg-emerald-500 text-zinc-950' : 'text-zinc-500 hover:text-zinc-300'}`}
+                  >
+                    Avancé
+                  </button>
+                </div>
+              </div>
+
+              {mode === 'simple' ? (
+                <div>
+                  <div className="grid grid-cols-3 gap-2 mb-3">
+                    <OutsideBetButton
+                      label="Rouge"
+                      sub={payoutByType.get('red') ? `x${payoutByType.get('red')!.multiplier_x100 / 100}` : undefined}
+                      mine={betAmountAtSpot('red')}
+                      others={othersAtSpot('red')}
+                      disabled={!canBet}
+                      onClick={() => submitBet('red')}
+                    />
+                    <OutsideBetButton
+                      label="Noir"
+                      sub={payoutByType.get('black') ? `x${payoutByType.get('black')!.multiplier_x100 / 100}` : undefined}
+                      mine={betAmountAtSpot('black')}
+                      others={othersAtSpot('black')}
+                      disabled={!canBet}
+                      onClick={() => submitBet('black')}
+                    />
+                    <OutsideBetButton
+                      label="Pair"
+                      sub={payoutByType.get('even') ? `x${payoutByType.get('even')!.multiplier_x100 / 100}` : undefined}
+                      mine={betAmountAtSpot('even')}
+                      others={othersAtSpot('even')}
+                      disabled={!canBet}
+                      onClick={() => submitBet('even')}
+                    />
+                    <OutsideBetButton
+                      label="Impair"
+                      sub={payoutByType.get('odd') ? `x${payoutByType.get('odd')!.multiplier_x100 / 100}` : undefined}
+                      mine={betAmountAtSpot('odd')}
+                      others={othersAtSpot('odd')}
+                      disabled={!canBet}
+                      onClick={() => submitBet('odd')}
+                    />
+                    <OutsideBetButton
+                      label="1-18"
+                      sub={payoutByType.get('low') ? `x${payoutByType.get('low')!.multiplier_x100 / 100}` : undefined}
+                      mine={betAmountAtSpot('low')}
+                      others={othersAtSpot('low')}
+                      disabled={!canBet}
+                      onClick={() => submitBet('low')}
+                    />
+                    <OutsideBetButton
+                      label="19-36"
+                      sub={payoutByType.get('high') ? `x${payoutByType.get('high')!.multiplier_x100 / 100}` : undefined}
+                      mine={betAmountAtSpot('high')}
+                      others={othersAtSpot('high')}
+                      disabled={!canBet}
+                      onClick={() => submitBet('high')}
+                    />
+                  </div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <input
+                      type="number"
+                      min={0}
+                      max={36}
+                      value={straightNumber}
+                      onChange={(e) => setStraightNumber(e.target.value)}
+                      disabled={!bettingOpen}
+                      className="w-20 rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-2 py-1.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-emerald-500/60"
+                    />
+                    <button
+                      type="button"
+                      disabled={!canBet || !Number.isInteger(Number(straightNumber)) || Number(straightNumber) < 0 || Number(straightNumber) > 36}
+                      onClick={() => submitBet('straight', Math.floor(Number(straightNumber)))}
+                      className="flex-1 h-10 rounded-md border border-zinc-700 bg-zinc-800/60 text-zinc-200 text-sm font-semibold hover:border-zinc-600 disabled:opacity-40 transition active:scale-95"
+                    >
+                      Miser sur ce numéro plein ({payoutByType.get('straight') ? `x${payoutByType.get('straight')!.multiplier_x100 / 100}` : '…'})
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <Section title="Numéros">
+                    <button
+                      type="button"
+                      disabled={!canBet}
+                      onClick={() => submitBet('straight', 0)}
+                      className={`relative w-full h-9 rounded-md font-bold mb-1.5 text-sm transition active:scale-95 disabled:opacity-40 ${tileClass(0)}`}
+                    >
+                      0
+                      {betAmountAtSpot('straight', 0) > 0 && (
+                        <span className="absolute top-0.5 right-1 text-[10px] bg-black/40 rounded px-1">{betAmountAtSpot('straight', 0)}</span>
+                      )}
+                    </button>
+                    <div className="grid grid-cols-6 gap-1">
+                      {Array.from({ length: 36 }, (_, i) => i + 1).map((n) => (
+                        <button
+                          key={n}
+                          type="button"
+                          disabled={!canBet}
+                          onClick={() => submitBet('straight', n)}
+                          className={`relative h-9 rounded-md font-bold text-xs transition active:scale-95 disabled:opacity-40 hover:ring-1 hover:ring-amber-400/60 ${tileClass(n)}`}
+                        >
+                          {n}
+                          {betAmountAtSpot('straight', n) > 0 && (
+                            <span className="absolute top-0 right-0.5 text-[9px] bg-black/40 rounded px-1">{betAmountAtSpot('straight', n)}</span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </Section>
+
+                  <Section title="Couleur">
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <OutsideBetButton label="Rouge" mine={betAmountAtSpot('red')} others={othersAtSpot('red')} disabled={!canBet} onClick={() => submitBet('red')} />
+                      <OutsideBetButton label="Noir" mine={betAmountAtSpot('black')} others={othersAtSpot('black')} disabled={!canBet} onClick={() => submitBet('black')} />
+                    </div>
+                  </Section>
+
+                  <Section title="Parité">
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <OutsideBetButton label="Pair" mine={betAmountAtSpot('even')} others={othersAtSpot('even')} disabled={!canBet} onClick={() => submitBet('even')} />
+                      <OutsideBetButton label="Impair" mine={betAmountAtSpot('odd')} others={othersAtSpot('odd')} disabled={!canBet} onClick={() => submitBet('odd')} />
+                    </div>
+                  </Section>
+
+                  <Section title="Plage">
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <OutsideBetButton label="Manque (1-18)" mine={betAmountAtSpot('low')} others={othersAtSpot('low')} disabled={!canBet} onClick={() => submitBet('low')} />
+                      <OutsideBetButton label="Passe (19-36)" mine={betAmountAtSpot('high')} others={othersAtSpot('high')} disabled={!canBet} onClick={() => submitBet('high')} />
+                    </div>
+                  </Section>
+
+                  <Section title="Douzaines">
+                    <div className="grid grid-cols-3 gap-1.5">
+                      <OutsideBetButton label="1ère (1-12)" mine={betAmountAtSpot('dozen1')} others={othersAtSpot('dozen1')} disabled={!canBet} onClick={() => submitBet('dozen1')} />
+                      <OutsideBetButton label="2ème (13-24)" mine={betAmountAtSpot('dozen2')} others={othersAtSpot('dozen2')} disabled={!canBet} onClick={() => submitBet('dozen2')} />
+                      <OutsideBetButton label="3ème (25-36)" mine={betAmountAtSpot('dozen3')} others={othersAtSpot('dozen3')} disabled={!canBet} onClick={() => submitBet('dozen3')} />
+                    </div>
+                  </Section>
+
+                  <Section title="Colonnes">
+                    <div className="grid grid-cols-3 gap-1.5">
+                      <OutsideBetButton label="Colonne 1" mine={betAmountAtSpot('col1')} others={othersAtSpot('col1')} disabled={!canBet} onClick={() => submitBet('col1')} />
+                      <OutsideBetButton label="Colonne 2" mine={betAmountAtSpot('col2')} others={othersAtSpot('col2')} disabled={!canBet} onClick={() => submitBet('col2')} />
+                      <OutsideBetButton label="Colonne 3" mine={betAmountAtSpot('col3')} others={othersAtSpot('col3')} disabled={!canBet} onClick={() => submitBet('col3')} />
+                    </div>
+                  </Section>
+                </div>
+              )}
+
+              {myBets.length > 0 && (
+                <div className="mt-2 pt-3 border-t border-zinc-800">
+                  <p className="text-xs text-zinc-500 mb-1.5">Mes mises ce tour ({myBets.reduce((s, b) => s + b.amount, 0)} SP) :</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {myBets.map((b) => (
+                      <span key={b.id} className="text-[11px] px-2 py-1 rounded-full bg-zinc-800 text-zinc-300 border border-zinc-700">
+                        {b.type === 'straight' ? `N°${b.number}` : payoutByType.get(b.type)?.label ?? b.type} — {b.amount} SP
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <p className="text-xs text-zinc-500 mt-3 text-center">Il te reste {budgetLeft} SP de budget gambling aujourd'hui.</p>
+            </>
           )}
-
-          <button
-            type="button"
-            onClick={handleSpin}
-            disabled={spinning || placedBets.length === 0 || !canAfford || !rouletteEnabled}
-            className="w-full bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-bold px-4 py-3 rounded-md transition transform active:scale-95 disabled:opacity-40 disabled:active:scale-100"
-          >
-            {spinning ? 'La roue tourne…' : 'Lancer la roue'}
-          </button>
-          <p className="text-xs text-zinc-500 mt-2 text-center">
-            Il te reste {budgetLeft} SP de budget gambling aujourd'hui.
-          </p>
         </div>
 
         <div className="mt-2">
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-semibold text-zinc-300 uppercase">Historique des manches</h2>
+            <h2 className="text-sm font-semibold text-zinc-300 uppercase">Historique</h2>
             <HistoryScopeToggle scope={historyScope} onChange={setHistoryScope} />
           </div>
           {history.length === 0 ? (
@@ -449,12 +637,9 @@ export default function Roulette() {
           ) : (
             <ul className="space-y-2">
               {history.map((h) => {
-                const net = h.total_payout - h.total_wager;
+                const net = (h.payout ?? 0) - h.amount;
                 return (
-                  <li
-                    key={h.id}
-                    className="flex items-center justify-between gap-2 bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm"
-                  >
+                  <li key={h.id} className="flex items-center justify-between gap-2 bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm">
                     <div className="flex items-center gap-2 min-w-0">
                       <Avatar
                         username={h.username}
@@ -464,17 +649,13 @@ export default function Roulette() {
                       />
                       <div className="min-w-0">
                         <p className="truncate flex items-center gap-1">
-                          <UserNameTag
-                            username={h.user_id === user?.id ? 'Toi' : h.username}
-                            equipped={h.equipped_cosmetics}
-                            className="text-zinc-300"
-                          />
+                          <UserNameTag username={h.user_id === user?.id ? 'Toi' : h.username} equipped={h.equipped_cosmetics} className="text-zinc-300" />
                           <span className={`ml-1 text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wide ${tileClass(h.winning_number)}`}>
                             {h.winning_number}
                           </span>
                         </p>
                         <p className="text-xs text-zinc-500">
-                          Mise {h.total_wager} SP · {h.bets.length} pari{h.bets.length > 1 ? 's' : ''}
+                          {h.type === 'straight' ? `N°${h.number}` : payoutByType.get(h.type)?.label ?? h.type} · {h.amount} SP
                         </p>
                       </div>
                     </div>
