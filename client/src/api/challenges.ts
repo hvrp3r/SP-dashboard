@@ -1,5 +1,12 @@
 import { apiClient } from './client.js';
-import type { Challenge, ChallengeQuota, ChallengeStatus, ChallengeType, CoinSide } from '../types.js';
+import type {
+  Challenge,
+  ChallengeQuota,
+  ChallengeStatus,
+  ChallengeType,
+  CoinSide,
+  RpsMove,
+} from '../types.js';
 
 export const getStatus = () => apiClient.get<ChallengeQuota>('/api/challenges/status');
 
@@ -17,6 +24,9 @@ export const createChallenge = (
 
 export const acceptChallenge = (id: number, side?: CoinSide) =>
   apiClient.post<Challenge>(`/api/challenges/${id}/accept`, side ? { side } : undefined);
+
+export const playRpsMove = (id: number, move: RpsMove) =>
+  apiClient.post<Challenge>(`/api/challenges/${id}/rps-move`, { move });
 
 export const declineChallenge = (id: number) =>
   apiClient.post<Challenge>(`/api/challenges/${id}/decline`);

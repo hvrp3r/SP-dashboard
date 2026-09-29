@@ -157,6 +157,11 @@ export default function AdminChallenges() {
                           🪙 Pile ou face
                         </span>
                       )}
+                      {c.type === 'rps' && (
+                        <span className="text-xs px-2 py-1 rounded-full bg-sky-500/15 text-sky-400">
+                          ✂️ Pierre-feuille-ciseaux
+                        </span>
+                      )}
                       <span className="text-xs px-2 py-1 rounded-full bg-zinc-800 text-zinc-400">
                         {STATUS_LABELS[c.status]}
                       </span>

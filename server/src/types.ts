@@ -171,9 +171,16 @@ export type ChallengeStatus =
   | 'resolved'
   | 'cancelled';
 
-export type ChallengeType = 'custom' | 'coin_flip';
+export type ChallengeType = 'custom' | 'coin_flip' | 'rps';
 
 export type CoinSide = 'pile' | 'face';
+
+export type RpsMove = 'rock' | 'paper' | 'scissors';
+
+export interface RpsRound {
+  moves: Record<string, RpsMove>;
+  winner_id: number | null;
+}
 
 export interface ChallengeRow {
   id: number;
@@ -185,6 +192,7 @@ export interface ChallengeRow {
   status: ChallengeStatus;
   winner_id: number | null;
   result_note: string | null;
+  rps_rounds: RpsRound[];
   created_at: string;
   expires_at: string;
   resolved_at: string | null;
@@ -202,6 +210,7 @@ export interface ChallengeParticipantRow {
   status: ChallengeParticipantStatus;
   reported_winner_id: number | null;
   coin_side: CoinSide | null;
+  rps_move: RpsMove | null;
   responded_at: string | null;
   created_at: string;
 }

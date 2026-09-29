@@ -4,7 +4,13 @@ import * as configService from '../services/config.service.js';
 import * as seasonService from '../services/season.service.js';
 import * as userService from '../services/user.service.js';
 import * as notificationService from '../services/notification.service.js';
-import type { ChallengeEntry, ChallengeStatus, ChallengeType, CoinSide } from '../types.js';
+import type {
+  ChallengeEntry,
+  ChallengeStatus,
+  ChallengeType,
+  CoinSide,
+  RpsMove,
+} from '../types.js';
 
 const VALID_STATUSES: ChallengeStatus[] = [
   'pending',
@@ -15,7 +21,30 @@ const VALID_STATUSES: ChallengeStatus[] = [
   'cancelled',
 ];
 
-const VALID_TYPES: ChallengeType[] = ['custom', 'coin_flip'];
+const VALID_TYPES: ChallengeType[] = ['custom', 'coin_flip', 'rps'];
+
+const RPS_MOVES: RpsMove[] = ['rock', 'paper', 'scissors'];
+
+function isRpsMove(value: unknown): value is RpsMove {
+  return RPS_MOVES.includes(value as RpsMove);
+}
+
+/**
+ * Pierre-feuille-ciseaux : le coup de la manche en cours n'est visible que par
+ * son auteur (sinon l'adversaire n'aurait qu'à lire la réponse de l'API pour
+ * jouer le coup gagnant). Les manches déjà jouées (rps_rounds) restent publiques.
+ */
+function maskRpsMoves(entry: ChallengeEntry, viewerId: number): ChallengeEntry;
+function maskRpsMoves(entry: ChallengeEntry | null, viewerId: number): ChallengeEntry | null;
+function maskRpsMoves(entry: ChallengeEntry | null, viewerId: number): ChallengeEntry | null {
+  if (!entry || entry.type !== 'rps') return entry;
+  return {
+    ...entry,
+    participants: entry.participants.map((p) =>
+      p.user_id === viewerId ? p : { ...p, rps_move: null }
+    ),
+  };
+}
 
 /**
  * Tire un côté ('pile' ou 'face') au hasard côté serveur uniquement, et désigne
@@ -140,6 +169,12 @@ export async function createChallenge(
       .json({ error: 'Le pile ou face se joue à deux : un seul adversaire à la fois' });
     return;
   }
+  if (challengeType === 'rps' && uniqueOpponentIds.length !== 1) {
+    res
+      .status(400)
+      .json({ error: 'Le pierre-feuille-ciseaux se joue à deux : un seul adversaire à la fois' });
+    return;
+  }
 
   const challenger = await userService.findById(req.user!.id);
   if (!challenger) {
@@ -192,7 +227,9 @@ export async function createChallenge(
   const receivedMessage =
     challengeType === 'coin_flip'
       ? `${challenger.username} t'a défié à pile ou face pour ${wagerAmount} SP`
-      : `${challenger.username} t'a défié pour ${wagerAmount} SP`;
+      : challengeType === 'rps'
+        ? `${challenger.username} t'a défié à pierre-feuille-ciseaux pour ${wagerAmount} SP`
+        : `${challenger.username} t'a défié pour ${wagerAmount} SP`;
   await Promise.all(
     uniqueOpponentIds.map((id) =>
       notificationService.createNotification({
@@ -205,7 +242,7 @@ export async function createChallenge(
   );
 
   const entry = await challengeService.getChallengeEntryById(challenge.id);
-  res.status(201).json(entry);
+  res.status(201).json(maskRpsMoves(entry, req.user!.id));
 }
 
 export async function getStatus(req: Request, res: Response): Promise<void> {
@@ -219,7 +256,7 @@ export async function getStatus(req: Request, res: Response): Promise<void> {
 export async function listMyChallenges(req: Request, res: Response): Promise<void> {
   await expireAndNotify();
   const challenges = await challengeService.listMyChallenges(req.user!.id);
-  res.json(challenges);
+  res.json(challenges.map((c) => maskRpsMoves(c, req.user!.id)));
 }
 
 export async function listAllChallenges(req: Request, res: Response): Promise<void> {
@@ -234,7 +271,8 @@ export async function listAllChallenges(req: Request, res: Response): Promise<vo
   const challenges = await challengeService.listAllChallenges({
     status: statusParam as ChallengeStatus | undefined,
   });
-  res.json(challenges);
+  // Le MSP peut lui-même être joueur d'un défi : pas d'exception admin au masquage.
+  res.json(challenges.map((c) => maskRpsMoves(c, req.user!.id)));
 }
 
 function parseChallengeId(req: Request<{ id: string }>, res: Response): number | null {
@@ -244,6 +282,71 @@ function parseChallengeId(req: Request<{ id: string }>, res: Response): number |
     return null;
   }
   return challengeId;
+}
+
+/**
+ * Pierre-feuille-ciseaux : joue la manche si les deux coups sont posés (et résout
+ * le défi si un joueur atteint 2 manches gagnées), notifie
+ * en conséquence et répond avec le défi à jour. `actorId` = joueur qui vient de
+ * poser son coup (l'autre est prévenu que c'est à lui s'il manque son coup).
+ */
+async function playRpsRoundAndRespond(
+  challengeId: number,
+  actorId: number,
+  actorUsername: string,
+  res: Response
+): Promise<void> {
+  let outcome: challengeService.RpsRoundOutcome;
+  try {
+    outcome = await challengeService.playRpsRoundIfReady(challengeId);
+  } catch (err) {
+    const entry = await challengeService.getChallengeEntryById(challengeId);
+    res.json({
+      ...maskRpsMoves(entry, actorId),
+      resolutionError:
+        err instanceof Error ? err.message : 'Résolution automatique impossible, contactez le MSP',
+    });
+    return;
+  }
+
+  const entry = await challengeService.getChallengeEntryById(challengeId);
+  if (entry) {
+    const opponents = entry.participants.filter(
+      (p) => p.status === 'accepted' && p.user_id !== actorId
+    );
+    if (outcome.outcome === 'resolved') {
+      await notifyChallengeResolved(entry);
+    } else if (outcome.outcome === 'round') {
+      const roundWinner = entry.participants.find((p) => p.user_id === outcome.winnerId);
+      const summary = roundWinner
+        ? `${roundWinner.username} remporte la manche ${entry.rps_rounds.length}`
+        : `Égalité à la manche ${entry.rps_rounds.length}`;
+      await Promise.all(
+        entry.participants
+          .filter((p) => p.status === 'accepted')
+          .map((p) =>
+            notificationService.createNotification({
+              userId: p.user_id,
+              type: 'challenge_accepted',
+              message: `Pierre-feuille-ciseaux : ${summary}, joue ton prochain coup !`,
+              link: '/defis',
+            })
+          )
+      );
+    } else {
+      await Promise.all(
+        opponents.map((p) =>
+          notificationService.createNotification({
+            userId: p.user_id,
+            type: 'challenge_accepted',
+            message: `${actorUsername} a joué son coup au pierre-feuille-ciseaux, à toi !`,
+            link: '/defis',
+          })
+        )
+      );
+    }
+  }
+  res.json(maskRpsMoves(entry, actorId));
 }
 
 interface AcceptChallengeBody {
@@ -281,6 +384,8 @@ export async function acceptChallenge(
     coinSide = side;
   }
 
+  // Pierre-feuille-ciseaux : rien à choisir à l'acceptation — les coups ne se
+  // jouent qu'une fois le défi "accepted" (via POST /:id/rps-move).
   let finalStatus: ChallengeStatus | null;
   try {
     finalStatus = await challengeService.respondToChallenge(
@@ -326,6 +431,35 @@ export async function acceptChallenge(
   res.json(entry);
 }
 
+interface RpsMoveBody {
+  move?: RpsMove;
+}
+
+/** Pierre-feuille-ciseaux : rejouer une manche après une égalité. */
+export async function playRpsMove(
+  req: Request<{ id: string }, {}, RpsMoveBody>,
+  res: Response
+): Promise<void> {
+  const challengeId = parseChallengeId(req, res);
+  if (challengeId === null) return;
+
+  const { move } = req.body ?? {};
+  if (!isRpsMove(move)) {
+    res.status(400).json({ error: 'Choisis pierre, feuille ou ciseaux' });
+    return;
+  }
+
+  try {
+    await challengeService.submitRpsMove(challengeId, req.user!.id, move);
+  } catch (err) {
+    const status = (err as { status?: number }).status ?? 500;
+    res.status(status).json({ error: err instanceof Error ? err.message : 'Erreur serveur' });
+    return;
+  }
+
+  await playRpsRoundAndRespond(challengeId, req.user!.id, req.user!.username, res);
+}
+
 export async function declineChallenge(req: Request<{ id: string }>, res: Response): Promise<void> {
   await expireAndNotify();
   const challengeId = parseChallengeId(req, res);
@@ -348,7 +482,7 @@ export async function declineChallenge(req: Request<{ id: string }>, res: Respon
       link: '/defis',
     });
   }
-  res.json(entry);
+  res.json(maskRpsMoves(entry, req.user!.id));
 }
 
 interface ReportBody {
@@ -369,6 +503,10 @@ export async function reportResult(
   }
   if (challenge.status !== 'accepted') {
     res.status(400).json({ error: "Ce défi n'est pas en cours" });
+    return;
+  }
+  if (challenge.type !== 'custom') {
+    res.status(400).json({ error: 'Le résultat de ce défi est déterminé automatiquement' });
     return;
   }
 
@@ -415,7 +553,7 @@ export async function reportResult(
   if (agree && entry) {
     await notifyChallengeResolved(entry);
   }
-  res.json(entry);
+  res.json(maskRpsMoves(entry, userId));
 }
 
 interface ArbitrateBody {
@@ -448,7 +586,7 @@ export async function arbitrateChallenge(
   if (entry) {
     await notifyChallengeResolved(entry);
   }
-  res.json(entry);
+  res.json(maskRpsMoves(entry, req.user!.id));
 }
 
 export async function cancelChallenge(req: Request<{ id: string }>, res: Response): Promise<void> {
@@ -467,5 +605,5 @@ export async function cancelChallenge(req: Request<{ id: string }>, res: Respons
   if (entry) {
     await notifyChallengeCancelled(entry);
   }
-  res.json(entry);
+  res.json(maskRpsMoves(entry, req.user!.id));
 }

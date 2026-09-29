@@ -2,6 +2,12 @@ import { Fragment, useEffect, useRef, useState, type FormEvent } from 'react';
 import { useAuth } from '../hooks/useAuth.jsx';
 import UserNameTag from '../components/UserNameTag.jsx';
 import CoinFlip, { COIN_FLIP_DURATION_MS } from '../components/CoinFlip.jsx';
+import {
+  RPS_FINAL_ANIM_MS,
+  RPS_ROUND_ANIM_MS,
+  RpsResults,
+  RpsRoundReveal,
+} from '../components/RpsBattle.jsx';
 import { unlockAudio } from '../lib/sound.js';
 import * as challengesApi from '../api/challenges.js';
 import * as leaderboardApi from '../api/leaderboard.js';
@@ -13,9 +19,28 @@ import type {
   ChallengeType,
   CoinSide,
   LeaderboardEntry,
+  RpsMove,
 } from '../types.js';
 
 const COIN_SIDE_LABELS: Record<CoinSide, string> = { pile: '😊 Pile', face: '⭐ Face' };
+
+const RPS_MOVES: RpsMove[] = ['rock', 'paper', 'scissors'];
+const RPS_LABELS: Record<RpsMove, string> = {
+  rock: '🪨 Pierre',
+  paper: '📄 Feuille',
+  scissors: '✂️ Ciseaux',
+};
+/** Manches gagnées pour remporter une partie — miroir de RPS_WINS_NEEDED côté serveur. */
+const RPS_WINS_NEEDED = 2;
+
+/** Manche de pierre-feuille-ciseaux en cours d'animation, sur l'état du défi figé à sa détection. */
+interface RpsAnim {
+  roundIndex: number;
+  snapshot: Challenge;
+}
+
+/** Pile ou face et pierre-feuille-ciseaux se jouent à deux (un seul adversaire). */
+const isDuelType = (type: ChallengeType) => type !== 'custom';
 
 const STATUS_LABELS: Record<ChallengeStatus, string> = {
   pending: 'En attente',
@@ -50,7 +75,8 @@ function NameList({ participants }: { participants: ChallengeParticipant[] }) {
 }
 
 const POLL_INTERVAL_MS = 5000;
-// Pendant qu'un pile ou face est en attente de réponse, on accélère le polling pour que
+// Pendant qu'un pile ou face est en attente de réponse (ou qu'une partie de
+// pierre-feuille-ciseaux est en cours), on accélère le polling pour que
 // l'adversaire découvre le résultat (et lance son animation) au plus près du moment réel
 // de la résolution côté serveur, plutôt que d'attendre jusqu'à 5s.
 const COIN_FLIP_POLL_INTERVAL_MS = 1000;
@@ -83,6 +109,26 @@ export default function Challenges() {
   // (plusieurs pile ou face peuvent tourner en même temps).
   const flipReleaseRef = useRef<Map<number, () => void>>(new Map());
 
+  // Pierre-feuille-ciseaux : manche en cours d'animation par défi. Détectée en
+  // comparant le nombre de manches connues d'un chargement à l'autre, comme
+  // flippingIds pour le pile ou face. L'animation joue sur une copie figée du
+  // défi (snapshot) prise à la détection, pour ne pas dépendre des chargements
+  // suivants.
+  const [rpsAnims, setRpsAnims] = useState<Map<number, RpsAnim>>(new Map());
+  const prevRpsRoundsRef = useRef<Map<number, number>>(new Map());
+  // Parties terminées sous les yeux du joueur pendant cette visite : leur
+  // récapitulatif reste dans la liste active au lieu de filer dans les défis
+  // terminés (repliés par défaut) dès la fin de l'animation.
+  const [justFinishedIds, setJustFinishedIds] = useState<Set<number>>(new Set());
+
+  // Numérotation des chargements : le polling (1 s) peut se chevaucher avec une
+  // action du joueur, et une réponse partie AVANT l'action peut arriver APRÈS
+  // elle — elle réinjecterait alors un état périmé (manche pas encore jouée),
+  // ce qui cassait l'animation finale chez l'un des deux joueurs. Toute réponse
+  // d'un chargement lancé avant le dernier état appliqué est ignorée.
+  const loadSeqRef = useRef(0);
+  const appliedSeqRef = useRef(0);
+
   /** Démarre l'animation de la pièce pour ce défi (idempotent si déjà en cours). */
   function startFlip(id: number) {
     if (!flipReleaseRef.current.has(id)) {
@@ -101,9 +147,55 @@ export default function Challenges() {
     }, COIN_FLIP_DURATION_MS);
   }
 
+  /** Lance l'animation de la dernière manche de `snapshot` (remplace une éventuelle animation en cours). */
+  function startRpsAnim(snapshot: Challenge) {
+    const id = snapshot.id;
+    const roundIndex = snapshot.rps_rounds.length - 1;
+    const isFinal = snapshot.status === 'resolved';
+    // Manche décisive : les SP sont déjà transférés côté serveur — geler le solde
+    // affiché jusqu'à l'écran de résultats, même logique que le pile ou face.
+    if (isFinal) {
+      if (!flipReleaseRef.current.has(id)) flipReleaseRef.current.set(id, holdBalanceSync());
+      setJustFinishedIds((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
+    }
+    setRpsAnims((prev) => new Map(prev).set(id, { roundIndex, snapshot }));
+    setTimeout(
+      () => {
+        setRpsAnims((prev) => {
+          if (prev.get(id)?.roundIndex !== roundIndex) return prev;
+          const next = new Map(prev);
+          next.delete(id);
+          return next;
+        });
+        if (isFinal) {
+          flipReleaseRef.current.get(id)?.();
+          flipReleaseRef.current.delete(id);
+        }
+      },
+      isFinal ? RPS_FINAL_ANIM_MS : RPS_ROUND_ANIM_MS
+    );
+  }
+
+  /** Détecte les nouvelles manches jouées depuis le dernier chargement et les anime. */
+  function detectNewRpsRounds(list: Challenge[]) {
+    for (const c of list) {
+      if (c.type !== 'rps') continue;
+      const prev = prevRpsRoundsRef.current.get(c.id);
+      const current = c.rps_rounds.length;
+      // Jamais de retour en arrière : un état avec moins de manches est forcément périmé.
+      if (prev !== undefined && current <= prev) continue;
+      prevRpsRoundsRef.current.set(c.id, current);
+      if (prev !== undefined) startRpsAnim(c);
+    }
+  }
+
   async function loadChallenges() {
+    const seq = ++loadSeqRef.current;
     try {
       const data = await challengesApi.listMyChallenges();
+      if (seq < appliedSeqRef.current) return;
+      appliedSeqRef.current = seq;
+      detectNewRpsRounds(data);
       const prevStatuses = prevStatusRef.current;
       const newlyFlipped = data.filter(
         (c) =>
@@ -145,21 +237,25 @@ export default function Challenges() {
     };
   }, []);
 
-  const hasPendingCoinFlip = challenges.some((c) => c.type === 'coin_flip' && c.status === 'pending');
+  const hasLiveDuel = challenges.some(
+    (c) =>
+      (c.type === 'coin_flip' && c.status === 'pending') ||
+      (c.type === 'rps' && ACTIVE_STATUSES.includes(c.status))
+  );
 
   useEffect(() => {
     const interval = setInterval(
       loadChallenges,
-      hasPendingCoinFlip ? COIN_FLIP_POLL_INTERVAL_MS : POLL_INTERVAL_MS
+      hasLiveDuel ? COIN_FLIP_POLL_INTERVAL_MS : POLL_INTERVAL_MS
     );
     return () => clearInterval(interval);
-  }, [hasPendingCoinFlip]);
+  }, [hasLiveDuel]);
 
   const opponents = players.filter((p) => p.id !== user?.id);
   const quotaReached = quota !== null && quota.countToday >= quota.maxPerDay;
 
   function toggleOpponent(id: number) {
-    if (challengeType === 'coin_flip') {
+    if (isDuelType(challengeType)) {
       setOpponentIds((prev) => (prev.includes(id) ? [] : [id]));
       return;
     }
@@ -168,7 +264,7 @@ export default function Challenges() {
 
   function selectChallengeType(next: ChallengeType) {
     setChallengeType(next);
-    if (next === 'coin_flip' && opponentIds.length > 1) {
+    if (isDuelType(next) && opponentIds.length > 1) {
       setOpponentIds((prev) => prev.slice(0, 1));
     }
   }
@@ -202,6 +298,9 @@ export default function Challenges() {
     setActingId(id);
     try {
       const result = await action();
+      // La réponse de l'action est plus récente que tout polling encore en vol :
+      // invalider ces chargements pour qu'ils ne réinjectent pas un état périmé.
+      appliedSeqRef.current = ++loadSeqRef.current;
       // Réagir tout de suite à la réponse de la requête plutôt que d'attendre le prochain
       // rechargement complet (loadChallenges) — évite un aller-retour réseau superflu avant
       // de lancer l'animation de la pièce.
@@ -223,13 +322,24 @@ export default function Challenges() {
     });
   }
 
+  function handleRpsMove(id: number, move: RpsMove) {
+    unlockAudio();
+    // Si ce coup complète la manche, la réponse contient déjà la manche jouée :
+    // lancer l'animation tout de suite plutôt qu'au prochain polling.
+    runAction(id, () => challengesApi.playRpsMove(id, move), (result) =>
+      detectNewRpsRounds([result])
+    );
+  }
+
   if (!user) return null;
 
+  const isAnimating = (c: Challenge) =>
+    flippingIds.has(c.id) || rpsAnims.has(c.id) || justFinishedIds.has(c.id);
   const activeChallenges = challenges.filter(
-    (c) => ACTIVE_STATUSES.includes(c.status) || flippingIds.has(c.id)
+    (c) => ACTIVE_STATUSES.includes(c.status) || isAnimating(c)
   );
   const finishedChallenges = challenges.filter(
-    (c) => !ACTIVE_STATUSES.includes(c.status) && !flippingIds.has(c.id)
+    (c) => !ACTIVE_STATUSES.includes(c.status) && !isAnimating(c)
   );
 
   return (
@@ -278,11 +388,30 @@ export default function Challenges() {
               >
                 🪙 Pile ou face
               </button>
+              <button
+                type="button"
+                onClick={() => selectChallengeType('rps')}
+                aria-pressed={challengeType === 'rps'}
+                className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all duration-150 ${
+                  challengeType === 'rps'
+                    ? 'bg-emerald-500 text-zinc-950'
+                    : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
+                }`}
+              >
+                ✂️ Pierre-feuille-ciseaux
+              </button>
             </div>
             {challengeType === 'coin_flip' && (
               <p className="w-full text-xs text-zinc-500 -mt-1">
                 Ça se joue à deux : choisis un adversaire, il choisira pile ou face en acceptant
                 (tu hérites automatiquement de l'autre côté).
+              </p>
+            )}
+            {challengeType === 'rps' && (
+              <p className="w-full text-xs text-zinc-500 -mt-1">
+                Ça se joue à deux, en 3 manches : une fois que ton adversaire a accepté, vous
+                choisissez chacun votre coup en secret. Le premier à {RPS_WINS_NEEDED} manches
+                gagnées remporte le pot (une égalité se rejoue).
               </p>
             )}
             <div className="w-full">
@@ -373,7 +502,9 @@ export default function Challenges() {
                     actingId={actingId}
                     runAction={runAction}
                     onAccept={handleAccept}
+                    onRpsMove={handleRpsMove}
                     isFlipping={flippingIds.has(c.id)}
+                    rpsAnim={rpsAnims.get(c.id)}
                   />
                 ))
               )}
@@ -400,6 +531,7 @@ export default function Challenges() {
                         actingId={actingId}
                         runAction={runAction}
                         onAccept={handleAccept}
+                        onRpsMove={handleRpsMove}
                       />
                     ))}
                   </div>
@@ -419,15 +551,21 @@ function ChallengeCard({
   actingId,
   runAction,
   onAccept,
+  onRpsMove,
   isFlipping = false,
+  rpsAnim,
 }: {
   challenge: Challenge;
   userId: number;
   actingId: number | null;
   runAction: (id: number, action: () => Promise<unknown>) => Promise<void>;
   onAccept: (id: number, side?: CoinSide) => void;
+  onRpsMove: (id: number, move: RpsMove) => void;
   isFlipping?: boolean;
+  /** Manche de pierre-feuille-ciseaux en cours d'animation, s'il y en a une. */
+  rpsAnim?: RpsAnim;
 }) {
+  const rpsAnimating = c.type === 'rps' && rpsAnim !== undefined;
   const me = c.participants.find((p) => p.user_id === userId);
   const others = c.participants.filter((p) => p.user_id !== userId);
   const acceptedParticipants = c.participants.filter((p) => p.status === 'accepted');
@@ -450,6 +588,11 @@ function ChallengeCard({
           {c.type === 'coin_flip' && (
             <span className="text-xs px-2 py-1 rounded-full bg-amber-500/15 text-amber-400">
               🪙 Pile ou face
+            </span>
+          )}
+          {c.type === 'rps' && (
+            <span className="text-xs px-2 py-1 rounded-full bg-sky-500/15 text-sky-400">
+              ✂️ Pierre-feuille-ciseaux
             </span>
           )}
           <span className="text-xs px-2 py-1 rounded-full bg-zinc-800 text-zinc-400">
@@ -533,6 +676,64 @@ function ChallengeCard({
         </div>
       )}
 
+      {rpsAnim && (
+        <RpsRoundReveal
+          key={`${c.id}-${rpsAnim.roundIndex}`}
+          challenge={rpsAnim.snapshot}
+          roundIndex={rpsAnim.roundIndex}
+          userId={userId}
+        />
+      )}
+
+      {c.type === 'rps' && c.status === 'accepted' && !rpsAnimating && (
+        <p className="mb-2 text-sm text-zinc-300 flex flex-wrap items-center gap-1.5">
+          <span className="text-zinc-500">Score :</span>
+          {acceptedParticipants.map((p, i) => (
+            <Fragment key={p.id}>
+              {i > 0 && <span className="text-zinc-600">–</span>}
+              <span>
+                {p.user_id === userId ? 'Toi' : p.username}{' '}
+                <span className="font-semibold text-sky-300">
+                  {c.rps_rounds.filter((r) => r.winner_id === p.user_id).length}
+                </span>
+              </span>
+            </Fragment>
+          ))}
+          <span className="text-xs text-zinc-500">
+            (premier à {RPS_WINS_NEEDED} manches gagnées)
+          </span>
+        </p>
+      )}
+
+      {c.type === 'rps' && c.status === 'accepted' && !rpsAnimating && c.rps_rounds.length > 0 && (
+        <ul className="mb-3 space-y-1">
+          {c.rps_rounds.map((round, i) => {
+            const roundWinner = c.participants.find((p) => p.user_id === round.winner_id);
+            return (
+              <li key={i} className="text-xs text-zinc-400 flex flex-wrap items-center gap-1.5">
+                <span className="text-zinc-500">Manche {i + 1} :</span>
+                {c.participants
+                  .filter((p) => round.moves[p.user_id])
+                  .map((p, j) => (
+                    <Fragment key={p.id}>
+                      {j > 0 && <span className="text-zinc-600">vs</span>}
+                      <span className="px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-300">
+                        {p.user_id === userId ? 'Toi' : p.username} ·{' '}
+                        {RPS_LABELS[round.moves[p.user_id]!]}
+                      </span>
+                    </Fragment>
+                  ))}
+                <span className={roundWinner ? 'text-emerald-400' : 'text-amber-400'}>
+                  {roundWinner
+                    ? `→ ${roundWinner.user_id === userId ? 'tu gagnes' : `${roundWinner.username} gagne`}`
+                    : '→ égalité'}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
       {c.status === 'pending' && me?.status === 'pending' && c.type !== 'coin_flip' && (
         <div className="flex gap-2">
           <button
@@ -554,9 +755,7 @@ function ChallengeCard({
 
       {c.status === 'pending' && me?.status !== 'pending' && (
         <p className="text-sm text-zinc-500">
-          {c.type === 'coin_flip'
-            ? 'En attente que '
-            : 'En attente de la réponse de '}
+          {c.type === 'coin_flip' ? 'En attente que ' : 'En attente de la réponse de '}
           <NameList participants={others.filter((p) => p.status === 'pending')} />
           {c.type === 'coin_flip' ? ' choisisse pile ou face…' : '…'}
         </p>
@@ -566,7 +765,39 @@ function ChallengeCard({
         <p className="text-sm text-zinc-500">🪙 Tirage au sort en cours…</p>
       )}
 
-      {c.status === 'accepted' && c.type !== 'coin_flip' && (
+      {c.status === 'accepted' && c.type === 'rps' && !rpsAnimating && (
+        <div>
+          {me?.status !== 'accepted' ? (
+            <p className="text-sm text-zinc-500">Tu ne participes plus à ce défi.</p>
+          ) : me.rps_move ? (
+            <p className="text-sm text-zinc-500">
+              Tu as joué {RPS_LABELS[me.rps_move]} — en attente du coup de{' '}
+              <NameList participants={others.filter((p) => p.status === 'accepted')} />…
+            </p>
+          ) : (
+            <div>
+              <p className="text-sm text-zinc-400 mb-2">
+                {c.rps_rounds.at(-1)?.winner_id === null ? 'Égalité ! ' : ''}Manche{' '}
+                {c.rps_rounds.length + 1} — choisis ton coup :
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {RPS_MOVES.map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => onRpsMove(c.id, m)}
+                    disabled={actingId === c.id}
+                    className="text-sm bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-semibold px-3 py-1.5 rounded-md transition disabled:opacity-50"
+                  >
+                    {RPS_LABELS[m]}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {c.status === 'accepted' && c.type === 'custom' && (
         <div>
           {disputed && (
             <p className="text-sm text-red-400 mb-2">
@@ -621,7 +852,11 @@ function ChallengeCard({
         <CoinFlip challenge={c} />
       )}
 
-      {c.status === 'resolved' && !(c.type === 'coin_flip' && isFlipping) && (
+      {c.status === 'resolved' && c.type === 'rps' && !rpsAnimating && (
+        <RpsResults challenge={c} userId={userId} />
+      )}
+
+      {c.status === 'resolved' && c.type !== 'rps' && !(c.type === 'coin_flip' && isFlipping) && (
         <p
           className="text-sm"
           style={c.type === 'coin_flip' ? { animation: 'popIn 0.4s ease-out' } : undefined}

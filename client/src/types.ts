@@ -195,10 +195,17 @@ export type ChallengeStatus =
   | 'resolved'
   | 'cancelled';
 
-export const CHALLENGE_TYPES = ['custom', 'coin_flip'] as const;
+export const CHALLENGE_TYPES = ['custom', 'coin_flip', 'rps'] as const;
 export type ChallengeType = (typeof CHALLENGE_TYPES)[number];
 
 export type CoinSide = 'pile' | 'face';
+
+export type RpsMove = 'rock' | 'paper' | 'scissors';
+
+export interface RpsRound {
+  moves: Record<string, RpsMove>;
+  winner_id: number | null;
+}
 
 export type ChallengeParticipantStatus = 'pending' | 'accepted' | 'declined';
 
@@ -210,6 +217,8 @@ export interface ChallengeParticipant {
   status: ChallengeParticipantStatus;
   reported_winner_id: number | null;
   coin_side: CoinSide | null;
+  /** Coup de la manche en cours — toujours null pour les autres joueurs (masqué côté serveur). */
+  rps_move: RpsMove | null;
   responded_at: string | null;
   created_at: string;
   username: string;
@@ -227,6 +236,7 @@ export interface Challenge {
   status: ChallengeStatus;
   winner_id: number | null;
   result_note: string | null;
+  rps_rounds: RpsRound[];
   created_at: string;
   expires_at: string;
   resolved_at: string | null;
