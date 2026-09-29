@@ -405,11 +405,19 @@ export function drawReward(rewards: GamblingCrateRewardRow[]): GamblingCrateRewa
   return rewards[rewards.length - 1] as GamblingCrateRewardRow;
 }
 
-interface OpenCrateResult {
+/** Nombre max d'ouvertures simultanées d'une même caisse en une seule requête. */
+export const MAX_OPENS_PER_REQUEST = 5;
+
+interface CrateOpenOutcome {
   open: GamblingOpenRow;
   reward: GamblingCrateRewardRow;
   /** Cosmétique réellement gagné (précis ou tiré du pool) — permet au client d'afficher un aperçu visuel fidèle. */
   cosmetic: CosmeticRow | null;
+}
+
+interface OpenCrateResult {
+  /** Une entrée par ouverture, dans l'ordre des tirages. */
+  results: CrateOpenOutcome[];
   balance: number;
   spentToday: number;
 }
@@ -422,12 +430,24 @@ interface OpenCrateResult {
  * effectuées sur cette caisse) encore sous le plafond avant qu'aucune n'ait
  * débité/inséré, et le dépasser (même raison que le bonus de connexion, voir
  * loginBonus.service.ts).
+ *
+ * `count` ouvertures de la même caisse sont effectuées d'un coup (multi-open),
+ * dans la même transaction : budget quotidien, limite d'ouvertures et solde
+ * sont vérifiés pour le lot entier — soit tout passe, soit rien n'est débité.
  */
 export async function openCrate(
   userId: number,
   crateId: number,
-  seasonId: number | null
+  seasonId: number | null,
+  count = 1
 ): Promise<OpenCrateResult> {
+  if (!Number.isInteger(count) || count < 1 || count > MAX_OPENS_PER_REQUEST) {
+    throw Object.assign(
+      new Error(`Nombre d'ouvertures invalide (1 à ${MAX_OPENS_PER_REQUEST})`),
+      { status: 400 }
+    );
+  }
+
   const crate = await getCrateById(crateId);
   if (!crate || !crate.is_active) {
     throw Object.assign(new Error('Caisse introuvable ou archivée'), { status: 404 });
@@ -464,7 +484,8 @@ export async function openCrate(
       [userId, startOfDayLocalAsUTC()]
     );
     const spentToday = Number(spentRows[0]?.spent ?? 0);
-    if (spentToday + crate.cost_sp > maxWagerPerDay) {
+    const totalCost = crate.cost_sp * count;
+    if (spentToday + totalCost > maxWagerPerDay) {
       throw Object.assign(
         new Error(
           `Budget gambling quotidien dépassé (${spentToday}/${maxWagerPerDay} SP déjà misés aujourd'hui)`
@@ -483,74 +504,19 @@ export async function openCrate(
           { status: 400 }
         );
       }
-    }
-
-    let spTransactionId: number | null = null;
-    if (crate.cost_sp > 0) {
-      const spendTx = await spService.debitSP({
-        userId,
-        amount: crate.cost_sp,
-        type: 'gambling_spend',
-        seasonId,
-        relatedId: crateId,
-        note: `Ouverture caisse « ${crate.name} »`,
-        client,
-      });
-      spTransactionId = spendTx.id;
-    }
-
-    const reward = drawReward(rewards);
-
-    if (reward.type === 'sp' && reward.sp_amount) {
-      const winTx = await spService.creditSP({
-        userId,
-        amount: reward.sp_amount,
-        type: 'gambling_win',
-        seasonId,
-        relatedId: crateId,
-        note: `Gain caisse « ${crate.name} » — ${reward.title}`,
-        client,
-      });
-      spTransactionId = winTx.id;
-    }
-
-    const { rows: openRows } = await client.query<GamblingOpenRow>(
-      `INSERT INTO gambling_opens (user_id, crate_id, reward_id, season_id, sp_transaction_id)
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING *`,
-      [userId, crateId, reward.id, seasonId, spTransactionId]
-    );
-    const open = openRows[0] as GamblingOpenRow;
-
-    if (reward.type === 'custom') {
-      await client.query(
-        `INSERT INTO gambling_inventory (user_id, reward_id, gambling_open_id)
-         VALUES ($1, $2, $3)`,
-        [userId, reward.id, open.id]
-      );
-    }
-
-    let resolvedReward = reward;
-    let wonCosmetic: CosmeticRow | null = null;
-    if (reward.type === 'cosmetic') {
-      const cosmetic = reward.cosmetic_id
-        ? await cosmeticsService.getCosmeticById(reward.cosmetic_id)
-        : await cosmeticsService.pickRandomCosmeticForPool(
-            reward.cosmetic_slot_filter,
-            reward.cosmetic_rarity_filter,
-            client
-          );
-      if (!cosmetic) {
-        throw Object.assign(new Error('Cosmétique introuvable'), { status: 404 });
+      if (openCount + count > crate.max_opens_per_player) {
+        throw Object.assign(
+          new Error(
+            `Il ne te reste que ${crate.max_opens_per_player - openCount} ouverture(s) sur cette caisse`
+          ),
+          { status: 400 }
+        );
       }
-      await cosmeticsService.grant(userId, cosmetic.id, 'gambling', client);
-      // Réponse HTTP uniquement (pas persisté) : le joueur voit le nom du
-      // cosmétique réellement gagné, pas juste le libellé générique du pool
-      // ("Cadre" → "Cadre Or"), même chose pour la notification. `cosmetic`
-      // (objet complet) accompagne la réponse pour que le client affiche un
-      // aperçu visuel fidèle (couleur, police, image…), pas juste un titre.
-      resolvedReward = { ...reward, title: cosmetic.name, image_url: cosmetic.image_url };
-      wonCosmetic = cosmetic;
+    }
+
+    const results: CrateOpenOutcome[] = [];
+    for (let i = 0; i < count; i++) {
+      results.push(await openOnce(client, userId, crate, rewards, seasonId));
     }
 
     const { rows: userRows } = await client.query<{ sp_balance: number }>(
@@ -561,11 +527,9 @@ export async function openCrate(
     await client.query('COMMIT');
 
     return {
-      open,
-      reward: resolvedReward,
-      cosmetic: wonCosmetic,
+      results,
       balance: userRows[0]?.sp_balance ?? 0,
-      spentToday: spentToday + crate.cost_sp,
+      spentToday: spentToday + totalCost,
     };
   } catch (err) {
     await client.query('ROLLBACK');
@@ -573,6 +537,92 @@ export async function openCrate(
   } finally {
     client.release();
   }
+}
+
+/**
+ * Une ouverture unitaire (débit, tirage, gain) au sein de la transaction
+ * d'openCrate — les vérifications de budget/limite sont faites en amont pour
+ * le lot entier. Le solde est revérifié à chaque débit par debitSP : si le
+ * joueur ne peut pas payer l'ouverture n°k, tout le lot est annulé.
+ */
+async function openOnce(
+  client: PoolClient,
+  userId: number,
+  crate: GamblingCrateRow,
+  rewards: GamblingCrateRewardRow[],
+  seasonId: number | null
+): Promise<CrateOpenOutcome> {
+  const crateId = crate.id;
+
+  let spTransactionId: number | null = null;
+  if (crate.cost_sp > 0) {
+    const spendTx = await spService.debitSP({
+      userId,
+      amount: crate.cost_sp,
+      type: 'gambling_spend',
+      seasonId,
+      relatedId: crateId,
+      note: `Ouverture caisse « ${crate.name} »`,
+      client,
+    });
+    spTransactionId = spendTx.id;
+  }
+
+  const reward = drawReward(rewards);
+
+  if (reward.type === 'sp' && reward.sp_amount) {
+    const winTx = await spService.creditSP({
+      userId,
+      amount: reward.sp_amount,
+      type: 'gambling_win',
+      seasonId,
+      relatedId: crateId,
+      note: `Gain caisse « ${crate.name} » — ${reward.title}`,
+      client,
+    });
+    spTransactionId = winTx.id;
+  }
+
+  const { rows: openRows } = await client.query<GamblingOpenRow>(
+    `INSERT INTO gambling_opens (user_id, crate_id, reward_id, season_id, sp_transaction_id)
+     VALUES ($1, $2, $3, $4, $5)
+     RETURNING *`,
+    [userId, crateId, reward.id, seasonId, spTransactionId]
+  );
+  const open = openRows[0] as GamblingOpenRow;
+
+  if (reward.type === 'custom') {
+    await client.query(
+      `INSERT INTO gambling_inventory (user_id, reward_id, gambling_open_id)
+       VALUES ($1, $2, $3)`,
+      [userId, reward.id, open.id]
+    );
+  }
+
+  let resolvedReward = reward;
+  let wonCosmetic: CosmeticRow | null = null;
+  if (reward.type === 'cosmetic') {
+    const cosmetic = reward.cosmetic_id
+      ? await cosmeticsService.getCosmeticById(reward.cosmetic_id)
+      : await cosmeticsService.pickRandomCosmeticForPool(
+          reward.cosmetic_slot_filter,
+          reward.cosmetic_rarity_filter,
+          client
+        );
+    if (!cosmetic) {
+      throw Object.assign(new Error('Cosmétique introuvable'), { status: 404 });
+    }
+    await cosmeticsService.grant(userId, cosmetic.id, 'gambling', client);
+    // Réponse HTTP uniquement (pas persisté) : le joueur voit le nom du
+    // cosmétique réellement gagné, pas juste le libellé générique du pool
+    // ("Cadre" → "Cadre Or"), même chose pour la notification. `cosmetic`
+    // (objet complet) accompagne la réponse pour que le client affiche un
+    // aperçu visuel fidèle (couleur, police, image…), pas juste un titre.
+    resolvedReward = { ...reward, title: cosmetic.name, image_url: cosmetic.image_url };
+    wonCosmetic = cosmetic;
+  }
+
+  return { open, reward: resolvedReward, cosmetic: wonCosmetic };
 }
 
 export async function listMyInventory(userId: number): Promise<GamblingInventoryEntry[]> {

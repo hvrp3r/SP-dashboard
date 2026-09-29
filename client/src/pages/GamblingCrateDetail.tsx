@@ -41,10 +41,17 @@ import type {
   GamblingCrateReward,
   GamblingCrateRewardView,
   GamblingOpenEntry,
+  GamblingOpenOutcome,
   GamblingOpenResult,
   GamblingRewardType,
   GamblingStatus,
 } from '../types.js';
+
+/** Choix proposés pour ouvrir plusieurs fois la même caisse d'un coup
+ * (plafond aligné sur MAX_OPENS_PER_REQUEST côté serveur). */
+const MULTI_OPEN_CHOICES = [1, 2, 3, 4, 5];
+const MAX_MULTI_OPEN = 5;
+const RARITY_RANK = { common: 0, rare: 1, legendary: 2 } as const;
 
 const COSMETIC_SLOTS: CosmeticSlot[] = ['avatar_frame', 'banner', 'name_color', 'title', 'name_font'];
 type CosmeticRewardMode = 'exact' | 'pool';
@@ -146,9 +153,10 @@ export default function GamblingCrateDetail() {
   const [opening, setOpening] = useState(false);
   const [lastResult, setLastResult] = useState<GamblingOpenResult | null>(null);
   const [spinToken, setSpinToken] = useState(0);
-  const [pendingWinner, setPendingWinner] = useState<GamblingCrateReward | null>(null);
-  const [pendingWinnerCosmetic, setPendingWinnerCosmetic] = useState<Cosmetic | null>(null);
+  const [openCount, setOpenCount] = useState(1);
+  const [pendingWinners, setPendingWinners] = useState<GamblingOpenOutcome[]>([]);
   const pendingResultRef = useRef<GamblingOpenResult | null>(null);
+  const landedReelsRef = useRef(0);
   const releaseBalanceHoldRef = useRef<(() => void) | null>(null);
 
   const [editName, setEditName] = useState('');
@@ -263,10 +271,10 @@ export default function GamblingCrateDetail() {
     releaseBalanceHoldRef.current?.();
     releaseBalanceHoldRef.current = holdBalanceSync();
     try {
-      const result = await gamblingApi.openCrate(crateId);
+      const result = await gamblingApi.openCrate(crateId, effectiveOpenCount);
       pendingResultRef.current = result;
-      setPendingWinner(result.reward);
-      setPendingWinnerCosmetic(result.cosmetic);
+      landedReelsRef.current = 0;
+      setPendingWinners(result.results);
       setSpinToken((t) => t + 1);
       setStatus((prev) =>
         prev ? { ...prev, spentToday: result.spentToday, maxWagerPerDay: result.maxWagerPerDay } : prev
@@ -274,7 +282,9 @@ export default function GamblingCrateDetail() {
       // Le solde n'est répercuté dans le header qu'à l'atterrissage du rouleau
       // (handleReelLanded) — le mettre à jour ici spoilerait le résultat avant
       // la fin de l'animation.
-      setCrate((prev) => (prev ? { ...prev, myOpenCount: prev.myOpenCount + 1 } : prev));
+      setCrate((prev) =>
+        prev ? { ...prev, myOpenCount: prev.myOpenCount + result.results.length } : prev
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur inconnue');
       setOpening(false);
@@ -284,6 +294,10 @@ export default function GamblingCrateDetail() {
   }
 
   function handleReelLanded() {
+    // Multi-open : on n'affiche les résultats (et le solde) qu'une fois le
+    // dernier rouleau arrêté.
+    landedReelsRef.current += 1;
+    if (landedReelsRef.current < (pendingResultRef.current?.results.length ?? 0)) return;
     const result = pendingResultRef.current;
     setLastResult(result);
     pendingResultRef.current = null;
@@ -494,6 +508,28 @@ export default function GamblingCrateDetail() {
   const withinBudget = spentToday + crate.cost_sp <= maxWagerPerDay;
   const reachedOpenLimit =
     crate.max_opens_per_player !== null && crate.myOpenCount >= crate.max_opens_per_player;
+  // Nombre max d'ouvertures simultanées permis par la limite de la caisse, le
+  // solde et le budget du jour (le serveur revérifie tout pour le lot entier).
+  const maxMultiOpen = Math.max(
+    1,
+    Math.min(
+      MAX_MULTI_OPEN,
+      crate.max_opens_per_player !== null ? crate.max_opens_per_player - crate.myOpenCount : Infinity,
+      crate.cost_sp > 0 ? Math.floor((user?.sp_balance ?? 0) / crate.cost_sp) : Infinity,
+      crate.cost_sp > 0 ? Math.floor(budgetLeft / crate.cost_sp) : Infinity
+    )
+  );
+  const effectiveOpenCount = Math.min(openCount, maxMultiOpen);
+  const totalOpenCost = crate.cost_sp * effectiveOpenCount;
+  // Seul le rouleau du gain le plus rare joue les sons (voir GamblingReel#silent).
+  const rarityRankOf = (o: GamblingOpenOutcome) =>
+    RARITY_RANK[
+      rarityFromWeightPercent(crate.rewards.find((r) => r.id === o.reward.id)?.weight_percent ?? 100)
+    ];
+  const loudReelIndex = pendingWinners.reduce(
+    (best, w, i) => (rarityRankOf(w) > rarityRankOf(pendingWinners[best] as GamblingOpenOutcome) ? i : best),
+    0
+  );
   const subscriptionRequired = crate.requires_subscription && !(status?.subscriptionActive ?? false);
   const canOpen =
     crate.is_active &&
@@ -541,12 +577,34 @@ export default function GamblingCrateDetail() {
             <VolumeSlider />
           </div>
 
+          <div className="flex justify-center gap-1.5 mb-3" role="group" aria-label="Nombre de caisses à ouvrir">
+            {MULTI_OPEN_CHOICES.map((n) => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => setOpenCount(n)}
+                disabled={opening || n > maxMultiOpen}
+                className={`w-10 py-1 rounded-md text-sm font-semibold transition disabled:opacity-30 disabled:cursor-not-allowed ${
+                  effectiveOpenCount === n
+                    ? 'bg-emerald-500 text-zinc-950'
+                    : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
+                }`}
+              >
+                ×{n}
+              </button>
+            ))}
+          </div>
+
           <button
             onClick={handleOpen}
             disabled={!canOpen}
             className="bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-bold px-6 py-3 rounded-md transition disabled:opacity-40 disabled:cursor-not-allowed transform hover:scale-105 active:scale-95"
           >
-            {opening ? 'Ouverture…' : `Ouvrir (${crate.cost_sp > 0 ? `${crate.cost_sp} SP` : 'Gratuit'})`}
+            {opening
+              ? 'Ouverture…'
+              : `Ouvrir${effectiveOpenCount > 1 ? ` ×${effectiveOpenCount}` : ''} (${
+                  totalOpenCost > 0 ? `${totalOpenCost} SP` : 'Gratuit'
+                })`}
           </button>
           {crate.max_opens_per_player !== null && (
             <p className="text-xs text-zinc-500 mt-2">
@@ -580,49 +638,55 @@ export default function GamblingCrateDetail() {
             </p>
           )}
 
-          {pendingWinner && (
-            <div className="mt-6">
-              <GamblingReel
-                pool={crate.rewards}
-                winner={pendingWinner}
-                spinToken={spinToken}
-                onLanded={handleReelLanded}
-                cosmeticCatalog={cosmeticCatalog}
-                winnerCosmetic={pendingWinnerCosmetic}
-                rarityWeights={rarityWeights}
-              />
+          {pendingWinners.length > 0 && (
+            <div className="mt-6 flex flex-col gap-2">
+              {pendingWinners.map((w, i) => (
+                <GamblingReel
+                  key={i}
+                  pool={crate.rewards}
+                  winner={w.reward}
+                  spinToken={spinToken}
+                  onLanded={handleReelLanded}
+                  cosmeticCatalog={cosmeticCatalog}
+                  winnerCosmetic={w.cosmetic}
+                  rarityWeights={rarityWeights}
+                  silent={i !== loudReelIndex}
+                />
+              ))}
             </div>
           )}
 
           {lastResult && (
             <div
-              className="mt-4 flex flex-col items-center gap-2"
+              className="mt-4 flex flex-wrap justify-center gap-x-8 gap-y-4"
               style={{ animation: 'popIn 0.4s ease-out' }}
             >
-              {lastResult.cosmetic && (
-                <CosmeticPreview cosmetic={lastResult.cosmetic} size={72} />
-              )}
-              <p
-                className={`text-lg font-bold ${
-                  lastResult.cosmetic
-                    ? COSMETIC_RARITY_TEXT_CLASSES[lastResult.cosmetic.rarity]
-                    : RARITY_TEXT_CLASSES[
-                        rarityFromWeightPercent(
-                          crate.rewards.find((r) => r.id === lastResult.reward.id)?.weight_percent ?? 100
-                        )
-                      ]
-                }`}
-              >
-                {lastResult.reward.title}
-              </p>
-              {lastResult.cosmetic && (
-                <p className={`text-xs font-medium ${COSMETIC_RARITY_TEXT_CLASSES[lastResult.cosmetic.rarity]}`}>
-                  {RARITY_LABELS[lastResult.cosmetic.rarity]} · {SLOT_LABELS[lastResult.cosmetic.slot]}
-                </p>
-              )}
-              {lastResult.reward.type === 'sp' && (
-                <p className="text-emerald-400 font-bold">+{lastResult.reward.sp_amount} SP</p>
-              )}
+              {lastResult.results.map((outcome, i) => (
+                <div key={i} className="flex flex-col items-center gap-2">
+                  {outcome.cosmetic && <CosmeticPreview cosmetic={outcome.cosmetic} size={72} />}
+                  <p
+                    className={`text-lg font-bold ${
+                      outcome.cosmetic
+                        ? COSMETIC_RARITY_TEXT_CLASSES[outcome.cosmetic.rarity]
+                        : RARITY_TEXT_CLASSES[
+                            rarityFromWeightPercent(
+                              crate.rewards.find((r) => r.id === outcome.reward.id)?.weight_percent ?? 100
+                            )
+                          ]
+                    }`}
+                  >
+                    {outcome.reward.title}
+                  </p>
+                  {outcome.cosmetic && (
+                    <p className={`text-xs font-medium ${COSMETIC_RARITY_TEXT_CLASSES[outcome.cosmetic.rarity]}`}>
+                      {RARITY_LABELS[outcome.cosmetic.rarity]} · {SLOT_LABELS[outcome.cosmetic.slot]}
+                    </p>
+                  )}
+                  {outcome.reward.type === 'sp' && (
+                    <p className="text-emerald-400 font-bold">+{outcome.reward.sp_amount} SP</p>
+                  )}
+                </div>
+              ))}
             </div>
           )}
         </div>
