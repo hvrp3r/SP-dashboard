@@ -18,6 +18,7 @@ import type {
   RouletteBetType,
   RouletteHistoryEntry,
   RoulettePayoutInfo,
+  RouletteRecentNumber,
   RouletteRoundPublicView,
   RouletteRoundStatus,
 } from '../types.js';
@@ -34,101 +35,251 @@ function tileClass(n: number): string {
   if (c === 'red') return 'bg-rose-600 text-white';
   return 'bg-zinc-800 text-zinc-100';
 }
-function wedgeColor(n: number): string {
+function cellBorderClass(n: number): string {
   const c = numberColor(n);
-  return c === 'green' ? '#059669' : c === 'red' ? '#e11d48' : '#27272a';
+  if (c === 'green') return 'border-emerald-400';
+  if (c === 'red') return 'border-rose-400';
+  return 'border-zinc-600';
 }
-
 /** Ordre réel des cases d'une roue européenne (zéro unique) — pas 0→36 dans l'ordre, c'est l'ordre physique sur la roue. */
 const WHEEL_ORDER = [
   0, 32, 15, 19, 4, 21, 2, 25, 17, 34, 6, 27, 13, 36, 11, 30, 8, 23, 10, 5, 24, 16, 33, 1, 20, 14, 31,
   9, 22, 18, 29, 7, 28, 12, 35, 3, 26,
 ];
-const WHEEL_STEP = 360 / WHEEL_ORDER.length;
-const WHEEL_GRADIENT = `conic-gradient(${WHEEL_ORDER.map(
-  (n, i) => `${wedgeColor(n)} ${i * WHEEL_STEP}deg ${(i + 1) * WHEEL_STEP}deg`
-).join(', ')})`;
+const POCKETS = WHEEL_ORDER.length;
 
-function polarToPercent(clockDeg: number, radiusPct: number): { left: number; top: number } {
-  const rad = ((clockDeg - 90) * Math.PI) / 180;
-  return { left: 50 + radiusPct * Math.cos(rad), top: 50 + radiusPct * Math.sin(rad) };
+function mod(n: number, m: number): number {
+  return ((n % m) + m) % m;
 }
 
-const FAST_SPIN_DURATION_S = 6;
-const FAST_SPIN_TURNS = 5;
-const SETTLE_DURATION_S = 1.6;
-const SETTLE_EXTRA_TURNS = 1;
+/**
+ * Géométrie de l'arc, en unités relatives à la largeur mesurée du conteneur :
+ * les cases sont posées sur le haut d'un grand cercle dont le centre est sous
+ * le cadre, REEL_CELL_DEG degrés par case — 5 cases pleines (centre ± 2) et
+ * une case entamée de chaque côté.
+ */
+const REEL_CELL_DEG = 17;
+const REEL_RADIUS_RATIO = 0.62;
+const REEL_CELL_W_RATIO = 0.165;
+const REEL_CELL_H_RATIO = 0.13;
+const REEL_TOP_PAD_RATIO = 0.015;
+const REEL_VIEW_H_RATIO = 0.4;
+
+/** Durée totale d'un lancer (accélération + décélération), calée juste sous SPIN_DURATION_SECONDS côté serveur (4 s). */
+const REEL_ROLL_S = 3.6;
+/** Part de la durée consacrée à l'accélération, le reste est une longue décélération. */
+const REEL_ACCEL_SHARE = 0.35;
+/** Distance minimale parcourue (en cases) — près d'un tour de roue avant de viser la case gagnante. */
+const REEL_MIN_ROLL_CELLS = 30;
+/** Intervalle minimal entre deux "tic" : à pleine vitesse, un tic par case saturerait. */
+const REEL_TICK_MIN_MS = 45;
 
 /**
- * Le numéro gagnant reste caché côté serveur tant que la manche n'est pas
- * `finished` (voir roulette.service.ts toPublicView) — impossible de viser
- * un angle précis pendant `spinning`. La roue tourne donc "en aveugle" à
- * vitesse constante (rotation linéaire) tout le temps que dure cette phase,
- * puis un second mouvement, court et avec décélération, la fait pivoter
- * jusqu'au bon secteur dès que le résultat est connu — deux animations CSS
- * distinctes qui s'enchaînent sans à-coup (une transition CSS repart
- * toujours de la position visuelle courante, jamais de l'ancienne cible).
+ * Profil de position normalisé (0 → 1) : vitesse en s² pendant l'accélération
+ * puis en (1-u)² pendant la décélération — vitesse continue au pic, et nulle
+ * (avec une accélération nulle) à l'arrivée, pour un arrêt tout en douceur.
  */
-function RouletteWheel({
+function rollProgress(s: number): number {
+  const a = REEL_ACCEL_SHARE;
+  if (s <= 0) return 0;
+  if (s >= 1) return 1;
+  if (s < a) return a * (s / a) ** 3;
+  const u = (s - a) / (1 - a);
+  return a + (1 - a) * (1 - (1 - u) ** 3);
+}
+
+type ReelMotion = { kind: 'idle' } | { kind: 'roll'; from: number; distance: number; startedAt: number };
+
+/**
+ * Roue en arc horizontal : les cases défilent de droite à gauche le long du
+ * haut d'un grand cercle, la case au sommet (sous le repère) est la case
+ * tirée. `children` s'affiche au centre de l'arc (statut, compte à rebours).
+ *
+ * Le numéro gagnant est révélé par le serveur dès que la manche passe
+ * `spinning` (mises closes) : la roue fait alors un seul mouvement planifié —
+ * accélération, puis longue décélération jusqu'à la case gagnante — en
+ * REEL_ROLL_S secondes. La position est fonction du temps écoulé (pas
+ * intégrée image par image), donc un onglet en arrière-plan reprend
+ * directement au bon endroit.
+ */
+function RouletteReel({
   status,
   winningNumber,
+  onSettled,
+  children,
 }: {
   status: RouletteRoundStatus | undefined;
   winningNumber: number | null;
+  onSettled: () => void;
+  children?: ReactNode;
 }) {
-  const [rotation, setRotation] = useState(0);
-  const [transitionSpec, setTransitionSpec] = useState({ duration: 0, ease: 'linear' });
+  const [landed, setLanded] = useState(status === 'finished');
+  const [width, setWidth] = useState(0);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(([entry]) => setWidth(entry!.contentRect.width));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  const [offset, setOffset] = useState(() => (winningNumber !== null ? WHEEL_ORDER.indexOf(winningNumber) : 0));
+  const offsetRef = useRef(offset);
+  const motionRef = useRef<ReelMotion>({ kind: 'idle' });
+  const rafRef = useRef<number | null>(null);
+  const lastTickRef = useRef(0);
   const prevStatusRef = useRef<RouletteRoundStatus | null>(null);
+  const onSettledRef = useRef(onSettled);
+  onSettledRef.current = onSettled;
+
+  const frame = useCallback((ts: number) => {
+    const motion = motionRef.current;
+    if (motion.kind !== 'roll') {
+      rafRef.current = null;
+      return;
+    }
+    const s = (ts - motion.startedAt) / 1000 / REEL_ROLL_S;
+    const before = offsetRef.current;
+    const next = motion.from + motion.distance * rollProgress(s);
+
+    if (Math.round(next) !== Math.round(before) && ts - lastTickRef.current >= REEL_TICK_MIN_MS) {
+      lastTickRef.current = ts;
+      sound.playTick();
+    }
+    offsetRef.current = next;
+    setOffset(next);
+
+    if (s >= 1) {
+      motionRef.current = { kind: 'idle' };
+      rafRef.current = null;
+      setLanded(true);
+      onSettledRef.current();
+    } else {
+      rafRef.current = requestAnimationFrame(frame);
+    }
+  }, []);
 
   useEffect(() => {
     const prev = prevStatusRef.current;
-    if (status === 'spinning' && prev !== 'spinning') {
-      setRotation((r) => r + FAST_SPIN_TURNS * 360);
-      setTransitionSpec({ duration: FAST_SPIN_DURATION_S, ease: 'linear' });
-    } else if (status === 'finished' && prev !== 'finished' && winningNumber !== null) {
-      const index = WHEEL_ORDER.indexOf(winningNumber);
-      const pocketCenter = index * WHEEL_STEP + WHEEL_STEP / 2;
-      setRotation((r) => {
-        const currentMod = ((r % 360) + 360) % 360;
-        const delta = (((pocketCenter - currentMod) % 360) + 360) % 360;
-        return r + delta + SETTLE_EXTRA_TURNS * 360;
-      });
-      setTransitionSpec({ duration: SETTLE_DURATION_S, ease: 'cubic-bezier(0.15, 0.75, 0.25, 1)' });
-    }
     prevStatusRef.current = status ?? null;
-  }, [status, winningNumber]);
+    // Nouvelle manche : la roue est "réarmée" pour le prochain lancer.
+    if (status === 'betting') {
+      if (landed) setLanded(false);
+      return;
+    }
+    // Un seul lancer par manche : déjà en cours, ou déjà arrêtée sur la case gagnante.
+    if (winningNumber === null || motionRef.current.kind === 'roll' || landed) return;
+    if (status !== 'spinning' && status !== 'finished') return;
 
-  return (
-    <div className="relative w-56 h-56 mx-auto mb-4">
+    const target = WHEEL_ORDER.indexOf(winningNumber);
+    const from = offsetRef.current;
+    // Lancer si la manche tourne, ou si elle est passée `finished` sous nos yeux (poll
+    // qui a raté `spinning`). Arrivée sur une manche déjà terminée (chargement de page) :
+    // on se place directement sur la case, sans animation.
+    const shouldRoll = status === 'spinning' || prev === 'spinning' || prev === 'betting';
+    if (shouldRoll) {
+      motionRef.current = {
+        kind: 'roll',
+        from,
+        distance: REEL_MIN_ROLL_CELLS + mod(target - (from + REEL_MIN_ROLL_CELLS), POCKETS),
+        startedAt: performance.now(),
+      };
+      if (rafRef.current === null) rafRef.current = requestAnimationFrame(frame);
+    } else {
+      const snapped = from + mod(target - from, POCKETS);
+      offsetRef.current = snapped;
+      setOffset(snapped);
+      setLanded(true);
+      onSettledRef.current();
+    }
+  }, [status, winningNumber, frame, landed]);
+
+  useEffect(
+    () => () => {
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+    },
+    []
+  );
+
+  const radius = width * REEL_RADIUS_RATIO;
+  const cellW = width * REEL_CELL_W_RATIO;
+  const cellH = width * REEL_CELL_H_RATIO;
+  const centerX = width / 2;
+  const centerY = width * REEL_TOP_PAD_RATIO + cellH / 2 + radius;
+  const innerRadius = radius - cellH / 2 - width * 0.03;
+
+  const base = Math.round(offset);
+  const cells: ReactNode[] = [];
+  for (let i = base - 4; i <= base + 4; i++) {
+    // Index croissant = case plus à droite : la roue défile de droite à gauche.
+    const d = i - offset;
+    const angle = d * REEL_CELL_DEG;
+    if (Math.abs(angle) > 75) continue;
+    const rad = (angle * Math.PI) / 180;
+    const x = centerX + radius * Math.sin(rad);
+    const y = centerY - radius * Math.cos(rad);
+    const n = WHEEL_ORDER[mod(i, POCKETS)]!;
+    const isWinner = landed && Math.abs(d) < 0.5;
+    cells.push(
       <div
-        className="absolute inset-0 rounded-full border-4 border-zinc-700 shadow-lg"
+        key={i}
+        className={`absolute left-0 top-0 flex items-center justify-center font-black border-2 transition-[opacity,box-shadow] duration-300 ${tileClass(n)} ${cellBorderClass(n)}`}
         style={{
-          background: WHEEL_GRADIENT,
-          transform: `rotate(${rotation}deg)`,
-          transition: `transform ${transitionSpec.duration}s ${transitionSpec.ease}`,
+          width: cellW,
+          height: cellH,
+          borderRadius: width * 0.028,
+          fontSize: cellH * 0.44,
+          transform: `translate(${x - cellW / 2}px, ${y - cellH / 2}px) rotate(${angle}deg) scale(${isWinner ? 1.08 : 1})`,
+          opacity: landed && !isWinner ? 0.45 : 1,
+          boxShadow: isWinner ? '0 0 0 3px #fbbf24, 0 0 24px rgba(251,191,36,0.6)' : '0 4px 10px rgba(0,0,0,0.35)',
+          zIndex: isWinner ? 1 : 0,
         }}
       >
-        {WHEEL_ORDER.map((n, i) => {
-          const mid = i * WHEEL_STEP + WHEEL_STEP / 2;
-          const { left, top } = polarToPercent(mid, 42);
-          return (
-            <span
-              key={n}
-              className="absolute text-[9px] font-bold text-white -translate-x-1/2 -translate-y-1/2 pointer-events-none"
-              style={{ left: `${left}%`, top: `${top}%` }}
-            >
-              {n}
-            </span>
-          );
-        })}
-        <div className="absolute inset-10 rounded-full bg-zinc-950 border-2 border-zinc-700 flex items-center justify-center">
-          <span className="text-2xl">🎡</span>
-        </div>
+        {n}
       </div>
-      <div
-        className="pointer-events-none absolute left-1/2 -translate-x-1/2 -top-1 w-0 h-0 border-l-[8px] border-l-transparent border-r-[8px] border-r-transparent border-t-[14px] border-t-amber-400"
-        style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.5))' }}
-      />
+    );
+  }
+
+  return (
+    <div ref={containerRef} className="relative mx-auto mb-4 w-full max-w-xl overflow-hidden"
+      style={{
+        height: width * REEL_VIEW_H_RATIO,
+        maskImage: 'linear-gradient(to right, transparent, black 10%, black 90%, transparent)',
+        WebkitMaskImage: 'linear-gradient(to right, transparent, black 10%, black 90%, transparent)',
+      }}
+    >
+      {width > 0 && (
+        <>
+          {/* Arc intérieur + halo : matérialise le cercle sur lequel tournent les cases. */}
+          <div
+            className="pointer-events-none absolute rounded-full border-[3px] border-zinc-800"
+            style={{
+              left: centerX - innerRadius,
+              top: centerY - innerRadius,
+              width: innerRadius * 2,
+              height: innerRadius * 2,
+              background: 'radial-gradient(circle at 50% 0%, rgba(63,63,70,0.35), transparent 45%)',
+            }}
+          />
+          {cells}
+          <div
+            className="pointer-events-none absolute w-0 h-0 -translate-x-1/2 border-l-[9px] border-l-transparent border-r-[9px] border-r-transparent border-b-[12px] border-b-amber-400"
+            style={{
+              left: centerX,
+              top: centerY - innerRadius - 14,
+              filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.5))',
+            }}
+          />
+          <div
+            className="absolute inset-x-0 flex flex-col items-center justify-center text-center"
+            style={{ top: centerY - innerRadius + 8, bottom: 0 }}
+          >
+            {children}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -136,6 +287,35 @@ function RouletteWheel({
 function secondsUntil(iso: string | null, now: number): number {
   if (!iso) return 0;
   return Math.max(0, Math.ceil((new Date(iso).getTime() - now) / 1000));
+}
+
+const RECENT_NUMBERS_LIMIT = 20;
+
+/** Bandeau des derniers numéros tirés, le plus récent à gauche (animé à son arrivée), fondu à droite. */
+function RecentNumbersStrip({ numbers }: { numbers: RouletteRecentNumber[] }) {
+  if (numbers.length === 0) return null;
+  return (
+    <div className="mb-3">
+      <p className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wide mb-1.5">Derniers tirages</p>
+      <div
+        className="flex items-center gap-1.5 overflow-hidden"
+        style={{
+          maskImage: 'linear-gradient(to right, black 80%, transparent)',
+          WebkitMaskImage: 'linear-gradient(to right, black 80%, transparent)',
+        }}
+      >
+        {numbers.map((r, i) => (
+          <span
+            key={r.id}
+            className={`flex-shrink-0 flex items-center justify-center w-8 h-8 rounded-md text-xs font-bold tabular-nums border ${tileClass(r.winning_number)} ${cellBorderClass(r.winning_number)}`}
+            style={i === 0 ? { animation: 'popIn 0.4s ease-out' } : undefined}
+          >
+            {r.winning_number}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 type Mode = 'simple' | 'advanced';
@@ -215,8 +395,41 @@ export default function Roulette() {
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
   const [resultPopup, setResultPopup] = useState<{ key: number; amount: number } | null>(null);
+  const [reelSettled, setReelSettled] = useState(true);
 
   const prevStatusRef = useRef<RouletteRoundStatus | null>(null);
+  const [recentNumbers, setRecentNumbers] = useState<RouletteRecentNumber[]>([]);
+
+  // Le résultat (son + popup + bandeau des derniers tirages) attend deux choses, dans n'importe
+  // quel ordre : l'arrêt de la roue (animation locale) et le passage `finished` côté serveur
+  // (gains réglés) — la roue s'arrête en général juste avant la fin de la phase serveur.
+  const pendingResultRef = useRef<{ id: number; winning_number: number; net: number | null } | null>(null);
+  const reelSettledRef = useRef(true);
+
+  const revealPendingResult = useCallback(() => {
+    const pending = pendingResultRef.current;
+    if (!pending || !reelSettledRef.current) return;
+    pendingResultRef.current = null;
+    const { net, ...latest } = pending;
+    setRecentNumbers((prev) =>
+      prev.some((r) => r.id === latest.id) ? prev : [latest, ...prev].slice(0, RECENT_NUMBERS_LIMIT)
+    );
+    if (net === null) return;
+    if (net > 0) sound.playWin();
+    else sound.playLose();
+    setResultPopup({ key: Date.now(), amount: net });
+    setTimeout(() => setResultPopup(null), 1800);
+  }, []);
+
+  const handleReelSettled = useCallback(() => {
+    reelSettledRef.current = true;
+    setReelSettled(true);
+    revealPendingResult();
+  }, [revealPendingResult]);
+
+  useEffect(() => {
+    rouletteApi.getRecentNumbers(RECENT_NUMBERS_LIMIT).then(setRecentNumbers).catch(() => {});
+  }, []);
 
   function setModeAndPersist(next: Mode) {
     setMode(next);
@@ -279,18 +492,20 @@ export default function Roulette() {
     const prevStatus = prevStatusRef.current;
 
     if (round.status === 'spinning' && prevStatus !== 'spinning') {
-      sound.playTick();
+      reelSettledRef.current = false;
+      setReelSettled(false);
     }
 
     if (round.status === 'finished' && prevStatus !== 'finished') {
       const myBets = round.bets.filter((b) => b.user_id === user?.id);
-      if (myBets.length > 0) {
-        const net = myBets.reduce((sum, b) => sum + (b.payout ?? 0) - b.amount, 0);
-        if (net > 0) sound.playWin();
-        else sound.playLose();
-        setResultPopup({ key: Date.now(), amount: net });
-        setTimeout(() => setResultPopup(null), 1800);
+      if (round.winning_number !== null) {
+        pendingResultRef.current = {
+          id: round.id,
+          winning_number: round.winning_number,
+          net: myBets.length > 0 ? myBets.reduce((sum, b) => sum + (b.payout ?? 0) - b.amount, 0) : null,
+        };
       }
+      revealPendingResult();
       loadHistory();
       gamblingApi.getStatus().then(setStatus).catch(() => {});
     }
@@ -354,9 +569,9 @@ export default function Roulette() {
   function statusLabel(): string {
     if (!round) return '';
     if (round.status === 'betting') {
-      return round.starts_at ? `Mises ouvertes — ${secondsLeft}s` : 'Pose la première mise pour lancer le tour';
+      return round.starts_at ? 'Mises ouvertes' : 'Pose la première mise pour lancer le tour';
     }
-    if (round.status === 'spinning') return 'La roue tourne…';
+    if (round.status === 'spinning' || !reelSettled) return 'La roue tourne…';
     return 'Résultat';
   }
 
@@ -391,28 +606,38 @@ export default function Roulette() {
             <p className="text-zinc-500 text-center py-8">Chargement…</p>
           ) : (
             <>
-              <div className="relative text-center mb-2">
-                <p className="text-sm font-medium text-zinc-300">{statusLabel()}</p>
-                {round?.status === 'finished' && round.winning_number !== null && (
-                  <p className="text-xs text-zinc-500 mt-0.5">
-                    Numéro gagnant :{' '}
-                    <span className={`font-bold px-1.5 py-0.5 rounded ${tileClass(round.winning_number)}`}>
-                      {round.winning_number}
-                    </span>
-                  </p>
-                )}
-                {resultPopup && (
-                  <p
-                    key={resultPopup.key}
-                    className={`absolute left-1/2 -translate-x-1/2 -top-2 text-2xl font-black ${resultPopup.amount > 0 ? 'text-emerald-400' : 'text-red-400'}`}
-                    style={{ animation: 'floatUp 1.8s ease-out forwards' }}
-                  >
-                    {resultPopup.amount > 0 ? `+${resultPopup.amount}` : resultPopup.amount} SP
-                  </p>
-                )}
-              </div>
+              <RecentNumbersStrip numbers={recentNumbers} />
 
-              <RouletteWheel status={round?.status} winningNumber={round?.winning_number ?? null} />
+              <RouletteReel
+                status={round?.status}
+                winningNumber={round?.winning_number ?? null}
+                onSettled={handleReelSettled}
+              >
+                <div className="relative">
+                  <p className="text-xs sm:text-sm text-zinc-400">{statusLabel()}</p>
+                  {round?.status === 'betting' && round.starts_at && (
+                    <p className="text-4xl sm:text-5xl font-black text-zinc-50 tabular-nums mt-1">
+                      00:{String(secondsLeft).padStart(2, '0')}
+                    </p>
+                  )}
+                  {round?.status === 'finished' && reelSettled && round.winning_number !== null && (
+                    <p className="mt-1.5">
+                      <span className={`inline-block text-3xl sm:text-4xl font-black px-3 py-0.5 rounded-lg ${tileClass(round.winning_number)}`}>
+                        {round.winning_number}
+                      </span>
+                    </p>
+                  )}
+                  {resultPopup && (
+                    <p
+                      key={resultPopup.key}
+                      className={`absolute left-1/2 -translate-x-1/2 -top-8 text-2xl font-black whitespace-nowrap ${resultPopup.amount > 0 ? 'text-emerald-400' : 'text-red-400'}`}
+                      style={{ animation: 'floatUp 1.8s ease-out forwards' }}
+                    >
+                      {resultPopup.amount > 0 ? `+${resultPopup.amount}` : resultPopup.amount} SP
+                    </p>
+                  )}
+                </div>
+              </RouletteReel>
 
               {uniqueBettors.length > 0 && (
                 <div className="flex items-center gap-2 flex-wrap justify-center mb-4 text-xs text-zinc-500">

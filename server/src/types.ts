@@ -1117,7 +1117,7 @@ export type RouletteRoundStatus = 'betting' | 'spinning' | 'finished';
  * / crash_rounds) : une seule ligne "vivante" à la fois par saison, l'état
  * avance "à la lecture" (betting -> spinning -> finished), sans cron ni
  * websocket. `winning_number` est tiré à la création mais masqué (`null`)
- * tant que `status !== 'finished'` — voir toPublicView côté service.
+ * tant que les mises sont ouvertes (`betting`) — voir toPublicView côté service.
  */
 export interface RouletteRoundRow {
   id: number;
@@ -1157,6 +1157,12 @@ export interface RouletteActionResult {
 }
 
 /** Une ligne d'historique = un pari d'une manche déjà résolue, avec le numéro gagnant de cette manche. */
+/** Numéro tiré d'une manche terminée — bandeau des derniers résultats. */
+export interface RouletteRecentNumber {
+  id: number;
+  winning_number: number;
+}
+
 export interface RouletteHistoryEntry extends RouletteBetEntry {
   winning_number: number;
 }

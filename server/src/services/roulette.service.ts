@@ -9,6 +9,7 @@ import type {
   RouletteBetEntry,
   RouletteBetType,
   RouletteHistoryEntry,
+  RouletteRecentNumber,
   RoulettePayoutInfo,
   RouletteActionResult,
   RouletteRoundPublicView,
@@ -23,9 +24,9 @@ import type {
 export const ROULETTE_RTP_PERCENT = 97;
 
 /** Fenêtre de mise commune à tous les joueurs, déclenchée par la 1ère mise (même principe que Blackjack : une table vide ne fait pas tourner de compte à rebours). */
-const BETTING_WINDOW_SECONDS = 20;
+const BETTING_WINDOW_SECONDS = 10;
 /** Durée de l'animation de la roue, identique pour tous les joueurs (spin_ends_at est un horodatage serveur, pas un délai client). */
-const SPIN_DURATION_SECONDS = 5;
+const SPIN_DURATION_SECONDS = 4;
 /** Délai pendant lequel une manche `finished` reste affichée avant qu'une nouvelle `betting` la remplace. */
 const RESULTS_DISPLAY_SECONDS = 6;
 
@@ -163,7 +164,9 @@ function resolveBetPayout(bet: { type: RouletteBetType; number: number | null; a
 function toPublicView(round: RouletteRoundRow, bets: RouletteBetEntry[]): RouletteRoundPublicView {
   return {
     ...round,
-    winning_number: round.status === 'finished' ? round.winning_number : null,
+    // Tiré dès la création de la manche : caché tant que les mises sont ouvertes, révélé dès `spinning`
+    // (placeBet refuse toute mise hors `betting` sous verrou) pour que la roue vise la bonne case dès son lancement.
+    winning_number: round.status === 'betting' ? null : round.winning_number,
     bets,
   };
 }
@@ -431,4 +434,13 @@ export async function listHistory(
   );
   const equippedByUser = await cosmeticsService.getEquippedForUsers(rows.map((r) => r.user_id));
   return rows.map((row) => ({ ...row, equipped_cosmetics: equippedByUser.get(row.user_id) ?? [] }));
+}
+
+/** Derniers numéros tirés (manches `finished`, toutes saisons), du plus récent au plus ancien — bandeau au-dessus de la roue. */
+export async function listRecentNumbers(limit: number): Promise<RouletteRecentNumber[]> {
+  const { rows } = await pool.query<RouletteRecentNumber>(
+    `SELECT id, winning_number FROM roulette_rounds WHERE status = 'finished' ORDER BY id DESC LIMIT $1`,
+    [limit]
+  );
+  return rows;
 }

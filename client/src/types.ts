@@ -1068,6 +1068,12 @@ export interface RouletteActionResult {
   enabled: boolean;
 }
 
+/** Numéro tiré d'une manche terminée — bandeau des derniers résultats. */
+export interface RouletteRecentNumber {
+  id: number;
+  winning_number: number;
+}
+
 export interface RouletteHistoryEntry extends RouletteBetEntry {
   winning_number: number;
 }
