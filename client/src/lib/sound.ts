@@ -98,6 +98,15 @@ export function playChip(): void {
   tone(620, now + 0.04, 0.08, 'triangle', 0.07);
 }
 
+/** Temps du compte à rebours pierre-feuille-ciseaux — `accent` pour le dernier ("Chifoumi !"). */
+export function playRpsBeat(accent = false): void {
+  const audio = getContext();
+  if (!audio) return;
+  const now = audio.currentTime;
+  tone(accent ? 520 : 260, now, accent ? 0.16 : 0.09, 'triangle', accent ? 0.14 : 0.1);
+  tone(accent ? 130 : 110, now, 0.12, 'sine', 0.12);
+}
+
 /** Petit carillon discret quand c'est (enfin) le tour du joueur local. */
 export function playYourTurn(): void {
   const audio = getContext();

@@ -11,6 +11,8 @@ import type {
   ChallengeStatus,
   ChallengeType,
   CoinSide,
+  RpsMove,
+  RpsRound,
 } from '../types.js';
 
 export async function countChallengesToday(userId: number): Promise<number> {
@@ -252,78 +254,195 @@ export async function resolveChallenge(
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-
-    const { rows } = await client.query<ChallengeRow>(
-      'SELECT * FROM challenges WHERE id = $1 FOR UPDATE',
-      [challengeId]
-    );
-    const challenge = rows[0];
-    if (!challenge) {
-      throw Object.assign(new Error('Défi introuvable'), { status: 404 });
-    }
-    if (challenge.status === 'resolved') {
-      throw Object.assign(new Error('Ce défi est déjà résolu'), { status: 400 });
-    }
-    if (challenge.status !== 'accepted') {
-      throw Object.assign(new Error('Ce défi ne peut pas être résolu dans son état actuel'), {
-        status: 400,
-      });
-    }
-
-    const { rows: participants } = await client.query<ChallengeParticipantRow>(
-      `SELECT * FROM challenge_participants WHERE challenge_id = $1 AND status = 'accepted' FOR UPDATE`,
-      [challengeId]
-    );
-    if (participants.length < 2) {
-      throw Object.assign(new Error('Il faut au moins deux participants pour résoudre un défi'), {
-        status: 400,
-      });
-    }
-    const winnerParticipant = participants.find((p) => p.user_id === winnerId);
-    if (!winnerParticipant) {
-      throw Object.assign(
-        new Error('Le gagnant doit être un participant ayant accepté le défi'),
-        { status: 400 }
-      );
-    }
-
-    const losers = participants.filter((p) => p.user_id !== winnerId);
-    for (const loser of losers) {
-      await spService.debitSP({
-        userId: loser.user_id,
-        amount: challenge.wager_amount,
-        type: 'challenge_loss',
-        seasonId: challenge.season_id,
-        relatedId: challenge.id,
-        note: resolvedByAdmin ? 'Défi perdu (arbitrage MSP)' : 'Défi perdu',
-        client,
-      });
-    }
-    await spService.creditSP({
-      userId: winnerId,
-      amount: challenge.wager_amount * losers.length,
-      type: 'challenge_win',
-      seasonId: challenge.season_id,
-      relatedId: challenge.id,
-      note: resolvedByAdmin ? 'Défi gagné (arbitrage MSP)' : 'Défi gagné',
+    const resolved = await resolveChallengeWithClient(
       client,
-    });
-
-    const { rows: updatedRows } = await client.query<ChallengeRow>(
-      `UPDATE challenges
-       SET status = 'resolved', winner_id = $1, resolved_at = NOW(), result_note = COALESCE($2, result_note)
-       WHERE id = $3
-       RETURNING *`,
-      [winnerId, resultNote ?? null, challengeId]
+      challengeId,
+      winnerId,
+      resolvedByAdmin,
+      resultNote
     );
-
     await client.query('COMMIT');
-    return updatedRows[0] as ChallengeRow;
+    return resolved;
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;
   } finally {
     client.release();
+  }
+}
+
+/** Cœur de resolveChallenge, à composer dans une transaction déjà ouverte par l'appelant. */
+async function resolveChallengeWithClient(
+  client: PoolClient,
+  challengeId: number,
+  winnerId: number,
+  resolvedByAdmin: boolean,
+  resultNote?: string | null
+): Promise<ChallengeRow> {
+  const { rows } = await client.query<ChallengeRow>(
+    'SELECT * FROM challenges WHERE id = $1 FOR UPDATE',
+    [challengeId]
+  );
+  const challenge = rows[0];
+  if (!challenge) {
+    throw Object.assign(new Error('Défi introuvable'), { status: 404 });
+  }
+  if (challenge.status === 'resolved') {
+    throw Object.assign(new Error('Ce défi est déjà résolu'), { status: 400 });
+  }
+  if (challenge.status !== 'accepted') {
+    throw Object.assign(new Error('Ce défi ne peut pas être résolu dans son état actuel'), {
+      status: 400,
+    });
+  }
+
+  const { rows: participants } = await client.query<ChallengeParticipantRow>(
+    `SELECT * FROM challenge_participants WHERE challenge_id = $1 AND status = 'accepted' FOR UPDATE`,
+    [challengeId]
+  );
+  if (participants.length < 2) {
+    throw Object.assign(new Error('Il faut au moins deux participants pour résoudre un défi'), {
+      status: 400,
+    });
+  }
+  const winnerParticipant = participants.find((p) => p.user_id === winnerId);
+  if (!winnerParticipant) {
+    throw Object.assign(
+      new Error('Le gagnant doit être un participant ayant accepté le défi'),
+      { status: 400 }
+    );
+  }
+
+  const losers = participants.filter((p) => p.user_id !== winnerId);
+  for (const loser of losers) {
+    await spService.debitSP({
+      userId: loser.user_id,
+      amount: challenge.wager_amount,
+      type: 'challenge_loss',
+      seasonId: challenge.season_id,
+      relatedId: challenge.id,
+      note: resolvedByAdmin ? 'Défi perdu (arbitrage MSP)' : 'Défi perdu',
+      client,
+    });
+  }
+  await spService.creditSP({
+    userId: winnerId,
+    amount: challenge.wager_amount * losers.length,
+    type: 'challenge_win',
+    seasonId: challenge.season_id,
+    relatedId: challenge.id,
+    note: resolvedByAdmin ? 'Défi gagné (arbitrage MSP)' : 'Défi gagné',
+    client,
+  });
+
+  const { rows: updatedRows } = await client.query<ChallengeRow>(
+    `UPDATE challenges
+     SET status = 'resolved', winner_id = $1, resolved_at = NOW(), result_note = COALESCE($2, result_note)
+     WHERE id = $3
+     RETURNING *`,
+    [winnerId, resultNote ?? null, challengeId]
+  );
+
+  return updatedRows[0] as ChallengeRow;
+}
+
+const RPS_BEATS: Record<RpsMove, RpsMove> = { rock: 'scissors', paper: 'rock', scissors: 'paper' };
+
+/** Manches gagnées nécessaires pour remporter la partie (en 3 manches gagnantes max). */
+export const RPS_WINS_NEEDED = 2;
+
+export type RpsRoundOutcome =
+  | { outcome: 'waiting' }
+  | { outcome: 'round'; winnerId: number | null }
+  | { outcome: 'resolved'; winnerId: number };
+
+/**
+ * Pierre-feuille-ciseaux : joue la manche en cours si les deux participants ont
+ * posé leur coup. La manche est archivée dans rps_rounds et les coups remis à
+ * NULL pour la suivante. La partie se joue en 3 manches : le premier à
+ * RPS_WINS_NEEDED manches gagnées l'emporte — une égalité ne compte pour
+ * personne et se rejoue. Dès qu'un joueur atteint ce seuil, le défi est résolu
+ * dans la même transaction (si la résolution échoue, rien n'est modifié — le
+ * MSP arbitre). Le verrou sur la ligne du défi sérialise deux coups simultanés.
+ */
+export async function playRpsRoundIfReady(challengeId: number): Promise<RpsRoundOutcome> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query<ChallengeRow>(
+      'SELECT * FROM challenges WHERE id = $1 FOR UPDATE',
+      [challengeId]
+    );
+    const challenge = rows[0];
+    const { rows: participants } = await client.query<ChallengeParticipantRow>(
+      `SELECT * FROM challenge_participants WHERE challenge_id = $1 AND status = 'accepted'`,
+      [challengeId]
+    );
+    const [a, b] = participants;
+    if (
+      !challenge ||
+      challenge.type !== 'rps' ||
+      challenge.status !== 'accepted' ||
+      participants.length !== 2 ||
+      !a?.rps_move ||
+      !b?.rps_move
+    ) {
+      await client.query('COMMIT');
+      return { outcome: 'waiting' };
+    }
+
+    let winnerId: number | null = null;
+    if (RPS_BEATS[a.rps_move] === b.rps_move) winnerId = a.user_id;
+    else if (RPS_BEATS[b.rps_move] === a.rps_move) winnerId = b.user_id;
+
+    const round: RpsRound = {
+      moves: { [a.user_id]: a.rps_move, [b.user_id]: b.rps_move },
+      winner_id: winnerId,
+    };
+    await client.query(`UPDATE challenges SET rps_rounds = rps_rounds || $1::jsonb WHERE id = $2`, [
+      JSON.stringify([round]),
+      challengeId,
+    ]);
+    await client.query(`UPDATE challenge_participants SET rps_move = NULL WHERE challenge_id = $1`, [
+      challengeId,
+    ]);
+
+    const roundsWon =
+      winnerId === null
+        ? 0
+        : [...(challenge.rps_rounds ?? []), round].filter((r) => r.winner_id === winnerId).length;
+    if (winnerId !== null && roundsWon >= RPS_WINS_NEEDED) {
+      await resolveChallengeWithClient(client, challengeId, winnerId, false, 'Pierre-feuille-ciseaux');
+      await client.query('COMMIT');
+      return { outcome: 'resolved', winnerId };
+    }
+    await client.query('COMMIT');
+    return { outcome: 'round', winnerId };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/** Pose le coup d'un participant pour la manche en cours (défi déjà accepté par les deux). */
+export async function submitRpsMove(
+  challengeId: number,
+  userId: number,
+  move: RpsMove
+): Promise<void> {
+  const { rowCount } = await pool.query(
+    `UPDATE challenge_participants p SET rps_move = $1
+     FROM challenges c
+     WHERE c.id = p.challenge_id AND c.id = $2 AND c.type = 'rps' AND c.status = 'accepted'
+       AND p.user_id = $3 AND p.status = 'accepted' AND p.rps_move IS NULL`,
+    [move, challengeId, userId]
+  );
+  if (!rowCount) {
+    throw Object.assign(new Error("Coup déjà joué, ou ce défi n'attend pas de coup de ta part"), {
+      status: 400,
+    });
   }
 }
 

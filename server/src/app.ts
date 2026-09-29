@@ -23,6 +23,7 @@ import cosmeticsRoutes from './routes/cosmetics.routes.js';
 import auctionsRoutes from './routes/auctions.routes.js';
 import suggestionsRoutes from './routes/suggestions.routes.js';
 import chatRoutes from './routes/chat.routes.js';
+import uploadsRoutes from './routes/uploads.routes.js';
 import { UPLOADS_DIR } from './middleware/upload.js';
 import { notFoundHandler, errorHandler } from './middleware/errorHandler.js';
 
@@ -38,7 +39,20 @@ export function createApp(): Express {
   app.use(express.json());
   app.use(cookieParser());
 
-  app.use('/uploads', express.static(UPLOADS_DIR));
+  // CSP stricte : un SVG uploadé ouvert directement (navigation, pas via <img>)
+  // ne doit jamais pouvoir exécuter de script sur l'origine de l'app.
+  app.use(
+    '/uploads',
+    express.static(UPLOADS_DIR, {
+      setHeaders: (res) => {
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        res.setHeader(
+          'Content-Security-Policy',
+          "default-src 'none'; img-src data:; style-src 'unsafe-inline'; sandbox"
+        );
+      },
+    })
+  );
 
   // `now` (epoch ms) sert de référence pour la synchronisation d'horloge côté
   // client (voir client/src/lib/serverClock.ts) — endpoint public (pas de
@@ -67,6 +81,7 @@ export function createApp(): Express {
   app.use('/api/auctions', auctionsRoutes);
   app.use('/api/suggestions', suggestionsRoutes);
   app.use('/api/chat', chatRoutes);
+  app.use('/api/uploads', uploadsRoutes);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

@@ -113,7 +113,8 @@ season_id INT REFERENCES seasons(id),
 challenger_id INT REFERENCES users(id),  -- créateur du défi (toujours "accepted" dans challenge_participants)
 wager_amount INT NOT NULL,               -- mise par joueur (identique pour tous les participants)
 description TEXT,                        -- note libre du créateur
-type VARCHAR(20) NOT NULL DEFAULT 'custom',  -- 'custom' | 'coin_flip' (migration 039), pas de CHECK — même logique que event_sessions.game_type
+type VARCHAR(20) NOT NULL DEFAULT 'custom',  -- 'custom' | 'coin_flip' (migration 039) | 'rps' (migration 070), pas de CHECK — même logique que event_sessions.game_type
+rps_rounds JSONB NOT NULL DEFAULT '[]',  -- (070) manches de pierre-feuille-ciseaux jouées : [{ moves: { "<user_id>": 'rock'|'paper'|'scissors' }, winner_id }]
 status VARCHAR(20) NOT NULL DEFAULT 'pending',
   -- 'pending' | 'accepted' | 'declined' | 'expired' | 'resolved' | 'cancelled'
 winner_id INT REFERENCES users(id),   -- NULL jusqu'à résolution
@@ -134,6 +135,8 @@ user_id INT REFERENCES users(id),
 is_challenger BOOLEAN NOT NULL DEFAULT FALSE,
 status VARCHAR(20) NOT NULL DEFAULT 'pending',  -- 'pending' | 'accepted' | 'declined'
 reported_winner_id INT REFERENCES users(id),    -- déclaration individuelle du gagnant
+coin_side VARCHAR(10),                           -- (040) 'pile' | 'face', type coin_flip uniquement
+rps_move VARCHAR(10),                            -- (070) coup de la manche en cours, type rps uniquement — masqué aux autres joueurs par le contrôleur, remis à NULL après chaque manche
 responded_at TIMESTAMPTZ,
 created_at TIMESTAMPTZ DEFAULT NOW(),
 UNIQUE (challenge_id, user_id)
@@ -460,6 +463,7 @@ Un défi peut réunir **plusieurs adversaires au sein d'un même défi** (un seu
 #### Types de défi (`challenges.type`, migration 039)
 - **`custom`** (défaut, comportement historique décrit ci-dessous) : le résultat est déclaré manuellement par les participants (consensus) ou arbitré par le MSP.
 - **`coin_flip`** (pile ou face) : se joue exclusivement à **deux** (un seul adversaire invité, pas de N joueurs — un vrai pile ou face n'a que deux faces). Dès que l'adversaire accepte, le défi ne passe jamais visiblement par l'état `accepted` : le serveur tire immédiatement un gagnant au hasard (`Math.random()`, jamais côté client — même principe que le tirage pondéré du gambling) et résout le défi dans la même requête, en réutilisant `resolveChallenge` (agnostique du type). Aucune déclaration manuelle possible pour ce type — le contrôleur ne propose pas l'UI de report. L'expiration à 24h ne peut jamais faire basculer un `coin_flip` vers `accepted` (avec un seul adversaire, l'issue est soit une réponse explicite soit un refus/expiration vers `declined`), donc le seul point de déclenchement du tirage est `acceptChallenge`.
+- **`rps`** (pierre-feuille-ciseaux, migration 070) : à **deux** uniquement, comme `coin_flip`. L'acceptation est un simple accept/decline (aucun coup choisi) — décision explicite de l'utilisateur : **les coups ne se jouent qu'une fois que les deux ont accepté** (défi `accepted`), via `POST /:id/rps-move`. Partie **en 3 manches** : le premier à `RPS_WINS_NEEDED` (2) manches gagnées remporte le pot ; une égalité ne compte pour personne et se rejoue. Dès que les deux coups d'une manche sont posés, le serveur la joue (`playRpsRoundIfReady`) : manche archivée dans `challenges.rps_rounds`, coups remis à NULL, et résolution du défi dans la même transaction (`resolveChallengeWithClient`) si un joueur atteint 2 manches. **Confidentialité** : le coup de la manche en cours n'est renvoyé qu'à son auteur (`maskRpsMoves` dans le contrôleur, appliqué à toutes les réponses, MSP compris — il peut lui-même jouer) ; les manches terminées sont publiques. Pas de déclaration manuelle (`/report` refusé hors `custom`) ; le MSP peut toujours arbitrer/annuler une partie bloquée.
 
 #### Flux :
 1. Joueur A crée un défi vers un ou plusieurs adversaires, avec une mise (identique pour tout le monde) et une description libre optionnelle. Un défi = une ligne `challenges` + une ligne `challenge_participants` par personne (challenger inclus, automatiquement `accepted` — il n'a pas besoin d'accepter son propre défi).
@@ -755,6 +759,7 @@ Ajoutées en cours de projet, à la demande de l'utilisateur, non prévues dans 
 - Abonnement mensuel via Ko-fi (financement des serveurs) avec caisse gambling réservée aux abonnés (voir section 8)
 - Page Suggestions : proposition de features/bugs par les joueurs, vote façon Reddit, commentaires, clôture/suppression par le MSP (voir section 9)
 - Défis "Pile ou face" (`challenges.type = 'coin_flip'`) : variante 1v1 des défis SP Wager où le gagnant est tiré au sort par le serveur dès que l'adversaire accepte, sans déclaration manuelle ni arbitrage nécessaire (voir section 4)
+- Défis "Pierre-feuille-ciseaux" (`challenges.type = 'rps'`) : variante 1v1 en 3 manches (premier à 2 manches gagnées), coups cachés choisis une fois le défi accepté, le serveur départage et les égalités se rejouent (voir section 4)
 - Tournois (`game_type = 'tournament'`) : arbre à élimination simple/double ou round-robin, équipes tag+logo générées (serpentin pondéré par rating) ou composées à la main, dotation par rang distribuée automatiquement, annonces du MSP (voir section 10)
 
 ---
@@ -781,6 +786,7 @@ Ajoutées en cours de projet, à la demande de l'utilisateur, non prévues dans 
 - Les valeurs `admin_config` sont relues depuis la BDD à chaque requête sensible (pas de cache)
 - Tous les timestamps en **UTC**, sauf les frontières de journée du bonus quotidien (section 3) et du budget gambling journalier (section 7), qui utilisent l'heure locale Europe/Paris (`server/src/utils/localDate.ts`) — exception délibérée, pas un oubli
 - Les dates de connexion comparées en date locale Europe/Paris (pas datetime) pour le bonus quotidien
+- **Images MSP** (caisses, gains, cosmétiques/bannières…) : chaque champ `image_url` accepte soit un lien externe, soit un fichier uploadé via `POST /api/uploads/image` (MSP uniquement, 5 Mo max, PNG/JPEG/WEBP/GIF/SVG, stocké dans `server/uploads/images`). Le chemin relatif `/uploads/images/...` est stocké tel quel en BDD et rendu directement dans les `<img>` (proxy `/uploads` : Caddy en prod, Vite en dev). Côté client, utiliser le composant `ImageUrlInput` pour tout nouveau champ image MSP. `/uploads` est servi avec une CSP stricte (`sandbox`) pour neutraliser les scripts d'un SVG ouvert directement.
 - ⚠️ Le SQL brut (pas d'ORM) n'est pas vérifié par `tsc` : après tout changement de schéma (colonne renommée/supprimée), grep le nom de colonne dans `server/src/` pour rattraper les requêtes qui le référencent encore ailleurs que dans le service concerné — `tsc --noEmit` propre ne garantit rien ici.
 
 ---
