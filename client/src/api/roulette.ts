@@ -4,6 +4,7 @@ import type {
   RouletteBet,
   RoulettePayoutInfo,
   RouletteHistoryEntry,
+  RouletteRecentNumber,
 } from '../types.js';
 
 export const getCurrent = () => apiClient.get<RouletteActionResult>('/api/roulette/current');
@@ -20,3 +21,6 @@ export const getHistory = (limit?: number, mine?: boolean) => {
   const qs = params.toString();
   return apiClient.get<RouletteHistoryEntry[]>(`/api/roulette/history${qs ? `?${qs}` : ''}`);
 };
+
+export const getRecentNumbers = (limit?: number) =>
+  apiClient.get<RouletteRecentNumber[]>(`/api/roulette/recent-numbers${limit ? `?limit=${limit}` : ''}`);

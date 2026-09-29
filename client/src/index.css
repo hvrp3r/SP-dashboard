@@ -450,13 +450,3 @@ body {
   color: transparent;
   animation: cosmeticShimmerSweep 2.4s linear infinite;
 }
-
-/* Rotation indéterminée pendant la phase "spinning" de la roulette (le
-   numéro gagnant reste caché jusqu'à la résolution, donc impossible de viser
-   un angle précis avant) — voir RouletteWheel dans Roulette.tsx, qui bascule
-   sur une simple transition CSS pour l'arrêt final une fois le résultat connu. */
-@keyframes wheelSpin {
-  to {
-    transform: rotate(360deg);
-  }
-}

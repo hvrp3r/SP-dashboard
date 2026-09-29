@@ -37,3 +37,9 @@ export async function listHistory(req: Request, res: Response): Promise<void> {
   const history = await rouletteService.listHistory(limit, mine ? req.user!.id : null);
   res.json(history);
 }
+
+export async function listRecentNumbers(req: Request, res: Response): Promise<void> {
+  const limitRaw = Number(req.query.limit);
+  const limit = Number.isInteger(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 50) : 20;
+  res.json(await rouletteService.listRecentNumbers(limit));
+}
