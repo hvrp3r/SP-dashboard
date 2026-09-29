@@ -569,9 +569,14 @@ export interface GamblingCrateDetail extends GamblingCrateEntry {
   rewards: GamblingCrateRewardView[];
 }
 
-export interface GamblingOpenResult {
+export interface GamblingOpenOutcome {
   reward: GamblingCrateReward;
   cosmetic: Cosmetic | null;
+}
+
+export interface GamblingOpenResult {
+  /** Une entrée par caisse ouverte (multi-open : jusqu'à 5 d'un coup). */
+  results: GamblingOpenOutcome[];
   balance: number;
   spentToday: number;
   maxWagerPerDay: number;

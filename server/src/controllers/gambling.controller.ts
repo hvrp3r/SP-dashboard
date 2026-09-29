@@ -466,30 +466,45 @@ export async function openCrate(req: Request<{ id: string }>, res: Response): Pr
     return;
   }
 
+  // Multi-open : `count` ouvertures simultanées de la même caisse (défaut 1).
+  const rawCount = (req.body as { count?: unknown } | undefined)?.count;
+  const count = rawCount === undefined ? 1 : Number(rawCount);
+  if (!Number.isInteger(count) || count < 1 || count > gamblingService.MAX_OPENS_PER_REQUEST) {
+    res.status(400).json({
+      error: `Nombre d'ouvertures invalide (1 à ${gamblingService.MAX_OPENS_PER_REQUEST})`,
+    });
+    return;
+  }
+
   const activeSeason = await seasonService.getActiveSeason();
 
   let result;
   try {
-    result = await gamblingService.openCrate(req.user!.id, crateId, activeSeason?.id ?? null);
+    result = await gamblingService.openCrate(
+      req.user!.id,
+      crateId,
+      activeSeason?.id ?? null,
+      count
+    );
   } catch (err) {
     const status = (err as { status?: number }).status ?? 500;
     res.status(status).json({ error: err instanceof Error ? err.message : 'Erreur serveur' });
     return;
   }
 
-  if (result.reward.type === 'cosmetic') {
+  for (const r of result.results) {
+    if (r.reward.type !== 'cosmetic') continue;
     await notificationService.createNotification({
       userId: req.user!.id,
       type: 'cosmetic_earned',
-      message: `Tu as gagné le cosmétique « ${result.reward.title} » !`,
+      message: `Tu as gagné le cosmétique « ${r.reward.title} » !`,
       link: '/cosmetiques',
     });
   }
 
   const maxWagerPerDay = await configService.getConfigNumber('gambling_max_wager_per_day', 50);
   res.status(201).json({
-    reward: result.reward,
-    cosmetic: result.cosmetic,
+    results: result.results.map((r) => ({ reward: r.reward, cosmetic: r.cosmetic })),
     balance: result.balance,
     spentToday: result.spentToday,
     maxWagerPerDay,

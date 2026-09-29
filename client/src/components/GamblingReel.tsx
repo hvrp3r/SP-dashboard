@@ -135,6 +135,9 @@ interface GamblingReelProps {
   /** Poids de tirage par rareté, pour peupler le rouleau de figuration —
    * `null` tant que non chargé, retombe alors sur un tirage uniforme. */
   rarityWeights: Record<CosmeticRarity, number> | null;
+  /** Multi-open : seul un rouleau joue les tics/la révélation, les autres
+   * tournent en silence pour ne pas superposer N fois les mêmes sons. */
+  silent?: boolean;
 }
 
 function offsetForIndex(index: number): number {
@@ -149,6 +152,7 @@ export default function GamblingReel({
   cosmeticCatalog,
   winnerCosmetic,
   rarityWeights,
+  silent = false,
 }: GamblingReelProps) {
   const [items, setItems] = useState<ReelItem[]>([]);
   const [landed, setLanded] = useState(false);
@@ -197,7 +201,7 @@ export default function GamblingReel({
       const currentIndex = Math.min(TOTAL_WINNING_INDEX, Math.floor(currentOffset / ITEM_WIDTH));
       if (currentIndex > lastCrossedIndex) {
         for (let i = lastCrossedIndex + 1; i <= currentIndex; i++) {
-          if (i < TOTAL_WINNING_INDEX) playTick();
+          if (i < TOTAL_WINNING_INDEX && !silent) playTick();
         }
         lastCrossedIndex = currentIndex;
       }
@@ -206,7 +210,7 @@ export default function GamblingReel({
         rafId = requestAnimationFrame(step);
       } else {
         setLanded(true);
-        playReveal(winnerRarity);
+        if (!silent) playReveal(winnerRarity);
         onLanded();
       }
     };

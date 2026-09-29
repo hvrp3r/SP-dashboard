@@ -65,8 +65,8 @@ export const updateCrate = (
 
 export const removeCrate = (id: number) => apiClient.delete<void>(`/api/gambling/crates/${id}`);
 
-export const openCrate = (crateId: number) =>
-  apiClient.post<GamblingOpenResult>(`/api/gambling/crates/${crateId}/open`);
+export const openCrate = (crateId: number, count = 1) =>
+  apiClient.post<GamblingOpenResult>(`/api/gambling/crates/${crateId}/open`, { count });
 
 export const addReward = (
   crateId: number,
