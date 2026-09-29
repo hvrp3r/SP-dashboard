@@ -29,6 +29,7 @@ import type {
   CosmeticRarity,
   CosmeticSlot,
 } from '../../types.js';
+import ImageUrlInput from '../../components/ImageUrlInput.jsx';
 
 const SLOTS: CosmeticSlot[] = ['avatar_frame', 'banner', 'name_color', 'title', 'name_font'];
 const FONT_FALLBACKS: FontFallback[] = ['sans-serif', 'serif', 'monospace', 'cursive'];
@@ -452,12 +453,10 @@ export default function AdminCosmetics() {
                 </p>
               </div>
             ) : (
-              <input
-                type="text"
-                placeholder="URL de l'image (optionnel)"
+              <ImageUrlInput
                 value={newImageUrl}
-                onChange={(e) => setNewImageUrl(e.target.value)}
-                className="w-full rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                onChange={setNewImageUrl}
+                placeholder="URL de l'image (optionnel)"
               />
             )}
             <button
@@ -722,17 +721,16 @@ export default function AdminCosmetics() {
                             );
                           })()
                         ) : c.slot === 'avatar_frame' || c.slot === 'banner' ? (
-                          <input
-                            type="text"
-                            placeholder="URL de l'image"
+                          <ImageUrlInput
                             value={draft.imageUrl}
-                            onChange={(e) =>
+                            onChange={(url) =>
                               setCatalogDrafts((prev) => ({
                                 ...prev,
-                                [c.id]: { ...draft, imageUrl: e.target.value },
+                                [c.id]: { ...draft, imageUrl: url },
                               }))
                             }
-                            className="flex-1 min-w-[160px] rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                            placeholder="URL de l'image"
+                            inputClassName="px-2 py-1.5"
                           />
                         ) : null}
                         <select

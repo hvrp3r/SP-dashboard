@@ -7,6 +7,7 @@ import CrateIcon from '../components/CrateIcon.jsx';
 import ResetIntervalField from '../components/ResetIntervalField.jsx';
 import { resetIntervalShortLabel } from '../lib/gamblingLabels.js';
 import type { GamblingCrateEntry, GamblingStatus } from '../types.js';
+import ImageUrlInput from '../components/ImageUrlInput.jsx';
 
 export default function Gambling() {
   const { user } = useAuth();
@@ -122,12 +123,10 @@ export default function Gambling() {
                 rows={2}
                 className="w-full rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
               />
-              <input
-                type="text"
-                placeholder="URL de l'image (optionnel)"
+              <ImageUrlInput
                 value={imageUrl}
-                onChange={(e) => setImageUrl(e.target.value)}
-                className="w-full rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                onChange={setImageUrl}
+                placeholder="URL de l'image (optionnel)"
               />
               <input
                 type="number"

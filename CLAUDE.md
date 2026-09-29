@@ -786,6 +786,7 @@ Ajoutées en cours de projet, à la demande de l'utilisateur, non prévues dans 
 - Les valeurs `admin_config` sont relues depuis la BDD à chaque requête sensible (pas de cache)
 - Tous les timestamps en **UTC**, sauf les frontières de journée du bonus quotidien (section 3) et du budget gambling journalier (section 7), qui utilisent l'heure locale Europe/Paris (`server/src/utils/localDate.ts`) — exception délibérée, pas un oubli
 - Les dates de connexion comparées en date locale Europe/Paris (pas datetime) pour le bonus quotidien
+- **Images MSP** (caisses, gains, cosmétiques/bannières…) : chaque champ `image_url` accepte soit un lien externe, soit un fichier uploadé via `POST /api/uploads/image` (MSP uniquement, 5 Mo max, PNG/JPEG/WEBP/GIF/SVG, stocké dans `server/uploads/images`). Le chemin relatif `/uploads/images/...` est stocké tel quel en BDD et rendu directement dans les `<img>` (proxy `/uploads` : Caddy en prod, Vite en dev). Côté client, utiliser le composant `ImageUrlInput` pour tout nouveau champ image MSP. `/uploads` est servi avec une CSP stricte (`sandbox`) pour neutraliser les scripts d'un SVG ouvert directement.
 - ⚠️ Le SQL brut (pas d'ORM) n'est pas vérifié par `tsc` : après tout changement de schéma (colonne renommée/supprimée), grep le nom de colonne dans `server/src/` pour rattraper les requêtes qui le référencent encore ailleurs que dans le service concerné — `tsc --noEmit` propre ne garantit rien ici.
 
 ---

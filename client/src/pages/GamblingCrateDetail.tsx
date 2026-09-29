@@ -46,6 +46,7 @@ import type {
   GamblingRewardType,
   GamblingStatus,
 } from '../types.js';
+import ImageUrlInput from '../components/ImageUrlInput.jsx';
 
 /** Choix proposés pour ouvrir plusieurs fois la même caisse d'un coup
  * (plafond aligné sur MAX_OPENS_PER_REQUEST côté serveur). */
@@ -784,12 +785,10 @@ export default function GamblingCrateDetail() {
                   placeholder="Description"
                   className="w-full rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 />
-                <input
-                  type="text"
+                <ImageUrlInput
                   value={editImageUrl}
-                  onChange={(e) => setEditImageUrl(e.target.value)}
+                  onChange={setEditImageUrl}
                   placeholder="URL de l'image"
-                  className="w-full rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 />
                 <input
                   type="number"
@@ -900,17 +899,16 @@ export default function GamblingCrateDetail() {
                           />
                         </div>
                         <div className="flex items-center gap-2 flex-wrap">
-                          <input
-                            type="text"
+                          <ImageUrlInput
                             value={draft.imageUrl}
-                            onChange={(e) =>
+                            onChange={(url) =>
                               setRewardDrafts((prev) => ({
                                 ...prev,
-                                [r.id]: { ...draft, imageUrl: e.target.value },
+                                [r.id]: { ...draft, imageUrl: url },
                               }))
                             }
                             placeholder="URL image"
-                            className="flex-1 min-w-[120px] rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                            inputClassName="px-2 py-1"
                           />
                           {r.type === 'sp' && (
                             <input
@@ -1061,12 +1059,11 @@ export default function GamblingCrateDetail() {
                   />
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
-                  <input
-                    type="text"
-                    placeholder="URL image (optionnel)"
+                  <ImageUrlInput
                     value={newRewardImageUrl}
-                    onChange={(e) => setNewRewardImageUrl(e.target.value)}
-                    className="flex-1 min-w-[120px] rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    onChange={setNewRewardImageUrl}
+                    placeholder="URL image (optionnel)"
+                    inputClassName="px-2 py-1.5"
                   />
                   {newRewardType === 'sp' && (
                     <input

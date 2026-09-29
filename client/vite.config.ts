@@ -47,5 +47,11 @@ export default defineConfig({
   plugins: [react(), serveGamesDirectly()],
   server: {
     port: 5173,
+    // Les images uploadées sont stockées en chemin relatif (`/uploads/...`) et
+    // rendues telles quelles dans les <img> : en prod Caddy proxifie /uploads
+    // vers l'API, en dev on fait pareil ici.
+    proxy: {
+      '/uploads': 'http://127.0.0.1:3001',
+    },
   },
 });
