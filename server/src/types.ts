@@ -1,5 +1,13 @@
 export type UserRole = 'player' | 'admin';
 
+/**
+ * Permissions déléguées par le MSP à un joueur (table user_permissions,
+ * migration 071) — un admin les a toutes implicitement.
+ * 'event_organizer' : créer des sessions d'événement et gérer celles qu'il a créées.
+ */
+export const USER_PERMISSIONS = ['event_organizer'] as const;
+export type UserPermission = (typeof USER_PERMISSIONS)[number];
+
 export interface UserRow {
   id: number;
   username: string;
@@ -30,7 +38,8 @@ export type PublicUser = Pick<
   | 'is_leaderboard_hidden'
 >;
 
-export type PrivateUser = PublicUser & Pick<UserRow, 'email' | 'last_login_date'>;
+export type PrivateUser = PublicUser &
+  Pick<UserRow, 'email' | 'last_login_date'> & { permissions: UserPermission[] };
 
 export type AdminUserSummary = Pick<
   UserRow,
@@ -45,7 +54,7 @@ export type AdminUserSummary = Pick<
   | 'created_at'
   | 'is_leaderboard_hidden'
   | 'disabled_at'
->;
+> & { permissions: UserPermission[] };
 
 export interface AccessTokenPayload {
   sub: number;
@@ -479,7 +488,8 @@ export type NotificationType =
   | 'event_cancelled'
   | 'suggestion_comment'
   | 'suggestion_closed'
-  | 'tournament_announcement';
+  | 'tournament_announcement'
+  | 'permission_granted';
 
 export type CosmeticSlot = 'avatar_frame' | 'banner' | 'name_color' | 'title' | 'name_font';
 export type CosmeticRarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';

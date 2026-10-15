@@ -97,7 +97,8 @@ export async function login(req: Request<{}, {}, LoginBody>, res: Response): Pro
   setRefreshCookie(res, refreshToken);
 
   const { password_hash, ...publicUser } = user;
-  res.json({ user: publicUser, accessToken });
+  const profile = await userService.getPrivateProfile(user.id);
+  res.json({ user: { ...publicUser, permissions: profile?.permissions ?? [] }, accessToken });
 }
 
 export async function refresh(req: Request, res: Response): Promise<void> {

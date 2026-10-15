@@ -16,6 +16,8 @@ interface Props {
   sessionId: number;
   session: EventSessionDetail;
   isAdmin: boolean;
+  /** Attribution libre de SP : MSP uniquement, masquée pour un organisateur */
+  canAward?: boolean;
   userId?: number;
   onSessionChange: (session: EventSessionDetail) => void;
   onError: (error: string | null) => void;
@@ -38,6 +40,7 @@ export default function TournamentDetail({
   sessionId,
   session,
   isAdmin,
+  canAward = isAdmin,
   userId,
   onSessionChange,
   onError,
@@ -201,6 +204,7 @@ export default function TournamentDetail({
 
       {isAdmin && (
         <AdminWrapUpSection
+          canAward={canAward}
           participants={participants}
           busy={busy}
           onAward={async (awards) => {
@@ -1105,11 +1109,13 @@ function AnnouncementsSection({
 // ---------------------------------------------------------------------------
 
 function AdminWrapUpSection({
+  canAward,
   participants,
   busy,
   onAward,
   onClose,
 }: {
+  canAward: boolean;
   participants: NonNullable<EventSessionDetail['participants']>;
   busy: boolean;
   onAward: (awards: Array<{ participantId: number; amount: number }>) => Promise<void>;
@@ -1129,7 +1135,10 @@ function AdminWrapUpSection({
 
   return (
     <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4 space-y-3">
-      <h3 className="text-sm font-semibold text-zinc-300">Panel MSP — ajustements libres</h3>
+      <h3 className="text-sm font-semibold text-zinc-300">
+        {canAward ? 'Panel MSP — ajustements libres' : 'Panel organisateur'}
+      </h3>
+      {canAward && (
       <div className="flex flex-col sm:flex-row gap-2">
         <select
           value={selectedParticipant}
@@ -1138,7 +1147,7 @@ function AdminWrapUpSection({
         >
           <option value="">Participant…</option>
           {participants.map((p) => (
-            <option key={p.user_id} value={p.user_id}>
+            <option key={p.id} value={p.id}>
               {p.username}
             </option>
           ))}
@@ -1161,6 +1170,7 @@ function AdminWrapUpSection({
           Attribuer
         </button>
       </div>
+      )}
       <button
         type="button"
         onClick={onClose}

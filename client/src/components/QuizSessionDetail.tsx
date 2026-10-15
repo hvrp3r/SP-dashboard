@@ -49,6 +49,8 @@ interface Props {
   session: EventSessionDetail;
   questions: EventQuestionView[];
   isAdmin: boolean;
+  /** Attribution libre de SP : MSP uniquement, masquée pour un organisateur */
+  canAward?: boolean;
   userId: number | undefined;
   onSessionChange: (session: EventSessionDetail) => void;
   onError: (message: string | null) => void;
@@ -59,6 +61,7 @@ export default function QuizSessionDetail({
   session,
   questions,
   isAdmin,
+  canAward = isAdmin,
   userId,
   onSessionChange,
   onError,
@@ -566,7 +569,7 @@ export default function QuizSessionDetail({
         )
       )}
 
-      {isAdmin ? (
+      {isAdmin && canAward ? (
         <form
           onSubmit={handleAward}
           className="bg-zinc-900 border border-zinc-800 rounded-xl shadow-md overflow-hidden mb-6"

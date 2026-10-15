@@ -64,6 +64,17 @@ disabled_by INT REFERENCES users(id)
 ```
 - Le MSP ne supprime jamais un compte joueur : il le **désactive** (`disabled_at`/`disabled_by`), sur le même principe que `is_leaderboard_hidden` — même raison que pour les transactions/caisses, préserver l'historique (transactions, défis, season_snapshots continuent d'afficher son pseudo). Un compte désactivé ne peut plus se connecter (`login` et `refresh` le rejettent) et disparaît du leaderboard, des archives de saison, et de la sélection d'adversaire de défi (tous filtrés via le même endpoint leaderboard). Réversible par le MSP à tout moment. Un MSP ne peut pas désactiver son propre compte.
 
+### `user_permissions`
+-- Permissions déléguées par le MSP à un joueur sans en faire un admin (migration 071). Révoquer = supprimer la ligne (pas d'enjeu d'historique). Pas de CHECK sur `permission` : valeurs connues dans `USER_PERMISSIONS` (`server/src/types.ts`). Un admin a toutes les permissions implicitement (pas de ligne).
+```sql
+id SERIAL PRIMARY KEY,
+user_id INT NOT NULL REFERENCES users(id),
+permission VARCHAR(50) NOT NULL,      -- 'event_organizer' (seule valeur pour l'instant)
+granted_by INT REFERENCES users(id),
+granted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+UNIQUE (user_id, permission)
+```
+
 ### `seasons`
 ```sql
 id SERIAL PRIMARY KEY,
@@ -346,7 +357,7 @@ user_id INT REFERENCES users(id),
 type VARCHAR(50) NOT NULL,
   -- 'challenge_received' | 'challenge_accepted' | 'challenge_declined' | 'challenge_resolved'
   -- 'challenge_cancelled' | 'challenge_expired' | 'event_open' | 'sp_gained' | 'sp_lost'
-  -- 'suggestion_comment' | 'suggestion_closed' | 'tournament_announcement'
+  -- 'suggestion_comment' | 'suggestion_closed' | 'tournament_announcement' | 'permission_granted'
 message TEXT NOT NULL,
 link TEXT,                             -- route client pour le clic (ex: '/defis')
 read_at TIMESTAMPTZ,
@@ -652,6 +663,16 @@ Nouveau type de session d'événement (migration 067), même pattern que flappy_
 #### Annonces :
 - Le MSP publie des annonces (500 caractères max) visibles par tous dans le tournoi ; chaque publication notifie **tous les inscrits** (`tournament_announcement`, message tronqué à 100 caractères, link `/evenements/:id`).
 
+### 11. Organisateurs d'événements (permission `event_organizer`)
+
+Le MSP peut déléguer l'organisation d'événements à un joueur sans le promouvoir admin, depuis `/admin/joueurs` (case « Organisateur — Événements »). L'attribution notifie le joueur (`permission_granted`, link `/evenements`).
+
+- **Créer** : un organisateur voit le formulaire de création sur `/evenements` et peut lancer n'importe quel type de session (quiz, flappy_bird, speedrun, tournoi) — `requireEventOrganizer` (`server/src/middleware/eventPermissions.ts`).
+- **Gérer** : uniquement les sessions **qu'il a créées** (`event_sessions.created_by`) — toutes les routes de gestion d'une session (`/:id/...` : questions, participants, équipes/arbre/matchs/annonces, exclusions, clôture/annulation) passent par `requireSessionManager` (MSP = toutes les sessions). Côté client, `canManageSession` (`client/src/lib/permissions.ts`) décide de l'affichage des contrôles ; le serveur revérifie toujours.
+- **Participation** : un organisateur **peut participer** à sa propre session (décision explicite de l'utilisateur), comme le MSP. - **Attribution de SP réservée au MSP** : l'attribution libre (`POST /:id/award`, bouton « Attribuer les SP ») reste `requireAdmin`, même sur une session créée par un organisateur — c'est le MSP qui donne les SP (décision explicite de l'utilisateur). Le formulaire est masqué côté client pour l'organisateur. La dotation automatique par rang (fin de tournoi, close-and-distribute flappy/speedrun) n'est pas concernée.
+- **Révocation immédiate** : la permission est relue en BDD à chaque requête (pas portée par le JWT). Une fois révoquée, l'ex-organisateur ne gère plus ses sessions — le MSP peut toujours les reprendre.
+- Les permissions sont exposées dans `permissions: UserPermission[]` sur `/api/users/me`, le login et la liste admin des joueurs.
+
 ---
 
 ## Rôles & Permissions
@@ -664,10 +685,11 @@ Nouveau type de session d'événement (migration 067), même pattern que flappy_
 | S'inscrire à un tournoi              | ✅ | ✅ |
 | Ouvrir des caisses (gambling)         | ✅ | ✅ |
 | Voir ses transactions                | ✅ | ✅ |
-| Créer/clôturer une session événement  | ❌ | ✅ |
-| Attribuer les SP d'un événement       | ❌ | ✅ |
-| Gérer équipes/arbre/matchs d'un tournoi | ❌ | ✅ |
-| Publier une annonce de tournoi        | ❌ | ✅ |
+| Créer/clôturer une session événement  | ❌ (✅ si organisateur, ses sessions uniquement) | ✅ |
+| Attribuer les SP d'un événement       | ❌ (même organisateur) | ✅ |
+| Gérer équipes/arbre/matchs d'un tournoi | ❌ (✅ si organisateur, ses tournois) | ✅ |
+| Publier une annonce de tournoi        | ❌ (✅ si organisateur, ses tournois) | ✅ |
+| Nommer/retirer un organisateur d'événements | ❌ | ✅ |
 | Créer/configurer une caisse gambling | ❌ | ✅ |
 | Arbitrer un défi                     | ❌ | ✅ |
 | Gérer les saisons                    | ❌ | ✅ |
@@ -695,7 +717,7 @@ Nouveau type de session d'événement (migration 067), même pattern que flappy_
 Sections dans des pages `/admin/...` dédiées :
 - **Config** : formulaire pour modifier toutes les clés `admin_config`
 - **Saisons** : créer, clôturer, consulter les archives
-- **Joueurs** (`/admin/joueurs`) : liste de tous les comptes (rôle, solde, statut), désactiver/réactiver un compte (jamais de suppression — voir la note sur `disabled_at` dans le schéma `users` plus haut). Le MSP ne peut pas désactiver son propre compte.
+- **Joueurs** (`/admin/joueurs`) : liste de tous les comptes (rôle, solde, statut), nommer/retirer un organisateur d'événements (section 11), désactiver/réactiver un compte (jamais de suppression — voir la note sur `disabled_at` dans le schéma `users` plus haut). Le MSP ne peut pas désactiver son propre compte.
 - **Défis** (`/admin/defis`) : liste filtrée (en cours, en attente, contestés), arbitrage (force un gagnant parmi les participants `accepted`), annulation
 - **Transactions** : log global avec filtres (joueur, type, saison, date), révocation, création manuelle de transaction
 - **Abonnements** (`/admin/abonnements`) : liste des abonnements, activation/prolongation/révocation manuelle, file d'attente des paiements Ko-fi non rattachés (voir section 8) — page dédiée plutôt que fusionnée dans le profil joueur, car ce sont des actions strictement MSP (contrairement aux Événement/Gambling où le joueur et le MSP partagent la même page)
@@ -760,6 +782,7 @@ Ajoutées en cours de projet, à la demande de l'utilisateur, non prévues dans 
 - Page Suggestions : proposition de features/bugs par les joueurs, vote façon Reddit, commentaires, clôture/suppression par le MSP (voir section 9)
 - Défis "Pile ou face" (`challenges.type = 'coin_flip'`) : variante 1v1 des défis SP Wager où le gagnant est tiré au sort par le serveur dès que l'adversaire accepte, sans déclaration manuelle ni arbitrage nécessaire (voir section 4)
 - Défis "Pierre-feuille-ciseaux" (`challenges.type = 'rps'`) : variante 1v1 en 3 manches (premier à 2 manches gagnées), coups cachés choisis une fois le défi accepté, le serveur départage et les égalités se rejouent (voir section 4)
+- Organisateurs d'événements : permission déléguée par le MSP à un joueur pour créer des événements et gérer les siens, sans y participer (voir section 11)
 - Tournois (`game_type = 'tournament'`) : arbre à élimination simple/double ou round-robin, équipes tag+logo générées (serpentin pondéré par rating) ou composées à la main, dotation par rang distribuée automatiquement, annonces du MSP (voir section 10)
 
 ---

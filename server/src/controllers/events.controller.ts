@@ -4,6 +4,7 @@ import * as seasonService from '../services/season.service.js';
 import * as userService from '../services/user.service.js';
 import * as notificationService from '../services/notification.service.js';
 import * as discordService from '../services/discord.service.js';
+import * as permissionService from '../services/permission.service.js';
 import { buildFlappyBirdDetail } from './flappybird.controller.js';
 import { buildSpeedrunDetail } from './speedrun.controller.js';
 import { buildTournamentDetail } from './tournaments.controller.js';
@@ -25,7 +26,8 @@ const VALID_STATUSES: EventStatus[] = ['open', 'closed', 'cancelled'];
 async function buildQuestionView(
   question: EventQuestionRow,
   participants: EventParticipantEntry[],
-  viewer: AuthenticatedUser
+  viewer: AuthenticatedUser,
+  viewerManages: boolean
 ): Promise<EventQuestionView> {
   const answers = await eventService.getAnswers(question.id);
   const participantById = new Map(participants.map((p) => [p.user_id, p]));
@@ -33,7 +35,8 @@ async function buildQuestionView(
 
   // Dès que tout le monde a répondu (ou que la question est clôturée, par
   // timer ou par le MSP), les réponses des autres joueurs deviennent visibles
-  // par tous — avant ça, seuls le MSP et l'auteur voient le texte.
+  // par tous — avant ça, seuls le gestionnaire de la session (MSP ou
+  // organisateur) et l'auteur voient le texte.
   const allAnswered =
     participants.length > 0 && participants.every((p) => answers.some((a) => a.user_id === p.user_id));
   const revealed = question.status === 'closed' || allAnswered;
@@ -50,7 +53,7 @@ async function buildQuestionView(
       submitted_at: a.submitted_at,
       seconds_to_answer: secondsToAnswer,
     };
-    if (viewer.role === 'admin' || a.user_id === viewer.id || revealed) {
+    if (viewerManages || a.user_id === viewer.id || revealed) {
       view.answer_text = a.answer_text;
       view.marked_correct = a.marked_correct;
     }
@@ -59,7 +62,7 @@ async function buildQuestionView(
 
   return {
     ...question,
-    correct_answer: viewer.role === 'admin' || revealed ? question.correct_answer : undefined,
+    correct_answer: viewerManages || revealed ? question.correct_answer : undefined,
     answers: answerViews,
   };
 }
@@ -67,12 +70,13 @@ async function buildQuestionView(
 async function buildSessionDetail(sessionId: number, viewer: AuthenticatedUser) {
   const session = await eventService.getSessionById(sessionId);
   if (!session) return null;
+  const viewerManages = await permissionService.canManageSession(viewer, session);
 
   if (session.game_type === 'flappy_bird') {
-    return buildFlappyBirdDetail(sessionId, viewer.id, viewer.role === 'admin');
+    return buildFlappyBirdDetail(sessionId, viewer.id, viewerManages);
   }
   if (session.game_type === 'speedrun') {
-    return buildSpeedrunDetail(sessionId, viewer.id, viewer.role === 'admin');
+    return buildSpeedrunDetail(sessionId, viewer.id, viewerManages);
   }
   if (session.game_type === 'tournament') {
     return buildTournamentDetail(sessionId);
@@ -83,7 +87,7 @@ async function buildSessionDetail(sessionId: number, viewer: AuthenticatedUser) 
   const latestQuestion = await eventService.getLatestQuestion(sessionId);
 
   const currentQuestion = latestQuestion
-    ? await buildQuestionView(latestQuestion, participants, viewer)
+    ? await buildQuestionView(latestQuestion, participants, viewer, viewerManages)
     : null;
 
   return { ...session, participants, currentQuestion };
@@ -316,10 +320,11 @@ export async function listQuestions(req: Request<{ id: string }>, res: Response)
   }
 
   await eventService.expireQuestionIfNeeded(sessionId);
+  const viewerManages = await permissionService.canManageSession(req.user!, session);
   const participants = await eventService.getSessionParticipants(sessionId);
   const questions = await eventService.listQuestions(sessionId);
   const views = await Promise.all(
-    questions.map((q) => buildQuestionView(q, participants, req.user!))
+    questions.map((q) => buildQuestionView(q, participants, req.user!, viewerManages))
   );
 
   res.json(views);

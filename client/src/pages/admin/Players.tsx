@@ -12,6 +12,7 @@ export default function AdminPlayers() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [togglingId, setTogglingId] = useState<number | null>(null);
+  const [permissionTogglingId, setPermissionTogglingId] = useState<number | null>(null);
 
   async function load() {
     setLoading(true);
@@ -54,6 +55,30 @@ export default function AdminPlayers() {
     }
   }
 
+  async function handleToggleOrganizer(p: AdminUserSummary) {
+    const granting = !p.permissions.includes('event_organizer');
+    const ok = await confirm({
+      title: granting ? 'Nommer organisateur' : 'Retirer le rôle d’organisateur',
+      message: granting
+        ? `${p.username} pourra créer des événements (quiz, flappy bird, speedrun, tournoi) et gérer ceux qu’il a créés. L’attribution libre des SP reste réservée au MSP.`
+        : `${p.username} ne pourra plus créer d’événement ni gérer ceux qu’il a créés. Ses sessions déjà lancées restent gérables par le MSP.`,
+      confirmLabel: granting ? 'Nommer' : 'Retirer',
+      danger: !granting,
+    });
+    if (!ok) return;
+
+    setError(null);
+    setPermissionTogglingId(p.id);
+    try {
+      const updated = await usersApi.setUserPermission(p.id, 'event_organizer', granting);
+      setPlayers((prev) => prev.map((entry) => (entry.id === updated.id ? updated : entry)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erreur inconnue');
+    } finally {
+      setPermissionTogglingId(null);
+    }
+  }
+
   return (
     <div className="min-h-screen bg-zinc-950 py-10 px-4">
       <div className="max-w-3xl mx-auto">
@@ -71,6 +96,7 @@ export default function AdminPlayers() {
                   <tr>
                     <th className="px-4 py-3 text-left">Joueur</th>
                     <th className="px-4 py-3 text-left">Rôle</th>
+                    <th className="px-4 py-3 text-left">Organisateur</th>
                     <th className="px-4 py-3 text-right">Solde SP</th>
                     <th className="px-4 py-3 text-left">Statut</th>
                     <th className="px-4 py-3 text-right">Action</th>
@@ -93,6 +119,22 @@ export default function AdminPlayers() {
                       </td>
                       <td className="px-4 py-3 text-zinc-300 whitespace-nowrap">
                         {p.role === 'admin' ? 'MSP' : 'Joueur'}
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        {p.role === 'admin' ? (
+                          <span className="text-xs text-zinc-600">Toutes permissions</span>
+                        ) : (
+                          <label className="inline-flex items-center gap-2 text-xs text-zinc-300 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={p.permissions.includes('event_organizer')}
+                              disabled={permissionTogglingId === p.id}
+                              onChange={() => handleToggleOrganizer(p)}
+                              className="accent-violet-500"
+                            />
+                            Événements
+                          </label>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-right text-zinc-300 whitespace-nowrap">
                         {p.sp_balance}
