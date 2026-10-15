@@ -6,11 +6,17 @@ const PUBLIC_FIELDS = `
   login_streak, created_at, is_leaderboard_hidden
 `;
 
-const PRIVATE_FIELDS = `${PUBLIC_FIELDS}, email, last_login_date`;
+// Sous-requête scalaire plutôt qu'un JOIN : reste valide dans un RETURNING d'UPDATE
+const PERMISSIONS_FIELD = `ARRAY(
+  SELECT up.permission FROM user_permissions up
+  WHERE up.user_id = users.id ORDER BY up.permission
+) AS permissions`;
+
+const PRIVATE_FIELDS = `${PUBLIC_FIELDS}, email, last_login_date, ${PERMISSIONS_FIELD}`;
 
 const ADMIN_LIST_FIELDS = `
   id, username, email, avatar_url, role, sp_balance, sp_total_earned,
-  login_streak, created_at, is_leaderboard_hidden, disabled_at
+  login_streak, created_at, is_leaderboard_hidden, disabled_at, ${PERMISSIONS_FIELD}
 `;
 
 export async function findByEmail(email: string): Promise<UserRow | null> {
@@ -50,6 +56,14 @@ export async function listAllForAdmin(): Promise<AdminUserSummary[]> {
     `SELECT ${ADMIN_LIST_FIELDS} FROM users ORDER BY username ASC`
   );
   return rows;
+}
+
+export async function getAdminSummary(id: number): Promise<AdminUserSummary | null> {
+  const { rows } = await pool.query<AdminUserSummary>(
+    `SELECT ${ADMIN_LIST_FIELDS} FROM users WHERE id = $1`,
+    [id]
+  );
+  return rows[0] ?? null;
 }
 
 export async function setDisabled(

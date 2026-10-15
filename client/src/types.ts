@@ -1,5 +1,8 @@
 export type UserRole = 'player' | 'admin';
 
+/** Permissions déléguées par le MSP (user_permissions) — un admin les a toutes implicitement. */
+export type UserPermission = 'event_organizer';
+
 export interface User {
   id: number;
   username: string;
@@ -12,6 +15,8 @@ export interface User {
   last_login_date: string | null;
   created_at: string;
   is_leaderboard_hidden: boolean;
+  // Absent sur les profils publics (seulement /me, login, register)
+  permissions?: UserPermission[];
 }
 
 export interface AuthResponse {
@@ -31,6 +36,7 @@ export interface AdminUserSummary {
   created_at: string;
   is_leaderboard_hidden: boolean;
   disabled_at: string | null;
+  permissions: UserPermission[];
 }
 
 export interface DailyBonusClaimResult {
@@ -477,7 +483,8 @@ export type NotificationType =
   | 'sp_lost'
   | 'suggestion_comment'
   | 'suggestion_closed'
-  | 'tournament_announcement';
+  | 'tournament_announcement'
+  | 'permission_granted';
 
 export interface AppNotification {
   id: number;

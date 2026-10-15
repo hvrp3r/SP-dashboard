@@ -4,6 +4,7 @@ import { useAuth } from '../hooks/useAuth.jsx';
 import { useAnnounceChatRoom } from '../hooks/useChatGameRoom.jsx';
 import * as eventsApi from '../api/events.js';
 import { gameTypeIcon, gameTypeLabel } from '../lib/eventLabels.js';
+import { canManageSession } from '../lib/permissions.js';
 import QuizSessionDetail from '../components/QuizSessionDetail.jsx';
 import FlappyBirdSessionDetail from '../components/FlappyBirdSessionDetail.jsx';
 import SpeedrunSessionDetail from '../components/SpeedrunSessionDetail.jsx';
@@ -16,7 +17,6 @@ export default function EventDetail() {
   const { id } = useParams<{ id: string }>();
   const sessionId = Number(id);
   const { user } = useAuth();
-  const isAdmin = user?.role === 'admin';
 
   const [session, setSession] = useState<EventSessionDetail | null>(null);
   const [questions, setQuestions] = useState<EventQuestionView[]>([]);
@@ -62,6 +62,10 @@ export default function EventDetail() {
     return () => clearInterval(interval);
   }, [session?.status, load]);
 
+  // Contrôles de gestion : MSP, ou organisateur ayant créé cette session
+  const isManager = session ? canManageSession(user, session) : false;
+  const isOrganizer = isManager && user?.role !== 'admin';
+
   return (
     <div className="min-h-screen bg-zinc-950 py-10 px-4">
       <div className="max-w-2xl mx-auto">
@@ -77,6 +81,11 @@ export default function EventDetail() {
           <p className="mt-4 text-zinc-500">Session introuvable.</p>
         ) : (
           <>
+            {isOrganizer && (
+              <p className="mt-4 text-xs px-3 py-2 rounded-lg bg-violet-500/10 text-violet-300 border border-violet-500/20">
+                Tu organises cet événement : tu as accès aux contrôles de gestion.
+              </p>
+            )}
             <div className="flex items-center justify-between mt-4 mb-2 gap-2">
               <div className="flex items-center gap-2 min-w-0">
                 <h1 className="text-2xl font-bold text-zinc-50 truncate">{session.title}</h1>
@@ -109,7 +118,7 @@ export default function EventDetail() {
               <FlappyBirdSessionDetail
                 sessionId={sessionId}
                 session={session}
-                isAdmin={isAdmin}
+                isAdmin={isManager}
                 userId={user?.id}
                 onSessionChange={setSession}
                 onError={setError}
@@ -118,7 +127,7 @@ export default function EventDetail() {
               <SpeedrunSessionDetail
                 sessionId={sessionId}
                 session={session}
-                isAdmin={isAdmin}
+                isAdmin={isManager}
                 userId={user?.id}
                 onSessionChange={setSession}
                 onError={setError}
@@ -127,7 +136,8 @@ export default function EventDetail() {
               <TournamentDetail
                 sessionId={sessionId}
                 session={session}
-                isAdmin={isAdmin}
+                isAdmin={isManager}
+                canAward={user?.role === 'admin'}
                 userId={user?.id}
                 onSessionChange={setSession}
                 onError={setError}
@@ -137,7 +147,8 @@ export default function EventDetail() {
                 sessionId={sessionId}
                 session={session}
                 questions={questions}
-                isAdmin={isAdmin}
+                isAdmin={isManager}
+                canAward={user?.role === 'admin'}
                 userId={user?.id}
                 onSessionChange={setSession}
                 onError={setError}

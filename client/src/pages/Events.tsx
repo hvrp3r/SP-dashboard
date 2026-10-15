@@ -4,6 +4,7 @@ import { useAuth } from '../hooks/useAuth.jsx';
 import * as eventsApi from '../api/events.js';
 import * as speedrunApi from '../api/speedrun.js';
 import { GAME_TYPE_LABELS, gameTypeLabel } from '../lib/eventLabels.js';
+import { canCreateEvents } from '../lib/permissions.js';
 import {
   EVENT_GAME_TYPES,
   TOURNAMENT_FORMATS,
@@ -17,7 +18,7 @@ const SPEEDRUN_SEARCH_DEBOUNCE_MS = 400;
 
 export default function Events() {
   const { user } = useAuth();
-  const isAdmin = user?.role === 'admin';
+  const canCreate = canCreateEvents(user);
 
   const [sessions, setSessions] = useState<EventSession[]>([]);
   const [loading, setLoading] = useState(true);
@@ -212,7 +213,7 @@ export default function Events() {
 
         {error && <p className="mb-4 text-sm text-red-400">{error}</p>}
 
-        {isAdmin && (
+        {canCreate && (
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl shadow-md p-6 mb-6">
             <h2 className="font-semibold text-zinc-200 mb-3">Créer une session</h2>
             <form onSubmit={handleCreate} className="space-y-2">

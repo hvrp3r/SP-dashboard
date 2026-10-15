@@ -8,6 +8,7 @@ const router = Router();
 
 router.get('/', requireAuth, requireAdmin, usersController.listAllUsers);
 router.post('/:id/disable', requireAuth, requireAdmin, usersController.setDisabled);
+router.put('/:id/permissions', requireAuth, requireAdmin, usersController.setPermission);
 router.get('/me', requireAuth, usersController.getMe);
 router.post('/me/claim-daily-bonus', requireAuth, usersController.claimDailyBonus);
 router.get('/me/transactions', requireAuth, transactionsController.listMyTransactions);

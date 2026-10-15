@@ -6,6 +6,9 @@ import * as statsService from '../services/stats.service.js';
 import * as loginBonusService from '../services/loginBonus.service.js';
 import * as transactionService from '../services/transaction.service.js';
 import * as profileReactionService from '../services/profileReaction.service.js';
+import * as permissionService from '../services/permission.service.js';
+import * as notificationService from '../services/notification.service.js';
+import { USER_PERMISSIONS, type UserPermission } from '../types.js';
 import { AVATARS_DIR } from '../middleware/upload.js';
 import { parsePagination } from './transactions.controller.js';
 
@@ -173,6 +176,64 @@ export async function setDisabled(
   }
 
   const updated = await userService.setDisabled(targetId, disabled, req.user!.id);
+  res.json(updated);
+}
+
+interface SetPermissionBody {
+  permission?: string;
+  granted?: boolean;
+}
+
+const PERMISSION_GRANTED_MESSAGES: Record<UserPermission, string> = {
+  event_organizer: 'Le MSP t’a nommé organisateur : tu peux maintenant créer des événements',
+};
+
+export async function setPermission(
+  req: Request<{ id: string }, {}, SetPermissionBody>,
+  res: Response
+): Promise<void> {
+  const targetId = Number(req.params.id);
+  if (!Number.isInteger(targetId)) {
+    res.status(400).json({ error: 'Identifiant invalide' });
+    return;
+  }
+  const permission = req.body?.permission;
+  if (!permission || !(USER_PERMISSIONS as readonly string[]).includes(permission)) {
+    res.status(400).json({ error: 'Permission inconnue' });
+    return;
+  }
+  const granted = req.body?.granted;
+  if (typeof granted !== 'boolean') {
+    res.status(400).json({ error: 'Le champ granted (booléen) est requis' });
+    return;
+  }
+
+  const target = await userService.findById(targetId);
+  if (!target) {
+    res.status(404).json({ error: 'Joueur introuvable' });
+    return;
+  }
+  if (target.role === 'admin') {
+    res.status(400).json({ error: 'Un MSP a déjà toutes les permissions' });
+    return;
+  }
+
+  const perm = permission as UserPermission;
+  if (granted) {
+    const newlyGranted = await permissionService.grantPermission(targetId, perm, req.user!.id);
+    if (newlyGranted) {
+      await notificationService.createNotification({
+        userId: targetId,
+        type: 'permission_granted',
+        message: PERMISSION_GRANTED_MESSAGES[perm],
+        link: '/evenements',
+      });
+    }
+  } else {
+    await permissionService.revokePermission(targetId, perm);
+  }
+
+  const updated = await userService.getAdminSummary(targetId);
   res.json(updated);
 }
 

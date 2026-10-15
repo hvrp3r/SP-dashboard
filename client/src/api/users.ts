@@ -6,6 +6,7 @@ import type {
   ProfileReactionSummary,
   ProfileReactionValue,
   User,
+  UserPermission,
 } from '../types.js';
 
 export const getPublicProfile = (username: string) =>
@@ -36,3 +37,6 @@ export const listAllUsers = () => apiClient.get<AdminUserSummary[]>('/api/users'
 
 export const setUserDisabled = (id: number, disabled: boolean) =>
   apiClient.post<AdminUserSummary>(`/api/users/${id}/disable`, { disabled });
+
+export const setUserPermission = (id: number, permission: UserPermission, granted: boolean) =>
+  apiClient.put<AdminUserSummary>(`/api/users/${id}/permissions`, { permission, granted });
