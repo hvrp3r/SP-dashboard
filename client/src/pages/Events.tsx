@@ -40,6 +40,7 @@ export default function Events() {
   const [tournamentFormat, setTournamentFormat] = useState<TournamentFormat>('single_elim');
   const [maxTeams, setMaxTeams] = useState('8');
   const [teamSize, setTeamSize] = useState('1');
+  const [playerTeams, setPlayerTeams] = useState(false);
 
   // Recherche speedrun.com — purement une pré-suggestion pour remplir titre/
   // description/image/lien ; le MSP garde toujours la main pour tout saisir à la
@@ -178,6 +179,7 @@ export default function Events() {
               tournamentFormat,
               tournamentMaxTeams: maxTeamsValue,
               tournamentTeamSize: teamSizeValue,
+              tournamentPlayerTeams: playerTeams,
               reward1st: reward1stValue,
               reward2nd: reward2ndValue,
               reward3rd: reward3rdValue,
@@ -195,6 +197,7 @@ export default function Events() {
       setTournamentFormat('single_elim');
       setMaxTeams('8');
       setTeamSize('1');
+      setPlayerTeams(false);
       setSelectedGame(null);
       setSpeedrunQuery('');
       setSpeedrunResults([]);
@@ -467,6 +470,21 @@ export default function Events() {
                       />
                     </div>
                   </div>
+                  <label className="flex items-start gap-2 text-sm text-zinc-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={playerTeams}
+                      onChange={(e) => setPlayerTeams(e.target.checked)}
+                      className="mt-0.5 accent-emerald-500"
+                    />
+                    <span>
+                      Les joueurs forment leurs équipes
+                      <span className="block text-xs text-zinc-500">
+                        Chaque inscrit peut créer son équipe ou en rejoindre une jusqu’à la
+                        génération de l’arbre. Tu gardes la main pour ajuster.
+                      </span>
+                    </span>
+                  </label>
                   <p className="text-xs text-zinc-500">
                     Dotation en SP par membre de l’équipe — distribuée automatiquement à la fin du
                     tournoi.

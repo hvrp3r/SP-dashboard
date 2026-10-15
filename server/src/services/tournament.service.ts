@@ -1,6 +1,6 @@
 import { pool } from '../db/pool.js';
 import * as spService from './sp.service.js';
-import type { QueryResult } from 'pg';
+import type { PoolClient, QueryResult } from 'pg';
 import type {
   EventSessionRow,
   TournamentAnnouncementEntry,
@@ -509,6 +509,199 @@ export async function removeTeamMember(
   } finally {
     client.release();
   }
+}
+
+// ---------------------------------------------------------------------------
+// Équipes formées par les joueurs (event_sessions.tournament_player_teams)
+// ---------------------------------------------------------------------------
+
+/**
+ * Ouvre une transaction et verrouille la ligne de session : toutes les
+ * mutations d'équipes faites par les joueurs sont ainsi sérialisées par
+ * tournoi (deux joueurs ne peuvent pas prendre la dernière place d'une équipe
+ * en même temps, ni dépasser le nombre max d'équipes).
+ */
+async function withPlayerTeamsLock<T>(
+  sessionId: number,
+  userId: number,
+  action: (client: PoolClient, session: EventSessionRow) => Promise<T>
+): Promise<T> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query<EventSessionRow>(
+      'SELECT * FROM event_sessions WHERE id = $1 FOR UPDATE',
+      [sessionId]
+    );
+    const session = rows[0];
+    if (!session) {
+      throw Object.assign(new Error('Session introuvable'), { status: 404 });
+    }
+    if (session.game_type !== 'tournament') {
+      throw Object.assign(new Error('Cette session n’est pas un tournoi'), { status: 400 });
+    }
+    assertOpen(session);
+    if (!session.tournament_player_teams) {
+      throw Object.assign(new Error('Dans ce tournoi, les équipes sont formées par l’organisateur'), {
+        status: 403,
+      });
+    }
+    await assertNoMatches(client, sessionId);
+    const { rowCount: isParticipant } = await client.query(
+      'SELECT 1 FROM event_participants WHERE session_id = $1 AND user_id = $2',
+      [sessionId, userId]
+    );
+    if ((isParticipant ?? 0) === 0) {
+      throw Object.assign(new Error('Inscris-toi d’abord au tournoi'), { status: 400 });
+    }
+    const result = await action(client, session);
+    await client.query('COMMIT');
+    return result;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    if ((err as { code?: string }).code === '23505') {
+      throw Object.assign(new Error('Ce tag est déjà pris dans ce tournoi'), { status: 409 });
+    }
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+async function getMyTeam(
+  client: PoolClient,
+  sessionId: number,
+  userId: number
+): Promise<TournamentTeamRow | null> {
+  const { rows } = await client.query<TournamentTeamRow>(
+    `SELECT t.* FROM tournament_teams t
+     JOIN tournament_team_members m ON m.team_id = t.id
+     WHERE t.session_id = $1 AND m.user_id = $2`,
+    [sessionId, userId]
+  );
+  return rows[0] ?? null;
+}
+
+function normalizeTag(tag: string): string {
+  const normalized = tag.trim();
+  if (normalized.length < 1 || normalized.length > 8) {
+    throw Object.assign(new Error('Le tag doit faire entre 1 et 8 caractères'), { status: 400 });
+  }
+  return normalized;
+}
+
+function alreadyInTeamError(): Error {
+  return Object.assign(new Error('Tu es déjà dans une équipe — quitte-la d’abord'), {
+    status: 409,
+  });
+}
+
+/** Le joueur crée une équipe et en devient le premier membre (capitaine). */
+export async function createPlayerTeam(
+  sessionId: number,
+  userId: number,
+  tag: string,
+  logoUrl: string | null
+): Promise<void> {
+  await withPlayerTeamsLock(sessionId, userId, async (client, session) => {
+    if (await getMyTeam(client, sessionId, userId)) throw alreadyInTeamError();
+    const { maxTeams } = assertTeamSizeAndMax(session);
+    const { rows: countRows } = await client.query<{ count: string }>(
+      'SELECT COUNT(*) FROM tournament_teams WHERE session_id = $1',
+      [sessionId]
+    );
+    if (Number(countRows[0]?.count ?? 0) >= maxTeams) {
+      throw Object.assign(new Error(`Ce tournoi est limité à ${maxTeams} équipes`), {
+        status: 400,
+      });
+    }
+    const { rows } = await client.query<TournamentTeamRow>(
+      `INSERT INTO tournament_teams (session_id, tag, logo_url, created_by)
+       VALUES ($1, $2, $3, $4)
+       RETURNING *`,
+      [sessionId, normalizeTag(tag), logoUrl, userId]
+    );
+    await client.query('INSERT INTO tournament_team_members (team_id, user_id) VALUES ($1, $2)', [
+      rows[0]!.id,
+      userId,
+    ]);
+  });
+}
+
+export async function joinTeamAsPlayer(
+  sessionId: number,
+  teamId: number,
+  userId: number
+): Promise<void> {
+  await withPlayerTeamsLock(sessionId, userId, async (client, session) => {
+    if (await getMyTeam(client, sessionId, userId)) throw alreadyInTeamError();
+    const { rows } = await client.query<{ member_count: string }>(
+      `SELECT (SELECT COUNT(*) FROM tournament_team_members m WHERE m.team_id = t.id) AS member_count
+       FROM tournament_teams t
+       WHERE t.id = $1 AND t.session_id = $2`,
+      [teamId, sessionId]
+    );
+    if (!rows[0]) {
+      throw Object.assign(new Error('Équipe introuvable'), { status: 404 });
+    }
+    const { teamSize } = assertTeamSizeAndMax(session);
+    if (Number(rows[0].member_count) >= teamSize) {
+      throw Object.assign(new Error(`Cette équipe est complète (max ${teamSize} membres)`), {
+        status: 400,
+      });
+    }
+    await client.query('INSERT INTO tournament_team_members (team_id, user_id) VALUES ($1, $2)', [
+      teamId,
+      userId,
+    ]);
+  });
+}
+
+/**
+ * Le joueur quitte son équipe. Une équipe créée par un joueur disparaît avec
+ * son dernier membre (une équipe vide bloquerait la génération de l'arbre) ;
+ * une équipe créée par le MSP/organisateur reste en place, même vide.
+ */
+export async function leaveTeamAsPlayer(sessionId: number, userId: number): Promise<void> {
+  await withPlayerTeamsLock(sessionId, userId, async (client) => {
+    const team = await getMyTeam(client, sessionId, userId);
+    if (!team) {
+      throw Object.assign(new Error('Tu n’es dans aucune équipe'), { status: 400 });
+    }
+    await client.query('DELETE FROM tournament_team_members WHERE team_id = $1 AND user_id = $2', [
+      team.id,
+      userId,
+    ]);
+    if (team.created_by != null) {
+      await client.query(
+        `DELETE FROM tournament_teams t
+         WHERE t.id = $1
+           AND NOT EXISTS (SELECT 1 FROM tournament_team_members m WHERE m.team_id = t.id)`,
+        [team.id]
+      );
+    }
+  });
+}
+
+/** Le capitaine (créateur, toujours membre) renomme son équipe ou change son logo. */
+export async function updateTeamAsCaptain(
+  sessionId: number,
+  userId: number,
+  updates: { tag?: string; logo_url?: string | null }
+): Promise<void> {
+  await withPlayerTeamsLock(sessionId, userId, async (client) => {
+    const team = await getMyTeam(client, sessionId, userId);
+    if (!team || team.created_by !== userId) {
+      throw Object.assign(new Error('Seul le capitaine peut modifier l’équipe'), { status: 403 });
+    }
+    const tag = updates.tag !== undefined ? normalizeTag(updates.tag) : team.tag;
+    const logoUrl = updates.logo_url !== undefined ? updates.logo_url : team.logo_url;
+    await client.query('UPDATE tournament_teams SET tag = $1, logo_url = $2 WHERE id = $3', [
+      tag,
+      logoUrl,
+      team.id,
+    ]);
+  });
 }
 
 export async function setParticipantRating(

@@ -107,6 +107,7 @@ interface CreateSessionBody {
   tournamentFormat?: string;
   tournamentMaxTeams?: number;
   tournamentTeamSize?: number;
+  tournamentPlayerTeams?: boolean;
 }
 
 export async function createSession(
@@ -200,6 +201,7 @@ export async function createSession(
   let tournamentFormat: string | null = null;
   let tournamentMaxTeams: number | null = null;
   let tournamentTeamSize: number | null = null;
+  let tournamentPlayerTeams = false;
   let tournamentRewards: { reward1st: number; reward2nd: number; reward3rd: number } | null = null;
   if (gameType === 'tournament') {
     const rawFormat = req.body?.tournamentFormat;
@@ -236,6 +238,12 @@ export async function createSession(
     tournamentFormat = rawFormat as TournamentFormat;
     tournamentMaxTeams = maxTeams as number;
     tournamentTeamSize = teamSize as number;
+    const rawPlayerTeams = req.body?.tournamentPlayerTeams;
+    if (rawPlayerTeams !== undefined && typeof rawPlayerTeams !== 'boolean') {
+      res.status(400).json({ error: 'tournamentPlayerTeams doit être un booléen' });
+      return;
+    }
+    tournamentPlayerTeams = rawPlayerTeams === true;
     tournamentRewards = {
       reward1st: t1 as number,
       reward2nd: t2 as number,
@@ -261,6 +269,7 @@ export async function createSession(
     tournamentFormat,
     tournamentMaxTeams,
     tournamentTeamSize,
+    tournamentPlayerTeams,
   });
 
   const recipientIds = await userService.listAllIds(req.user!.id);

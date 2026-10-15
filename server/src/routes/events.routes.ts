@@ -80,6 +80,12 @@ router.post(
 router.post('/:id/speedrun/cancel', requireAuth, requireSessionManager, speedrunController.cancelSession);
 
 // --- Tournois (game_type 'tournament') — inscription via /join générique ---
+// Équipes formées par les joueurs : n'importe quel inscrit, si le tournoi a
+// l'option tournament_player_teams (vérifié dans le service)
+router.post('/:id/tournament/my-team', requireAuth, handleTeamLogoUpload, tournamentsController.createMyTeam);
+router.put('/:id/tournament/my-team', requireAuth, handleTeamLogoUpload, tournamentsController.updateMyTeam);
+router.post('/:id/tournament/my-team/leave', requireAuth, tournamentsController.leaveMyTeam);
+router.post('/:id/tournament/teams/:teamId/join', requireAuth, tournamentsController.joinTeam);
 router.post(
   '/:id/tournament/teams',
   requireAuth,

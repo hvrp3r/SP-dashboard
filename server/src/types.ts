@@ -262,6 +262,8 @@ export interface EventSessionRow {
   tournament_format: string | null;
   tournament_max_teams: number | null;
   tournament_team_size: number | null;
+  // true = les inscrits forment eux-mêmes leurs équipes (migration 072)
+  tournament_player_teams: boolean;
 }
 
 export interface EventParticipantRow {
@@ -297,6 +299,8 @@ export interface TournamentTeamRow {
   tag: string;
   logo_url: string | null;
   created_at: string;
+  // Capitaine si l'équipe a été créée par un joueur ; NULL sinon (migration 072)
+  created_by: number | null;
 }
 
 export interface TournamentTeamMember {

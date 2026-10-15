@@ -171,7 +171,8 @@ cancelled_at TIMESTAMPTZ, cancelled_by INT REFERENCES users(id),  -- (035) annul
 game_image_url TEXT, game_external_url TEXT,  -- (064) fiche jeu speedrun.com
 tournament_format VARCHAR(20),        -- (067) 'single_elim' | 'double_elim' | 'round_robin' — NULL hors tournoi
 tournament_max_teams INT,             -- (067) taille d'arbre prévue (2-64)
-tournament_team_size INT              -- (067) joueurs par équipe (1-16)
+tournament_team_size INT,             -- (067) joueurs par équipe (1-16)
+tournament_player_teams BOOLEAN NOT NULL DEFAULT FALSE  -- (072) true = les inscrits forment eux-mêmes leurs équipes
 ```
 
 ### `event_participants`
@@ -218,6 +219,7 @@ session_id INT REFERENCES event_sessions(id),
 tag VARCHAR(8) NOT NULL,
 logo_url TEXT,
 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+created_by INT REFERENCES users(id),  -- (072) capitaine si créée par un joueur ; NULL = MSP/organisateur ou génération aléatoire
 UNIQUE (session_id, tag)
 ```
 
@@ -642,9 +644,10 @@ Nouveau type de session d'événement (migration 067), même pattern que flappy_
 #### Inscription & équipes :
 - Inscription individuelle via le self-join existant (`event_participants`, mise débitée si `entry_fee`), limitée à `max_teams × team_size` places.
 - **Rating de pondération** : `event_participants.rating` (nullable, CHECK ≥ 0), édité par le MSP ; NULL = fallback sur le **solde SP** du joueur au moment de la génération (décision explicite).
-- **Formation des équipes (MSP uniquement)** :
+- **Formation des équipes** — par le MSP/l'organisateur, et optionnellement par les joueurs :
   - **Manuelle** : créer des équipes (tag 1-8 caractères unique par tournoi + logo uploadé, servi depuis `/uploads/team-logos` — 2 Mo max, PNG/JPEG/WEBP/GIF), assigner/retirer chaque inscrit (un joueur = au plus une équipe par tournoi, taille d'équipe respectée).
   - **Aléatoire équilibrée** : tri par rating effectif décroissant, *bucket shuffle* des ex-aequos (deux tirages successifs diffèrent), distribution en **serpentin** (1re → 2e → … → n-ième → (n-1)-ième → …). Tags auto `T1`, `T2`… renommables ensuite. Un nombre d'équipes cible peut être passé (défaut : `tournament_max_teams`, sinon le minimum qui fait tenir tout le monde).
+  - **Par les joueurs** (option « Les joueurs forment leurs équipes » à la création, `tournament_player_teams`) : tout inscrit peut créer une équipe (tag + logo, il en devient **capitaine** via `tournament_teams.created_by` et peut la renommer/changer le logo), rejoindre une équipe non complète, ou quitter la sienne — routes `/:id/tournament/my-team` (POST créer, PUT modifier, POST `/leave`) et `/:id/tournament/teams/:teamId/join`, ouvertes à tout joueur authentifié, le flag et l'inscription étant vérifiés dans le service. Pas de validation par le capitaine pour rejoindre (décision par défaut, groupe d'amis). Une équipe créée par un joueur est **supprimée quand son dernier membre la quitte** (une équipe vide bloquerait la génération de l'arbre) ; une équipe créée par le MSP reste, même vide. Toutes ces mutations sont sérialisées par tournoi (`SELECT … FOR UPDATE` sur la ligne `event_sessions`) pour éviter de dépasser la taille d'équipe ou le nombre max d'équipes en concurrence. Le MSP/organisateur garde tous ses contrôles en parallèle (ajout/retrait, génération aléatoire des inscrits restants…).
 - **Verrouillage** : dès que l'arbre est généré, les équipes sont figées (toutes les mutations refusées côté serveur) ; le MSP doit réinitialiser l'arbre pour les modifier.
 - Générer l'arbre exige ≥ 2 équipes et **aucune équipe vide** (une équipe sans membre pourrait gagner par bye et toucher une dotation sans joueur à créditer).
 
@@ -669,7 +672,8 @@ Le MSP peut déléguer l'organisation d'événements à un joueur sans le promou
 
 - **Créer** : un organisateur voit le formulaire de création sur `/evenements` et peut lancer n'importe quel type de session (quiz, flappy_bird, speedrun, tournoi) — `requireEventOrganizer` (`server/src/middleware/eventPermissions.ts`).
 - **Gérer** : uniquement les sessions **qu'il a créées** (`event_sessions.created_by`) — toutes les routes de gestion d'une session (`/:id/...` : questions, participants, équipes/arbre/matchs/annonces, exclusions, clôture/annulation) passent par `requireSessionManager` (MSP = toutes les sessions). Côté client, `canManageSession` (`client/src/lib/permissions.ts`) décide de l'affichage des contrôles ; le serveur revérifie toujours.
-- **Participation** : un organisateur **peut participer** à sa propre session (décision explicite de l'utilisateur), comme le MSP. - **Attribution de SP réservée au MSP** : l'attribution libre (`POST /:id/award`, bouton « Attribuer les SP ») reste `requireAdmin`, même sur une session créée par un organisateur — c'est le MSP qui donne les SP (décision explicite de l'utilisateur). Le formulaire est masqué côté client pour l'organisateur. La dotation automatique par rang (fin de tournoi, close-and-distribute flappy/speedrun) n'est pas concernée.
+- **Participation** : un organisateur **peut participer** à sa propre session (décision explicite de l'utilisateur), comme le MSP.
+- **Attribution de SP réservée au MSP** : l'attribution libre (`POST /:id/award`, bouton « Attribuer les SP ») reste `requireAdmin`, même sur une session créée par un organisateur — c'est le MSP qui donne les SP (décision explicite de l'utilisateur). Le formulaire est masqué côté client pour l'organisateur. La dotation automatique par rang (fin de tournoi, close-and-distribute flappy/speedrun) n'est pas concernée.
 - **Révocation immédiate** : la permission est relue en BDD à chaque requête (pas portée par le JWT). Une fois révoquée, l'ex-organisateur ne gère plus ses sessions — le MSP peut toujours les reprendre.
 - Les permissions sont exposées dans `permissions: UserPermission[]` sur `/api/users/me`, le login et la liste admin des joueurs.
 
@@ -782,7 +786,8 @@ Ajoutées en cours de projet, à la demande de l'utilisateur, non prévues dans 
 - Page Suggestions : proposition de features/bugs par les joueurs, vote façon Reddit, commentaires, clôture/suppression par le MSP (voir section 9)
 - Défis "Pile ou face" (`challenges.type = 'coin_flip'`) : variante 1v1 des défis SP Wager où le gagnant est tiré au sort par le serveur dès que l'adversaire accepte, sans déclaration manuelle ni arbitrage nécessaire (voir section 4)
 - Défis "Pierre-feuille-ciseaux" (`challenges.type = 'rps'`) : variante 1v1 en 3 manches (premier à 2 manches gagnées), coups cachés choisis une fois le défi accepté, le serveur départage et les égalités se rejouent (voir section 4)
-- Organisateurs d'événements : permission déléguée par le MSP à un joueur pour créer des événements et gérer les siens, sans y participer (voir section 11)
+- Organisateurs d'événements : permission déléguée par le MSP à un joueur pour créer des événements et gérer les siens (il peut y participer, mais l'attribution libre de SP reste au MSP — voir section 11)
+- Équipes de tournoi formées par les joueurs (option à la création, voir section 10)
 - Tournois (`game_type = 'tournament'`) : arbre à élimination simple/double ou round-robin, équipes tag+logo générées (serpentin pondéré par rating) ou composées à la main, dotation par rang distribuée automatiquement, annonces du MSP (voir section 10)
 
 ---
@@ -869,7 +874,7 @@ VITE_KOFI_URL=
 | Le vote sur une suggestion est-il façon Reddit (up/down) ? | Oui — up et down, un vote par joueur par suggestion, en bascule ; le score peut être négatif. Décision explicite de l'utilisateur (demande initiale d'upvote seul, étendue au downvote) |
 | Un défi "pile ou face" peut-il avoir plusieurs adversaires comme un défi classique ? | Non — restreint à un seul adversaire (2 participants), un pile ou face n'a que deux faces. Résolution automatique par le serveur dès acceptation, pas de déclaration manuelle ni d'étape "accepted" visible |
 | Formats de tournoi ? | **Les 3** : élimination directe, double élimination (avec match de reset si le représentant de la bracket perdants gagne la grande finale) et round-robin — décision explicite de l'utilisateur |
-| Comment se forment les équipes d'un tournoi ? | Inscription individuelle puis équipes formées par le MSP : manuellement, ou génération aléatoire équilibrée (serpentin pondéré par rating, *bucket shuffle* des ex-aequos) |
+| Comment se forment les équipes d'un tournoi ? | Inscription individuelle puis équipes formées par le MSP : manuellement, ou génération aléatoire équilibrée (serpentin pondéré par rating, *bucket shuffle* des ex-aequos). Option par tournoi (`tournament_player_teams`) pour que les joueurs choisissent eux-mêmes leur équipe — demande explicite de l'utilisateur |
 | Base de la pondération des équipes ? | Rating MSP (`event_participants.rating`, éditable) avec fallback sur le **solde SP** au moment de la génération — décision explicite |
 | Récompenses de tournoi ? | Dotation par rang (`reward_1st/2nd/3rd` SP **par membre**) configurée à la création, **distribuée automatiquement** à la fin + ajustements libres du MSP ensuite — transaction type `event_reward` |
 | Qui déclare les vainqueurs de matchs de tournoi ? | **MSP uniquement** (il organise les parties hors-plateforme) — décision explicite, pas de déclaration par les participants comme les défis |

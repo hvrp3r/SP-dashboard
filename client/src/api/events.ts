@@ -29,6 +29,7 @@ interface CreateTournamentOptions {
   tournamentFormat: string;
   tournamentMaxTeams: number;
   tournamentTeamSize: number;
+  tournamentPlayerTeams?: boolean;
   reward1st: number;
   reward2nd: number;
   reward3rd: number;

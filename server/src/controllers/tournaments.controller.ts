@@ -159,6 +159,89 @@ export async function removeTeamMember(
 }
 
 // ---------------------------------------------------------------------------
+// Équipes formées par les joueurs (option tournament_player_teams)
+// ---------------------------------------------------------------------------
+
+export async function createMyTeam(
+  req: Request<{ id: string }, {}, TeamBody>,
+  res: Response
+): Promise<void> {
+  const sessionId = parseSessionId(req);
+  if (sessionId == null) {
+    res.status(400).json({ error: 'Identifiant de session invalide' });
+    return;
+  }
+  const tag = req.body?.tag?.trim();
+  if (!tag) {
+    res.status(400).json({ error: 'Le tag d’équipe est requis' });
+    return;
+  }
+  try {
+    await tournamentService.createPlayerTeam(sessionId, req.user!.id, tag, logoUrlFromRequest(req));
+    const detail = await buildTournamentDetail(sessionId);
+    res.status(201).json(detail);
+  } catch (err) {
+    handleError(res, err);
+  }
+}
+
+export async function updateMyTeam(
+  req: Request<{ id: string }, {}, TeamBody>,
+  res: Response
+): Promise<void> {
+  const sessionId = parseSessionId(req);
+  if (sessionId == null) {
+    res.status(400).json({ error: 'Identifiant de session invalide' });
+    return;
+  }
+  try {
+    const updates: { tag?: string; logo_url?: string | null } = {};
+    if (req.body?.tag !== undefined) updates.tag = req.body.tag;
+    if (req.file) updates.logo_url = logoUrlFromRequest(req);
+    else if (req.body?.removeLogo === true) updates.logo_url = null;
+    await tournamentService.updateTeamAsCaptain(sessionId, req.user!.id, updates);
+    const detail = await buildTournamentDetail(sessionId);
+    res.json(detail);
+  } catch (err) {
+    handleError(res, err);
+  }
+}
+
+export async function leaveMyTeam(req: Request<{ id: string }>, res: Response): Promise<void> {
+  const sessionId = parseSessionId(req);
+  if (sessionId == null) {
+    res.status(400).json({ error: 'Identifiant de session invalide' });
+    return;
+  }
+  try {
+    await tournamentService.leaveTeamAsPlayer(sessionId, req.user!.id);
+    const detail = await buildTournamentDetail(sessionId);
+    res.json(detail);
+  } catch (err) {
+    handleError(res, err);
+  }
+}
+
+export async function joinTeam(
+  req: Request<{ id: string; teamId: string }>,
+  res: Response
+): Promise<void> {
+  const sessionId = parseSessionId(req);
+  const teamId = Number(req.params.teamId);
+  if (sessionId == null || !Number.isInteger(teamId)) {
+    res.status(400).json({ error: 'Identifiant invalide' });
+    return;
+  }
+  try {
+    await tournamentService.joinTeamAsPlayer(sessionId, teamId, req.user!.id);
+    const detail = await buildTournamentDetail(sessionId);
+    res.status(201).json(detail);
+  } catch (err) {
+    handleError(res, err);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Inscriptions (rating de pondération)
 // ---------------------------------------------------------------------------
 
