@@ -300,8 +300,8 @@ export async function autoGenerateTeams(
   }
 }
 
-export async function generateBracket(
-  req: Request<{ id: string }>,
+export async function createStage(
+  req: Request<{ id: string }, {}, { name?: string; format?: string }>,
   res: Response
 ): Promise<void> {
   const sessionId = parseSessionId(req);
@@ -309,26 +309,33 @@ export async function generateBracket(
     res.status(400).json({ error: 'Identifiant de session invalide' });
     return;
   }
+  const name = req.body?.name;
+  const format = req.body?.format;
+  if ((name !== undefined && typeof name !== 'string') || (format !== undefined && typeof format !== 'string')) {
+    res.status(400).json({ error: 'Nom ou format invalide' });
+    return;
+  }
   try {
-    await tournamentService.generateBracket(sessionId);
+    await tournamentService.createStage(sessionId, { name, format });
     const detail = await buildTournamentDetail(sessionId);
-    res.json(detail);
+    res.status(201).json(detail);
   } catch (err) {
     handleError(res, err);
   }
 }
 
-export async function resetBracket(
-  req: Request<{ id: string }>,
+export async function deleteStage(
+  req: Request<{ id: string; stageId: string }>,
   res: Response
 ): Promise<void> {
   const sessionId = parseSessionId(req);
-  if (sessionId == null) {
-    res.status(400).json({ error: 'Identifiant de session invalide' });
+  const stageId = Number(req.params.stageId);
+  if (sessionId == null || !Number.isInteger(stageId)) {
+    res.status(400).json({ error: 'Identifiant invalide' });
     return;
   }
   try {
-    await tournamentService.resetBracket(sessionId);
+    await tournamentService.deleteStage(sessionId, stageId);
     const detail = await buildTournamentDetail(sessionId);
     res.json(detail);
   } catch (err) {
@@ -351,9 +358,26 @@ export async function resolveMatch(
     res.status(400).json({ error: 'Identifiant invalide' });
     return;
   }
+  try {
+    await tournamentService.resolveMatch(sessionId, matchId, winnerTeamId as number);
+  } catch (err) {
+    handleError(res, err);
+    return;
+  }
+  const detail = await buildTournamentDetail(sessionId);
+  res.json(detail);
+}
+
+/** Termine le tournoi et verse la dotation sur le classement général (MSP). */
+export async function finishTournament(req: Request<{ id: string }>, res: Response): Promise<void> {
+  const sessionId = parseSessionId(req);
+  if (sessionId == null) {
+    res.status(400).json({ error: 'Identifiant de session invalide' });
+    return;
+  }
   let result;
   try {
-    result = await tournamentService.resolveMatch(sessionId, matchId, winnerTeamId as number);
+    result = await tournamentService.finishTournament(sessionId);
   } catch (err) {
     handleError(res, err);
     return;
@@ -372,7 +396,7 @@ export async function resolveMatch(
           type: 'sp_gained',
           message: `Ton équipe [${teamById.get(a.teamId)?.tag ?? '?'}] a fini ${
             RANK_LABELS[a.rank - 1] ?? `${a.rank}e`
-          } au tournoi ${session?.title ?? ''} — +${a.amount} SP`.trim(),
+          } du classement général du tournoi ${session?.title ?? ''} — +${a.amount} SP`.trim(),
           link: `/evenements/${sessionId}`,
         })
       )

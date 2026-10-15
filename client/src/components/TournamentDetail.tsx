@@ -5,11 +5,14 @@ import * as eventsApi from '../api/events.js';
 import * as tournamentApi from '../api/tournament.js';
 import { resolveAvatarUrl } from '../lib/avatar.js';
 import { tournamentFormatLabel } from '../lib/eventLabels.js';
-import type {
-  EventSessionDetail,
-  TournamentMatch,
-  TournamentStandings,
-  TournamentTeam,
+import {
+  TOURNAMENT_FORMATS,
+  type EventSessionDetail,
+  type TournamentFormat,
+  type TournamentMatch,
+  type TournamentStage,
+  type TournamentStandings,
+  type TournamentTeam,
 } from '../types.js';
 
 interface Props {
@@ -55,13 +58,9 @@ export default function TournamentDetail({
     bracketGenerated: false,
     finished: false,
     championTeamId: null,
-    standings: [],
+    stages: [],
+    overall: [],
   };
-
-  const totalRounds =
-    session.tournament_format === 'round_robin'
-      ? 0
-      : Math.max(0, ...matches.filter((m) => m.bracket === 'main' || m.bracket === 'winners').map((m) => m.round));
 
   const myParticipant = participants.find((p) => p.user_id === userId) ?? null;
   const capacity = (session.tournament_max_teams ?? 0) * (session.tournament_team_size ?? 1);
@@ -73,8 +72,6 @@ export default function TournamentDetail({
     session.status === 'open' &&
     !state.finished &&
     spotsLeft > 0;
-
-  const resolvedCount = matches.filter((m) => m.winner_team_id != null).length;
 
   async function run<T>(action: () => Promise<T>): Promise<T | undefined> {
     setBusy(true);
@@ -129,6 +126,7 @@ export default function TournamentDetail({
         <div className="rounded-xl border border-yellow-500/40 bg-yellow-500/10 p-4 text-center">
           <p className="text-lg font-bold text-yellow-300">
             🏆 [{champion.tag}] remporte le tournoi
+            {state.stages.length > 1 ? ' au classement général' : ''}
           </p>
           <p className="text-sm text-zinc-400">
             {champion.members.map((m) => m.username).join(', ')}
@@ -137,37 +135,17 @@ export default function TournamentDetail({
       )}
 
       {state.bracketGenerated ? (
-        <>
-          <BracketSection
-            session={session}
-            matches={matches}
-            isAdmin={isAdmin}
-            busy={busy}
-            onResolve={async (matchId, winnerTeamId) => {
-              const data = await run(() => tournamentApi.resolveMatch(sessionId, matchId, winnerTeamId));
-              if (data) onSessionChange(data);
-            }}
-          />
-          {isAdmin && !state.finished && (
-            <ResetBracketButton
-              disabled={busy || resolvedCount > 0}
-              onClick={async () => {
-                const ok = await confirm({
-                  title: 'Réinitialiser l’arbre',
-                  message:
-                    resolvedCount > 0
-                      ? 'Au moins un match a déjà été joué : la réinitialisation est bloquée pour préserver l’historique.'
-                      : 'Tous les matchs générés seront supprimés. Les équipes resteront modifiables.',
-                  confirmLabel: 'Réinitialiser',
-                  danger: true,
-                });
-                if (!ok) return;
-                const data = await run(() => tournamentApi.resetBracket(sessionId));
-                if (data) onSessionChange(data);
-              }}
-            />
-          )}
-        </>
+        <StagesSection
+          sessionId={sessionId}
+          session={session}
+          matches={matches}
+          state={state}
+          isAdmin={isAdmin}
+          canFinish={canAward}
+          busy={busy}
+          run={run}
+          onSessionChange={onSessionChange}
+        />
       ) : (
         <TeamSetupSection
           sessionId={sessionId}
@@ -212,6 +190,7 @@ export default function TournamentDetail({
             const data = await run(() => eventsApi.awardParticipants(sessionId, awards));
             if (data) onSessionChange(data);
           }}
+          finished={state.finished}
           onClose={async () => {
             const ok = await confirm({
               title: 'Clôturer la session',
@@ -246,7 +225,7 @@ function TournamentInfoBar({
   return (
     <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4 grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
       <div>
-        <p className="text-[10px] uppercase tracking-wide text-zinc-500">Format</p>
+        <p className="text-[10px] uppercase tracking-wide text-zinc-500">Format par défaut</p>
         <p className="text-zinc-200">
           {tournamentFormatLabel(session.tournament_format ?? 'single_elim')}
         </p>
@@ -270,11 +249,23 @@ function TournamentInfoBar({
           🥇 {session.reward_1st ?? 0} · 🥈 {session.reward_2nd ?? 0} · 🥉 {session.reward_3rd ?? 0} SP
         </p>
       </div>
+      <div className="col-span-2 sm:col-span-4">
+        <p className="text-[10px] uppercase tracking-wide text-zinc-500">Points par place (chaque arbre)</p>
+        <p className="text-zinc-200">
+          {(session.tournament_placement_points ?? []).length > 0
+            ? (session.tournament_placement_points ?? [])
+                .map((pts, idx) => `${idx + 1}${idx === 0 ? 're' : 'e'} : ${pts}`)
+                .join(' · ')
+            : 'Aucun barème — tous les arbres rapportent 0 point'}
+        </p>
+      </div>
       {state.bracketGenerated && (
         <div className="col-span-2 sm:col-span-4">
-          <p className="text-[10px] uppercase tracking-wide text-zinc-500">État de l’arbre</p>
+          <p className="text-[10px] uppercase tracking-wide text-zinc-500">État</p>
           <p className={state.finished ? 'text-yellow-300' : 'text-emerald-400'}>
-            {state.finished ? 'Tournoi terminé' : 'Tournoi en cours'}
+            {state.finished
+              ? 'Tournoi terminé'
+              : `Tournoi en cours — ${state.stages.length} arbre${state.stages.length > 1 ? 's' : ''}`}
           </p>
         </div>
       )}
@@ -387,7 +378,7 @@ function TeamSetupSection({
   }
 
   async function handleGenerateBracket() {
-    const data = await run(() => tournamentApi.generateBracket(sessionId));
+    const data = await run(() => tournamentApi.createStage(sessionId));
     if (data) onSessionChange(data);
   }
 
@@ -564,8 +555,8 @@ function TeamSetupSection({
               )
             </button>
             <p className="mt-2 text-xs text-zinc-500">
-              Une fois l’arbre généré, les équipes sont figées : réinitialise l’arbre pour les
-              modifier.
+              Une fois le premier arbre généré, les équipes sont figées pour tous les arbres du
+              tournoi : supprime les arbres (sans match joué) pour les modifier.
             </p>
           </div>
         </div>
@@ -815,16 +806,320 @@ function TeamCard({
   );
 }
 
-function ResetBracketButton({ disabled, onClick }: { disabled: boolean; onClick: () => void }) {
+// ---------------------------------------------------------------------------
+// Arbres multiples : onglets, création, classement général
+// ---------------------------------------------------------------------------
+
+function StagesSection({
+  sessionId,
+  session,
+  matches,
+  state,
+  isAdmin,
+  canFinish,
+  busy,
+  run,
+  onSessionChange,
+}: {
+  sessionId: number;
+  session: EventSessionDetail;
+  matches: TournamentMatch[];
+  state: NonNullable<EventSessionDetail['tournament']>;
+  isAdmin: boolean;
+  /** Terminer le tournoi verse la dotation : MSP uniquement */
+  canFinish: boolean;
+  busy: boolean;
+  run: <T>(action: () => Promise<T>) => Promise<T | undefined>;
+  onSessionChange: (session: EventSessionDetail) => void;
+}) {
+  const confirm = useConfirm();
+  const stages = state.stages;
+  const [selectedId, setSelectedId] = useState<number | 'overall' | null>(null);
+  const [newName, setNewName] = useState('');
+  const [newFormat, setNewFormat] = useState<TournamentFormat>(
+    (session.tournament_format as TournamentFormat | null) ?? 'single_elim'
+  );
+
+  // Par défaut : le dernier arbre créé (celui qu'on est en train de jouer)
+  const selected: TournamentStage | null =
+    selectedId === 'overall'
+      ? null
+      : (stages.find((st) => st.id === selectedId) ?? stages[stages.length - 1] ?? null);
+  const stageMatches = selected ? matches.filter((m) => m.stage_id === selected.id) : [];
+  const playedCount = stageMatches.filter(
+    (m) => m.winner_team_id != null && m.team_a != null && m.team_b != null
+  ).length;
+  const canManage = isAdmin && session.status === 'open' && !state.finished;
+  const allStagesFinished = stages.length > 0 && stages.every((st) => st.finished);
+
+  async function handleCreateStage() {
+    const data = await run(() =>
+      tournamentApi.createStage(sessionId, { name: newName.trim() || undefined, format: newFormat })
+    );
+    if (data) {
+      onSessionChange(data);
+      setNewName('');
+      setSelectedId(null);
+    }
+  }
+
+  async function handleDeleteStage(stage: TournamentStage) {
+    const ok = await confirm({
+      title: 'Supprimer l’arbre',
+      message: `Tous les matchs de « ${stage.name} » seront supprimés. S’il ne reste plus aucun arbre, les équipes redeviennent modifiables.`,
+      confirmLabel: 'Supprimer',
+      danger: true,
+    });
+    if (!ok) return;
+    const data = await run(() => tournamentApi.deleteStage(sessionId, stage.id));
+    if (data) {
+      onSessionChange(data);
+      setSelectedId(null);
+    }
+  }
+
+  async function handleFinish() {
+    const ok = await confirm({
+      title: 'Terminer le tournoi',
+      message:
+        'La dotation sera versée aux équipes classées 1re, 2e et 3e du classement général (ex-aequo compris). Plus aucun arbre ne pourra être créé ni joué.',
+      confirmLabel: 'Terminer et verser',
+    });
+    if (!ok) return;
+    const data = await run(() => tournamentApi.finishTournament(sessionId));
+    if (data) {
+      onSessionChange(data);
+      setSelectedId('overall');
+    }
+  }
+
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className="w-full text-sm text-zinc-500 hover:text-zinc-300 transition disabled:opacity-40"
-    >
-      Réinitialiser l’arbre (aucun match joué)
-    </button>
+    <div className="space-y-4">
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        {stages.map((st) => (
+          <button
+            key={st.id}
+            type="button"
+            onClick={() => setSelectedId(st.id)}
+            className={`flex-shrink-0 rounded-full px-3 py-1.5 text-sm font-medium transition ${
+              selected?.id === st.id
+                ? 'bg-emerald-500 text-zinc-950'
+                : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
+            }`}
+          >
+            {st.name}
+            <span className="ml-1 text-xs opacity-70">{st.finished ? '✓' : '…'}</span>
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={() => setSelectedId('overall')}
+          className={`flex-shrink-0 rounded-full px-3 py-1.5 text-sm font-medium transition ${
+            selectedId === 'overall'
+              ? 'bg-yellow-400 text-zinc-950'
+              : 'bg-zinc-800 text-yellow-300 hover:bg-zinc-700'
+          }`}
+        >
+          🏆 Classement général
+        </button>
+      </div>
+
+      {selected ? (
+        <>
+          <p className="text-xs text-zinc-500">
+            {tournamentFormatLabel(selected.format)}
+            {selected.finished ? ' — terminé' : ' — en cours'}
+          </p>
+          <BracketSection
+            format={selected.format}
+            standings={selected.standings}
+            matches={stageMatches}
+            isAdmin={isAdmin && !state.finished}
+            busy={busy}
+            onResolve={async (matchId, winnerTeamId) => {
+              const data = await run(() => tournamentApi.resolveMatch(sessionId, matchId, winnerTeamId));
+              if (data) onSessionChange(data);
+            }}
+          />
+          {selected.finished && selected.placements.length > 0 && (
+            <StagePlacementsTable stage={selected} overall={state.overall} />
+          )}
+          {canManage && (
+            <button
+              type="button"
+              onClick={() => handleDeleteStage(selected)}
+              disabled={busy || playedCount > 0}
+              title={playedCount > 0 ? 'Au moins un match a déjà été joué dans cet arbre' : undefined}
+              className="w-full text-sm text-zinc-500 hover:text-zinc-300 transition disabled:opacity-40"
+            >
+              Supprimer cet arbre (aucun match joué)
+            </button>
+          )}
+        </>
+      ) : (
+        <OverallStandingsTable stages={stages} overall={state.overall} finished={state.finished} />
+      )}
+
+      {canManage && (
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4 space-y-3">
+          <h3 className="text-sm font-semibold text-zinc-300">Nouvel arbre (mêmes équipes)</h3>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <input
+              type="text"
+              maxLength={100}
+              placeholder={`Nom (défaut : Arbre ${stages.length + 1})`}
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              className="flex-1 rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            />
+            <select
+              value={newFormat}
+              onChange={(e) => setNewFormat(e.target.value as TournamentFormat)}
+              className="rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            >
+              {TOURNAMENT_FORMATS.map((f) => (
+                <option key={f} value={f}>
+                  {tournamentFormatLabel(f)}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={handleCreateStage}
+              disabled={busy}
+              className="bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-semibold px-4 py-2 rounded-md transition disabled:opacity-50"
+            >
+              🏁 Générer
+            </button>
+          </div>
+          <p className="text-xs text-zinc-500">
+            Les têtes de série suivent le classement général actuel (points cumulés).
+          </p>
+          {canFinish && (
+            <div className="pt-2 border-t border-zinc-800">
+              <button
+                type="button"
+                onClick={handleFinish}
+                disabled={busy || !allStagesFinished}
+                title={!allStagesFinished ? 'Tous les arbres doivent être terminés' : undefined}
+                className="w-full bg-yellow-400 hover:bg-yellow-300 text-zinc-950 font-semibold px-4 py-2 rounded-md transition disabled:opacity-50"
+              >
+                🏆 Terminer le tournoi et verser la dotation
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function placeLabel(place: number): string {
+  return place === 1 ? '1re' : `${place}e`;
+}
+
+function TeamTag({ tag, logoUrl }: { tag: string; logoUrl: string | null }) {
+  return (
+    <span className="flex items-center gap-2 text-zinc-200">
+      {logoUrl && (
+        <img src={resolveAvatarUrl(logoUrl) ?? ''} alt="" className="h-5 w-5 rounded object-cover" />
+      )}
+      [{tag}]
+    </span>
+  );
+}
+
+function StagePlacementsTable({
+  stage,
+  overall,
+}: {
+  stage: TournamentStage;
+  overall: NonNullable<EventSessionDetail['tournament']>['overall'];
+}) {
+  const teamById = new Map(overall.map((o) => [o.team_id, o]));
+  return (
+    <div>
+      <h2 className="font-semibold text-zinc-200 mb-3">Placements — {stage.name}</h2>
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-left text-[10px] uppercase tracking-wide text-zinc-500">
+            <th className="pb-2">Place</th>
+            <th className="pb-2">Équipe</th>
+            <th className="pb-2 text-right">Points</th>
+          </tr>
+        </thead>
+        <tbody>
+          {stage.placements.map((pl) => {
+            const team = teamById.get(pl.team_id);
+            return (
+              <tr key={pl.team_id} className="border-t border-zinc-800">
+                <td className="py-2 text-zinc-500">{placeLabel(pl.place)}</td>
+                <td className="py-2">
+                  <TeamTag tag={team?.tag ?? '?'} logoUrl={team?.logo_url ?? null} />
+                </td>
+                <td className="py-2 text-right text-emerald-400 font-semibold">+{pl.points}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function OverallStandingsTable({
+  stages,
+  overall,
+  finished,
+}: {
+  stages: TournamentStage[];
+  overall: NonNullable<EventSessionDetail['tournament']>['overall'];
+  finished: boolean;
+}) {
+  const finishedStages = stages.filter((st) => st.finished);
+  return (
+    <div>
+      <h2 className="font-semibold text-zinc-200 mb-1">Classement général</h2>
+      <p className="text-xs text-zinc-500 mb-3">
+        {finished
+          ? 'Tournoi terminé — classement définitif.'
+          : finishedStages.length === 0
+            ? 'Aucun arbre terminé pour l’instant : les points apparaîtront à la fin du premier arbre.'
+            : `Somme des points sur ${finishedStages.length} arbre${finishedStages.length > 1 ? 's' : ''} terminé${finishedStages.length > 1 ? 's' : ''}.`}
+      </p>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-[10px] uppercase tracking-wide text-zinc-500">
+              <th className="pb-2 pr-2">#</th>
+              <th className="pb-2 pr-2">Équipe</th>
+              {finishedStages.map((st) => (
+                <th key={st.id} className="pb-2 px-2 text-center whitespace-nowrap">
+                  {st.name}
+                </th>
+              ))}
+              <th className="pb-2 pl-2 text-right">Points</th>
+            </tr>
+          </thead>
+          <tbody>
+            {overall.map((o) => (
+              <tr key={o.team_id} className="border-t border-zinc-800">
+                <td className="py-2 pr-2 text-zinc-500">{o.rank}</td>
+                <td className="py-2 pr-2">
+                  <TeamTag tag={o.tag} logoUrl={o.logo_url} />
+                </td>
+                {finishedStages.map((st) => (
+                  <td key={st.id} className="py-2 px-2 text-center text-zinc-400 whitespace-nowrap">
+                    {o.places[st.id] != null ? placeLabel(o.places[st.id]!) : '—'}
+                  </td>
+                ))}
+                <td className="py-2 pl-2 text-right text-emerald-400 font-bold">{o.points}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 
@@ -833,18 +1128,18 @@ function ResetBracketButton({ disabled, onClick }: { disabled: boolean; onClick:
 // ---------------------------------------------------------------------------
 
 interface BracketSectionProps {
-  session: EventSessionDetail;
+  format: TournamentFormat;
+  standings: TournamentStandings[];
   matches: TournamentMatch[];
   isAdmin: boolean;
   busy: boolean;
   onResolve: (matchId: number, winnerTeamId: number) => Promise<void>;
 }
 
-function BracketSection({ session, matches, isAdmin, busy, onResolve }: BracketSectionProps) {
-  const format = session.tournament_format ?? 'single_elim';
+function BracketSection({ format, standings, matches, isAdmin, busy, onResolve }: BracketSectionProps) {
   if (format === 'round_robin') {
     return (
-      <RoundRobinView matches={matches} standings={session.tournament?.standings ?? []} isAdmin={isAdmin} busy={busy} onResolve={onResolve} />
+      <RoundRobinView matches={matches} standings={standings} isAdmin={isAdmin} busy={busy} onResolve={onResolve} />
     );
   }
 
@@ -1243,12 +1538,14 @@ function AnnouncementsSection({
 
 function AdminWrapUpSection({
   canAward,
+  finished,
   participants,
   busy,
   onAward,
   onClose,
 }: {
   canAward: boolean;
+  finished: boolean;
   participants: NonNullable<EventSessionDetail['participants']>;
   busy: boolean;
   onAward: (awards: Array<{ participantId: number; amount: number }>) => Promise<void>;
@@ -1313,7 +1610,9 @@ function AdminWrapUpSection({
         Clôturer la session
       </button>
       <p className="text-xs text-zinc-500">
-        La dotation par rang est distribuée automatiquement dès que le dernier match est joué.
+        {finished
+          ? 'Tournoi terminé : la dotation a été versée selon le classement général.'
+          : 'La dotation est versée par le MSP selon le classement général, via « Terminer le tournoi ».'}
       </p>
     </div>
   );

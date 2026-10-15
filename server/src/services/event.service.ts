@@ -28,6 +28,7 @@ interface CreateSessionInput {
   tournamentMaxTeams?: number | null;
   tournamentTeamSize?: number | null;
   tournamentPlayerTeams?: boolean;
+  tournamentPlacementPoints?: number[];
 }
 
 export async function createSession({
@@ -47,13 +48,15 @@ export async function createSession({
   tournamentMaxTeams = null,
   tournamentTeamSize = null,
   tournamentPlayerTeams = false,
+  tournamentPlacementPoints = [],
 }: CreateSessionInput): Promise<EventSessionRow> {
   const { rows } = await pool.query<EventSessionRow>(
     `INSERT INTO event_sessions
        (season_id, game_type, title, description, entry_fee, status, created_by,
         ends_at, reward_1st, reward_2nd, reward_3rd, game_image_url, game_external_url,
-        tournament_format, tournament_max_teams, tournament_team_size, tournament_player_teams)
-     VALUES ($1, $2, $3, $4, $5, 'open', $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+        tournament_format, tournament_max_teams, tournament_team_size, tournament_player_teams,
+        tournament_placement_points)
+     VALUES ($1, $2, $3, $4, $5, 'open', $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
      RETURNING *`,
     [
       seasonId,
@@ -72,6 +75,7 @@ export async function createSession({
       tournamentMaxTeams,
       tournamentTeamSize,
       tournamentPlayerTeams,
+      JSON.stringify(tournamentPlacementPoints),
     ]
   );
   return rows[0] as EventSessionRow;

@@ -15,6 +15,19 @@ import {
 } from '../types.js';
 
 const SPEEDRUN_SEARCH_DEBOUNCE_MS = 400;
+const DEFAULT_PLACEMENT_POINTS = '10, 7, 5, 3, 2, 1';
+
+/** "10, 7, 5" → [10, 7, 5] ; null si une valeur n'est pas un entier ≥ 0. */
+function parsePlacementPoints(raw: string): number[] | null {
+  const parts = raw
+    .split(/[,;\s]+/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  const values = parts.map(Number);
+  if (values.length === 0 || values.length > 64) return null;
+  if (values.some((v) => !Number.isInteger(v) || v < 0) || !values.some((v) => v > 0)) return null;
+  return values;
+}
 
 export default function Events() {
   const { user } = useAuth();
@@ -41,6 +54,7 @@ export default function Events() {
   const [maxTeams, setMaxTeams] = useState('8');
   const [teamSize, setTeamSize] = useState('1');
   const [playerTeams, setPlayerTeams] = useState(false);
+  const [placementPoints, setPlacementPoints] = useState(DEFAULT_PLACEMENT_POINTS);
 
   // Recherche speedrun.com — purement une pré-suggestion pour remplir titre/
   // description/image/lien ; le MSP garde toujours la main pour tout saisir à la
@@ -127,9 +141,11 @@ export default function Events() {
   const showTournamentOptions = gameType === 'tournament';
   const maxTeamsValue = Number(maxTeams);
   const teamSizeValue = Number(teamSize);
+  const placementPointsValue = parsePlacementPoints(placementPoints);
   const tournamentInvalid =
     showTournamentOptions &&
-    (!Number.isInteger(maxTeamsValue) ||
+    (placementPointsValue === null ||
+      !Number.isInteger(maxTeamsValue) ||
       maxTeamsValue < 2 ||
       maxTeamsValue > 64 ||
       !Number.isInteger(teamSizeValue) ||
@@ -154,7 +170,9 @@ export default function Events() {
       return;
     }
     if (tournamentInvalid) {
-      setError('Format, nombre d’équipes (2-64), taille d’équipe (1-16) et dotation requis');
+      setError(
+        'Format, nombre d’équipes (2-64), taille d’équipe (1-16), dotation et barème (entiers ≥ 0) requis'
+      );
       return;
     }
     setSubmitting(true);
@@ -180,6 +198,7 @@ export default function Events() {
               tournamentMaxTeams: maxTeamsValue,
               tournamentTeamSize: teamSizeValue,
               tournamentPlayerTeams: playerTeams,
+              tournamentPlacementPoints: placementPointsValue ?? [],
               reward1st: reward1stValue,
               reward2nd: reward2ndValue,
               reward3rd: reward3rdValue,
@@ -198,6 +217,7 @@ export default function Events() {
       setMaxTeams('8');
       setTeamSize('1');
       setPlayerTeams(false);
+      setPlacementPoints(DEFAULT_PLACEMENT_POINTS);
       setSelectedGame(null);
       setSpeedrunQuery('');
       setSpeedrunResults([]);
@@ -485,9 +505,27 @@ export default function Events() {
                       </span>
                     </span>
                   </label>
+                  <div>
+                    <label className="block text-xs text-zinc-500 mb-1">
+                      Points par place dans chaque arbre (1re, 2e, 3e…) — au-delà : 0 point
+                    </label>
+                    <input
+                      type="text"
+                      value={placementPoints}
+                      onChange={(e) => setPlacementPoints(e.target.value)}
+                      placeholder={DEFAULT_PLACEMENT_POINTS}
+                      className={`w-full rounded-md border bg-zinc-950 text-zinc-100 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500 ${
+                        parsePlacementPoints(placementPoints) === null ? 'border-red-500' : 'border-zinc-700'
+                      }`}
+                    />
+                    <p className="mt-1 text-xs text-zinc-500">
+                      Tu pourras jouer plusieurs arbres avec les mêmes équipes : le score d’une
+                      équipe est la somme de ses points sur tous les arbres.
+                    </p>
+                  </div>
                   <p className="text-xs text-zinc-500">
-                    Dotation en SP par membre de l’équipe — distribuée automatiquement à la fin du
-                    tournoi.
+                    Dotation en SP par membre de l’équipe — versée par le MSP selon le classement
+                    général quand il termine le tournoi.
                   </p>
                   <div className="grid grid-cols-3 gap-2">
                     <div>

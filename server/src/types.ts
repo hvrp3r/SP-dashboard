@@ -264,6 +264,10 @@ export interface EventSessionRow {
   tournament_team_size: number | null;
   // true = les inscrits forment eux-mêmes leurs équipes (migration 072)
   tournament_player_teams: boolean;
+  // Barème de points par place dans un arbre (index 0 = 1re place) — migration 073
+  tournament_placement_points: number[];
+  // Tournoi terminé par le MSP (dotation versée sur le classement général)
+  tournament_finished_at: string | null;
 }
 
 export interface EventParticipantRow {
@@ -320,9 +324,21 @@ export interface TournamentTeamEntry extends TournamentTeamRow {
  * NULL   → slot de bye vide (si l'autre slot a une équipe, match auto-résolu). */
 export type TournamentMatchFeed = string | null;
 
+/** Un arbre d'un tournoi (migration 073) — mêmes équipes, format propre. */
+export interface TournamentStageRow {
+  id: number;
+  session_id: number;
+  name: string;
+  format: TournamentFormat;
+  position: number;
+  created_at: string;
+  finished_at: string | null;
+}
+
 export interface TournamentMatchRow {
   id: number;
   session_id: number;
+  stage_id: number;
   bracket: TournamentBracket;
   round: number;
   position: number;
@@ -366,6 +382,32 @@ export interface TournamentStandingsEntry {
   losses: number;
   /** Rang final (1 = champion...) une fois le tournoi terminé, sinon null. */
   rank: number | null;
+}
+
+/** Placement d'une équipe dans un arbre terminé (ex-aequo = même place). */
+export interface TournamentStagePlacement {
+  team_id: number;
+  place: number;
+  points: number;
+}
+
+export interface TournamentStageView extends TournamentStageRow {
+  finished: boolean;
+  /** Classement round-robin de cet arbre (vide pour les éliminations). */
+  standings: TournamentStandingsEntry[];
+  /** Vide tant que l'arbre n'est pas terminé. */
+  placements: TournamentStagePlacement[];
+}
+
+/** Classement général : somme des points de placement des arbres terminés. */
+export interface TournamentOverallEntry {
+  team_id: number;
+  tag: string;
+  logo_url: string | null;
+  points: number;
+  rank: number;
+  /** Place par arbre terminé (clé = stage id) */
+  places: Record<number, number>;
 }
 
 export interface FlappyBirdAttemptRow {

@@ -287,6 +287,10 @@ export interface EventSession {
   tournament_team_size: number | null;
   // true = les inscrits forment eux-mêmes leurs équipes
   tournament_player_teams: boolean;
+  // Barème de points par place dans un arbre (index 0 = 1re place)
+  tournament_placement_points: number[];
+  // Tournoi terminé (dotation versée sur le classement général)
+  tournament_finished_at: string | null;
 }
 
 export interface FlappyBirdAttempt {
@@ -389,6 +393,7 @@ export interface TournamentMatchTeam {
 export interface TournamentMatch {
   id: number;
   session_id: number;
+  stage_id: number;
   bracket: 'main' | 'winners' | 'losers' | 'grand_final' | 'grand_final_reset';
   round: number;
   position: number;
@@ -417,11 +422,42 @@ export interface TournamentStandings {
   rank: number | null;
 }
 
+export interface TournamentStagePlacement {
+  team_id: number;
+  place: number;
+  points: number;
+}
+
+/** Un arbre du tournoi — mêmes équipes, format propre. */
+export interface TournamentStage {
+  id: number;
+  session_id: number;
+  name: string;
+  format: TournamentFormat;
+  position: number;
+  created_at: string;
+  finished_at: string | null;
+  finished: boolean;
+  standings: TournamentStandings[];
+  placements: TournamentStagePlacement[];
+}
+
+export interface TournamentOverallEntry {
+  team_id: number;
+  tag: string;
+  logo_url: string | null;
+  points: number;
+  rank: number;
+  /** Place par arbre terminé (clé = id de l'arbre) */
+  places: Record<number, number>;
+}
+
 export interface TournamentState {
   bracketGenerated: boolean;
   finished: boolean;
   championTeamId: number | null;
-  standings: TournamentStandings[];
+  stages: TournamentStage[];
+  overall: TournamentOverallEntry[];
 }
 
 export type EventQuestionStatus = 'active' | 'closed';

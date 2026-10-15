@@ -108,6 +108,7 @@ interface CreateSessionBody {
   tournamentMaxTeams?: number;
   tournamentTeamSize?: number;
   tournamentPlayerTeams?: boolean;
+  tournamentPlacementPoints?: number[];
 }
 
 export async function createSession(
@@ -202,6 +203,7 @@ export async function createSession(
   let tournamentMaxTeams: number | null = null;
   let tournamentTeamSize: number | null = null;
   let tournamentPlayerTeams = false;
+  let tournamentPlacementPoints: number[] = [];
   let tournamentRewards: { reward1st: number; reward2nd: number; reward3rd: number } | null = null;
   if (gameType === 'tournament') {
     const rawFormat = req.body?.tournamentFormat;
@@ -244,6 +246,26 @@ export async function createSession(
       return;
     }
     tournamentPlayerTeams = rawPlayerTeams === true;
+    const rawPoints = req.body?.tournamentPlacementPoints;
+    if (rawPoints === undefined) {
+      tournamentPlacementPoints = [10, 7, 5, 3, 2, 1];
+    } else {
+      // Au moins une valeur > 0 : un barème nul mettrait toutes les équipes
+      // ex-aequo 1res du classement général (donc toutes dotées du 1er prix)
+      if (
+        !Array.isArray(rawPoints) ||
+        rawPoints.length === 0 ||
+        rawPoints.length > 64 ||
+        !rawPoints.some((v) => v > 0) ||
+        !rawPoints.every((v) => Number.isInteger(v) && v >= 0 && v <= 100000)
+      ) {
+        res.status(400).json({
+          error: 'Le barème doit être une liste (1 à 64) d’entiers positifs ou nuls, dont au moins un > 0',
+        });
+        return;
+      }
+      tournamentPlacementPoints = rawPoints;
+    }
     tournamentRewards = {
       reward1st: t1 as number,
       reward2nd: t2 as number,
@@ -270,6 +292,7 @@ export async function createSession(
     tournamentMaxTeams,
     tournamentTeamSize,
     tournamentPlayerTeams,
+    tournamentPlacementPoints,
   });
 
   const recipientIds = await userService.listAllIds(req.user!.id);
