@@ -285,6 +285,8 @@ export interface EventSession {
   tournament_format: string | null;
   tournament_max_teams: number | null;
   tournament_team_size: number | null;
+  // true = les inscrits forment eux-mêmes leurs équipes
+  tournament_player_teams: boolean;
 }
 
 export interface FlappyBirdAttempt {
@@ -373,6 +375,8 @@ export interface TournamentTeam {
   tag: string;
   logo_url: string | null;
   created_at: string;
+  // Capitaine si l'équipe a été créée par un joueur ; null sinon
+  created_by: number | null;
   members: TournamentTeamMember[];
 }
 

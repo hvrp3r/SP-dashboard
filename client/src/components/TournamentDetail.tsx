@@ -175,6 +175,7 @@ export default function TournamentDetail({
           teams={teams}
           participants={participants}
           isAdmin={isAdmin}
+          userId={userId}
           busy={busy}
           onError={onError}
           run={run}
@@ -291,6 +292,7 @@ interface TeamSetupProps {
   teams: TournamentTeam[];
   participants: NonNullable<EventSessionDetail['participants']>;
   isAdmin: boolean;
+  userId?: number;
   busy: boolean;
   onError: (error: string | null) => void;
   run: <T>(action: () => Promise<T>) => Promise<T | undefined>;
@@ -303,13 +305,17 @@ function TeamSetupSection({
   teams,
   participants,
   isAdmin,
+  userId,
   busy,
   onError,
   run,
   onSessionChange,
 }: TeamSetupProps) {
+  const confirm = useConfirm();
   const [newTag, setNewTag] = useState('');
   const [newLogo, setNewLogo] = useState<File | null>(null);
+  const [myTag, setMyTag] = useState('');
+  const [myLogo, setMyLogo] = useState<File | null>(null);
   const [autoTeamCount, setAutoTeamCount] = useState('');
 
   const teamSize = session.tournament_team_size ?? 1;
@@ -320,6 +326,44 @@ function TeamSetupSection({
   }
   const unassigned = participants.filter((p) => !membersByUser.has(p.user_id));
   const canManage = isAdmin && session.status === 'open';
+
+  // Équipes formées par les joueurs : seulement pour un inscrit, session ouverte
+  const isRegistered = participants.some((p) => p.user_id === userId);
+  const playerTeamsOpen =
+    session.tournament_player_teams && session.status === 'open' && isRegistered;
+  const myTeam = userId != null ? teams.find((t) => t.members.some((m) => m.user_id === userId)) : undefined;
+
+  async function handleCreateMyTeam() {
+    const tag = myTag.trim();
+    if (!tag) return;
+    const data = await run(() => tournamentApi.createMyTeam(sessionId, tag, myLogo));
+    if (data) {
+      onSessionChange(data);
+      setMyTag('');
+      setMyLogo(null);
+    }
+  }
+
+  async function handleJoinTeam(teamId: number) {
+    const data = await run(() => tournamentApi.joinTeam(sessionId, teamId));
+    if (data) onSessionChange(data);
+  }
+
+  async function handleLeaveTeam() {
+    if (!myTeam) return;
+    const lastMember = myTeam.members.length === 1 && myTeam.created_by != null;
+    const ok = await confirm({
+      title: 'Quitter l’équipe',
+      message: lastMember
+        ? `Tu es le dernier membre de [${myTeam.tag}] : l’équipe sera supprimée.`
+        : `Tu vas quitter [${myTeam.tag}].`,
+      confirmLabel: 'Quitter',
+      danger: true,
+    });
+    if (!ok) return;
+    const data = await run(() => tournamentApi.leaveMyTeam(sessionId));
+    if (data) onSessionChange(data);
+  }
 
   async function handleCreateTeam() {
     const tag = newTag.trim();
@@ -355,10 +399,70 @@ function TeamSetupSection({
         </h2>
       </div>
 
+      {playerTeamsOpen && (
+        <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 space-y-3">
+          {myTeam ? (
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-sm text-zinc-300">
+                Tu joues dans <span className="font-bold text-zinc-100">[{myTeam.tag}]</span>
+                {myTeam.created_by === userId && <span className="text-zinc-500"> (capitaine)</span>}
+              </p>
+              <button
+                type="button"
+                onClick={handleLeaveTeam}
+                disabled={busy}
+                className="text-sm text-red-400 hover:underline disabled:opacity-50"
+              >
+                Quitter l’équipe
+              </button>
+            </div>
+          ) : (
+            <>
+              <h3 className="text-sm font-semibold text-zinc-200">
+                Choisis ton équipe — rejoins-en une ci-dessous ou crée la tienne
+              </h3>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <input
+                  type="text"
+                  maxLength={8}
+                  placeholder="Tag de ton équipe (max 8)"
+                  value={myTag}
+                  onChange={(e) => setMyTag(e.target.value)}
+                  className="flex-1 rounded-md border border-zinc-700 bg-zinc-950 text-zinc-100 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+                <label className="cursor-pointer rounded-md border border-zinc-700 bg-zinc-950 text-zinc-400 px-3 py-2 text-sm hover:text-zinc-200 transition">
+                  {myLogo ? myLogo.name : 'Logo (optionnel)'}
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/gif"
+                    className="hidden"
+                    onChange={(e) => setMyLogo(e.target.files?.[0] ?? null)}
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={handleCreateMyTeam}
+                  disabled={busy || !myTag.trim() || teams.length >= maxTeams}
+                  className="bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-semibold px-4 py-2 rounded-md transition disabled:opacity-50"
+                >
+                  Créer mon équipe
+                </button>
+              </div>
+              {teams.length >= maxTeams && (
+                <p className="text-xs text-zinc-500">
+                  Nombre max d’équipes atteint ({maxTeams}) — rejoins une équipe existante.
+                </p>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
       {teams.length === 0 ? (
         <p className="text-sm text-zinc-500">
-          Aucune équipe pour le moment — attends que le MSP forme les équipes après les
-          inscriptions.
+          {session.tournament_player_teams
+            ? 'Aucune équipe pour le moment — les inscrits peuvent créer la leur.'
+            : 'Aucune équipe pour le moment — attends que le MSP forme les équipes après les inscriptions.'}
         </p>
       ) : (
         <div className="grid sm:grid-cols-2 gap-3">
@@ -373,6 +477,9 @@ function TeamSetupSection({
               run={run}
               onSessionChange={onSessionChange}
               unassigned={unassigned}
+              canJoin={playerTeamsOpen && !myTeam}
+              onJoin={() => handleJoinTeam(team.id)}
+              isCaptain={playerTeamsOpen && team.created_by === userId && myTeam?.id === team.id}
             />
           ))}
         </div>
@@ -476,6 +583,9 @@ function TeamCard({
   run,
   onSessionChange,
   unassigned,
+  canJoin,
+  onJoin,
+  isCaptain,
 }: {
   sessionId: number;
   team: TournamentTeam;
@@ -485,6 +595,10 @@ function TeamCard({
   run: <T>(action: () => Promise<T>) => Promise<T | undefined>;
   onSessionChange: (session: EventSessionDetail) => void;
   unassigned: NonNullable<EventSessionDetail['participants']>;
+  canJoin: boolean;
+  onJoin: () => void;
+  /** Capitaine (créateur joueur) : peut renommer / changer le logo de son équipe */
+  isCaptain: boolean;
 }) {
   const confirm = useConfirm();
   const [editing, setEditing] = useState(false);
@@ -493,10 +607,16 @@ function TeamCard({
   const [selectedUser, setSelectedUser] = useState('');
 
   const logo = resolveAvatarUrl(team.logo_url);
+  // Le MSP/organisateur passe par les routes de gestion, le capitaine par /my-team
+  const canEdit = canManage || isCaptain;
+  const saveTeam = (data: { tag?: string; logoFile?: File; removeLogo?: boolean }) =>
+    canManage
+      ? tournamentApi.updateTeam(sessionId, team.id, data)
+      : tournamentApi.updateMyTeam(sessionId, data);
 
   async function handleSave() {
     const data = await run(() =>
-      tournamentApi.updateTeam(sessionId, team.id, {
+      saveTeam({
         tag: tag.trim(),
         logoFile: logoFile ?? undefined,
       })
@@ -521,7 +641,7 @@ function TeamCard({
   }
 
   async function handleRemoveLogo() {
-    const data = await run(() => tournamentApi.updateTeam(sessionId, team.id, { removeLogo: true }));
+    const data = await run(() => saveTeam({ removeLogo: true }));
     if (data) onSessionChange(data);
   }
 
@@ -555,7 +675,7 @@ function TeamCard({
             {team.members.length}/{teamSize} membre{teamSize > 1 ? 's' : ''}
           </p>
         </div>
-        {canManage && (
+        {canEdit && (
           <div className="flex gap-1 flex-shrink-0">
             <button
               type="button"
@@ -569,6 +689,7 @@ function TeamCard({
             >
               ✏️
             </button>
+            {canManage && (
             <button
               type="button"
               onClick={handleDelete}
@@ -578,11 +699,12 @@ function TeamCard({
             >
               🗑️
             </button>
+            )}
           </div>
         )}
       </div>
 
-      {editing && canManage && (
+      {editing && canEdit && (
         <div className="mb-3 space-y-2 rounded-lg border border-zinc-700 p-3">
           <input
             type="text"
@@ -653,6 +775,17 @@ function TeamCard({
         ))}
         {team.members.length === 0 && <li className="text-xs text-zinc-600">Équipe vide</li>}
       </ul>
+
+      {canJoin && (
+        <button
+          type="button"
+          onClick={onJoin}
+          disabled={busy || team.members.length >= teamSize}
+          className="mt-3 w-full bg-zinc-700 hover:bg-zinc-600 text-zinc-100 text-sm font-semibold px-3 py-1.5 rounded-md transition disabled:opacity-50"
+        >
+          {team.members.length >= teamSize ? 'Équipe complète' : 'Rejoindre'}
+        </button>
+      )}
 
       {canManage && team.members.length < teamSize && unassigned.length > 0 && (
         <div className="mt-3 flex gap-2">

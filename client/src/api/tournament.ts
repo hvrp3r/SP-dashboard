@@ -51,6 +51,40 @@ export const removeTeamMember = (sessionId: number, teamId: number, userId: numb
     `/api/events/${sessionId}/tournament/teams/${teamId}/members/${userId}`
   );
 
+// --- Équipes formées par les joueurs (option tournament_player_teams) ---
+
+export const createMyTeam = (sessionId: number, tag: string, logoFile?: File | null) => {
+  if (logoFile) {
+    const form = new FormData();
+    form.append('tag', tag);
+    form.append('logo', logoFile);
+    return apiClient.post<EventSessionDetail>(`/api/events/${sessionId}/tournament/my-team`, form);
+  }
+  return apiClient.post<EventSessionDetail>(`/api/events/${sessionId}/tournament/my-team`, { tag });
+};
+
+export const updateMyTeam = (
+  sessionId: number,
+  data: { tag?: string; logoFile?: File | null; removeLogo?: boolean }
+) => {
+  if (data.logoFile) {
+    const form = new FormData();
+    if (data.tag !== undefined) form.append('tag', data.tag);
+    form.append('logo', data.logoFile);
+    return apiClient.put<EventSessionDetail>(`/api/events/${sessionId}/tournament/my-team`, form);
+  }
+  return apiClient.put<EventSessionDetail>(`/api/events/${sessionId}/tournament/my-team`, {
+    ...(data.tag !== undefined ? { tag: data.tag } : {}),
+    ...(data.removeLogo ? { removeLogo: true } : {}),
+  });
+};
+
+export const leaveMyTeam = (sessionId: number) =>
+  apiClient.post<EventSessionDetail>(`/api/events/${sessionId}/tournament/my-team/leave`);
+
+export const joinTeam = (sessionId: number, teamId: number) =>
+  apiClient.post<EventSessionDetail>(`/api/events/${sessionId}/tournament/teams/${teamId}/join`);
+
 export const setParticipantRating = (
   sessionId: number,
   userId: number,
