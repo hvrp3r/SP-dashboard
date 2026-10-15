@@ -1,3 +1,8 @@
+// Must stay the first import: it patches express's Router layers as they are
+// created, so a rejected promise from any async handler or middleware reaches
+// errorHandler (500) instead of becoming an unhandled rejection that kills
+// the process. Route modules below build their routers at import time.
+import 'express-async-errors';
 import express, { type Express } from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
