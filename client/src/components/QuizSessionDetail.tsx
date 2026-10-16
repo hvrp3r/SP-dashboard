@@ -49,6 +49,8 @@ interface Props {
   session: EventSessionDetail;
   questions: EventQuestionView[];
   isAdmin: boolean;
+  /** Exclure un joueur de l'événement (MSP ou organisateur de la session) */
+  onKick?: (userId: number, username: string) => void;
   /** Attribution libre de SP : MSP uniquement, masquée pour un organisateur */
   canAward?: boolean;
   userId: number | undefined;
@@ -61,6 +63,7 @@ export default function QuizSessionDetail({
   session,
   questions,
   isAdmin,
+  onKick,
   canAward = isAdmin,
   userId,
   onSessionChange,
@@ -178,19 +181,6 @@ export default function QuizSessionDetail({
       const data = await eventsApi.addParticipant(sessionId, Number(selectedPlayerId));
       onSessionChange(data);
       setSelectedPlayerId('');
-    } catch (err) {
-      onError(err instanceof Error ? err.message : 'Erreur inconnue');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleRemoveParticipant(participantId: number) {
-    setBusy(true);
-    onError(null);
-    try {
-      const data = await eventsApi.removeParticipant(sessionId, participantId);
-      onSessionChange(data);
     } catch (err) {
       onError(err instanceof Error ? err.message : 'Erreur inconnue');
     } finally {
@@ -627,14 +617,14 @@ export default function QuizSessionDetail({
                         />
                       </td>
                       <td className="px-4 py-3 text-right whitespace-nowrap">
-                        {!p.awarded_at && session.status === 'open' && (
+                        {!p.awarded_at && onKick && (
                           <button
                             type="button"
-                            onClick={() => handleRemoveParticipant(p.id)}
+                            onClick={() => onKick(p.user_id, p.username)}
                             disabled={busy}
                             className="text-sm text-red-400 font-medium hover:underline disabled:opacity-50"
                           >
-                            Retirer
+                            Exclure
                           </button>
                         )}
                       </td>
@@ -667,6 +657,16 @@ export default function QuizSessionDetail({
                       <tr key={p.id} className="border-t border-zinc-800">
                         <td className="px-4 py-3 font-medium text-zinc-100 whitespace-nowrap">
                           <UserNameTag username={p.username} />
+                          {onKick && !p.awarded_at && (
+                            <button
+                            type="button"
+                            onClick={() => onKick(p.user_id, p.username)}
+                            title="Exclure ce joueur de l’événement"
+                            className="ml-2 text-xs text-zinc-500 hover:text-red-400 transition"
+                          >
+                            🚫
+                          </button>
+                          )}
                         </td>
                         <td className="px-4 py-3 text-right whitespace-nowrap">
                           {currentQuestion ? (

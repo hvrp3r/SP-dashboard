@@ -156,6 +156,7 @@ export type SpTransactionType =
   | 'challenge_loss'
   | 'event_reward'
   | 'event_entry'
+  | 'event_entry_refund'
   | 'admin_grant'
   | 'admin_deduct'
   | 'gambling_spend'
@@ -262,6 +263,19 @@ export type EventStatus = 'open' | 'closed' | 'cancelled';
 export const EVENT_GAME_TYPES = ['quiz', 'flappy_bird', 'speedrun', 'tournament'] as const;
 export type EventGameType = (typeof EVENT_GAME_TYPES)[number];
 
+export interface EventKick {
+  user_id: number;
+  username: string;
+  kicked_by: number | null;
+  kicked_at: string;
+}
+
+/** `kicked` n'est rempli que pour le MSP / l'organisateur de la session. */
+export interface EventKickList {
+  me: boolean;
+  kicked: EventKick[];
+}
+
 export interface EventSession {
   id: number;
   season_id: number | null;
@@ -287,6 +301,10 @@ export interface EventSession {
   tournament_team_size: number | null;
   // true = les inscrits forment eux-mêmes leurs équipes
   tournament_player_teams: boolean;
+  // Barème de points par place dans un arbre (index 0 = 1re place)
+  tournament_placement_points: number[];
+  // Tournoi terminé (dotation versée sur le classement général)
+  tournament_finished_at: string | null;
 }
 
 export interface FlappyBirdAttempt {
@@ -389,6 +407,7 @@ export interface TournamentMatchTeam {
 export interface TournamentMatch {
   id: number;
   session_id: number;
+  stage_id: number;
   bracket: 'main' | 'winners' | 'losers' | 'grand_final' | 'grand_final_reset';
   round: number;
   position: number;
@@ -417,11 +436,42 @@ export interface TournamentStandings {
   rank: number | null;
 }
 
+export interface TournamentStagePlacement {
+  team_id: number;
+  place: number;
+  points: number;
+}
+
+/** Un arbre du tournoi — mêmes équipes, format propre. */
+export interface TournamentStage {
+  id: number;
+  session_id: number;
+  name: string;
+  format: TournamentFormat;
+  position: number;
+  created_at: string;
+  finished_at: string | null;
+  finished: boolean;
+  standings: TournamentStandings[];
+  placements: TournamentStagePlacement[];
+}
+
+export interface TournamentOverallEntry {
+  team_id: number;
+  tag: string;
+  logo_url: string | null;
+  points: number;
+  rank: number;
+  /** Place par arbre terminé (clé = id de l'arbre) */
+  places: Record<number, number>;
+}
+
 export interface TournamentState {
   bracketGenerated: boolean;
   finished: boolean;
   championTeamId: number | null;
-  standings: TournamentStandings[];
+  stages: TournamentStage[];
+  overall: TournamentOverallEntry[];
 }
 
 export type EventQuestionStatus = 'active' | 'closed';
@@ -488,7 +538,8 @@ export type NotificationType =
   | 'suggestion_comment'
   | 'suggestion_closed'
   | 'tournament_announcement'
-  | 'permission_granted';
+  | 'permission_granted'
+  | 'event_kicked';
 
 export interface AppNotification {
   id: number;

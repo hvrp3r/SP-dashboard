@@ -32,6 +32,11 @@ export async function startAttempt(req: Request<{ id: string }>, res: Response):
     return;
   }
 
+  if (await eventService.isKicked(sessionId, req.user!.id)) {
+    res.status(403).json({ error: 'Tu as été exclu de cet événement' });
+    return;
+  }
+
   const token = signFlappyBirdAttemptToken(sessionId, req.user!.id, 0);
   res.status(201).json({ token });
 }
@@ -95,6 +100,11 @@ export async function submitScore(
   const playableError = getPlayableSessionError(session);
   if (playableError) {
     res.status(session ? 400 : 404).json({ error: playableError });
+    return;
+  }
+
+  if (await eventService.isKicked(sessionId, req.user!.id)) {
+    res.status(403).json({ error: 'Tu as été exclu de cet événement' });
     return;
   }
 

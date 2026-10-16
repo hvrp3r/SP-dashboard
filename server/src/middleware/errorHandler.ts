@@ -12,8 +12,13 @@ export function errorHandler(
   err: HttpError,
   req: Request,
   res: Response,
-  _next: NextFunction
+  next: NextFunction
 ): void {
   console.error(err);
+  // Response already partly sent: let express close the connection.
+  if (res.headersSent) {
+    next(err);
+    return;
+  }
   res.status(err.status ?? 500).json({ error: err.message ?? 'Erreur serveur' });
 }

@@ -1,12 +1,17 @@
 import { pool } from '../db/pool.js';
 import * as spService from './sp.service.js';
 import type { PoolClient, QueryResult } from 'pg';
+import { TOURNAMENT_FORMATS } from '../types.js';
 import type {
   EventSessionRow,
   TournamentAnnouncementEntry,
   TournamentMatchFeed,
   TournamentMatchRow,
   TournamentMatchView,
+  TournamentOverallEntry,
+  TournamentStageRow,
+  TournamentStagePlacement,
+  TournamentStageView,
   TournamentStandingsEntry,
   TournamentTeamEntry,
   TournamentTeamMember,
@@ -67,8 +72,17 @@ export async function getSessionTeamsWithMembers(
 export async function getSessionMatches(sessionId: number): Promise<TournamentMatchRow[]> {
   const { rows } = await pool.query<TournamentMatchRow>(
     `SELECT * FROM tournament_matches WHERE session_id = $1
-     ORDER BY CASE bracket WHEN 'main' THEN 0 WHEN 'winners' THEN 1 WHEN 'losers' THEN 2
+     ORDER BY stage_id ASC,
+              CASE bracket WHEN 'main' THEN 0 WHEN 'winners' THEN 1 WHEN 'losers' THEN 2
                 WHEN 'grand_final' THEN 3 ELSE 4 END, round ASC, position ASC`,
+    [sessionId]
+  );
+  return rows;
+}
+
+export async function getSessionStages(sessionId: number): Promise<TournamentStageRow[]> {
+  const { rows } = await pool.query<TournamentStageRow>(
+    'SELECT * FROM tournament_stages WHERE session_id = $1 ORDER BY position ASC',
     [sessionId]
   );
   return rows;
@@ -160,7 +174,7 @@ async function assertNoMatches(
   );
   if ((rowCount ?? 0) > 0) {
     throw Object.assign(
-      new Error('L’arbre a déjà été généré — réinitialise-le d’abord pour modifier les équipes'),
+      new Error('Un arbre a déjà été généré — supprime les arbres (sans match joué) pour modifier les équipes'),
       { status: 400 }
     );
   }
@@ -859,15 +873,39 @@ export async function autoGenerateTeams(
 // Génération de l'arbre
 // ---------------------------------------------------------------------------
 
-export async function generateBracket(sessionId: number): Promise<TournamentMatchRow[]> {
-  const session = await getTournamentSession(sessionId);
-  assertOpen(session);
-  const format = session.tournament_format ?? 'single_elim';
-
+/**
+ * Crée un nouvel arbre (toutes les équipes du tournoi, mêmes membres) et
+ * génère tous ses matchs d'un coup. Le premier arbre seed par ordre de
+ * création des équipes ; les suivants par classement général courant (points
+ * décroissants, puis ordre de création), pour que le score déjà acquis compte.
+ */
+export async function createStage(
+  sessionId: number,
+  options: { name?: string; format?: string } = {}
+): Promise<TournamentStageRow> {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    await assertNoMatches(client, sessionId);
+    // Verrou de session : sérialise les créations d'arbre (position) et les
+    // mutations d'équipes faites par les joueurs (voir withPlayerTeamsLock)
+    const { rows: sessionRows } = await client.query<EventSessionRow>(
+      'SELECT * FROM event_sessions WHERE id = $1 FOR UPDATE',
+      [sessionId]
+    );
+    const session = sessionRows[0];
+    if (!session) {
+      throw Object.assign(new Error('Session introuvable'), { status: 404 });
+    }
+    if (session.game_type !== 'tournament') {
+      throw Object.assign(new Error('Cette session n’est pas un tournoi'), { status: 400 });
+    }
+    assertOpen(session);
+    assertNotFinished(session);
+
+    const format = options.format ?? session.tournament_format ?? 'single_elim';
+    if (!(TOURNAMENT_FORMATS as readonly string[]).includes(format)) {
+      throw Object.assign(new Error('Format d’arbre invalide'), { status: 400 });
+    }
 
     const teams = await getSessionTeams(sessionId);
     if (teams.length < 2) {
@@ -891,7 +929,39 @@ export async function generateBracket(sessionId: number): Promise<TournamentMatc
       );
     }
 
-    const seeded = [...teams].sort((a, b) => a.id - b.id); // ordre de création = seed
+    const { rows: existingStages } = await client.query<TournamentStageRow>(
+      'SELECT * FROM tournament_stages WHERE session_id = $1 ORDER BY position ASC',
+      [sessionId]
+    );
+    const position = Math.max(0, ...existingStages.map((st) => st.position)) + 1;
+    const name = options.name?.trim() || `Arbre ${position}`;
+    if (name.length > 100) {
+      throw Object.assign(new Error('Le nom de l’arbre ne doit pas dépasser 100 caractères'), {
+        status: 400,
+      });
+    }
+
+    // Seed : ordre de création, sauf si des arbres terminés donnent déjà des points
+    let seeded = [...teams].sort((a, b) => a.id - b.id);
+    if (existingStages.length > 0) {
+      const { rows: previousMatches } = await client.query<LiveMatch>(
+        'SELECT * FROM tournament_matches WHERE session_id = $1',
+        [sessionId]
+      );
+      const overall = computeOverallStandings(session, existingStages, previousMatches, teams);
+      const pointsByTeam = new Map(overall.map((o) => [o.team_id, o.points]));
+      seeded = seeded.sort(
+        (a, b) => (pointsByTeam.get(b.id) ?? 0) - (pointsByTeam.get(a.id) ?? 0) || a.id - b.id
+      );
+    }
+
+    const { rows: stageRows } = await client.query<TournamentStageRow>(
+      `INSERT INTO tournament_stages (session_id, name, format, position)
+       VALUES ($1, $2, $3, $4)
+       RETURNING *`,
+      [sessionId, name, format, position]
+    );
+    const stage = stageRows[0]!;
 
     let specs: NewMatchSpec[];
     if (format === 'round_robin') {
@@ -913,11 +983,12 @@ export async function generateBracket(sessionId: number): Promise<TournamentMatc
     for (const spec of specs) {
       const { rows } = await client.query<{ id: number }>(
         `INSERT INTO tournament_matches
-           (session_id, bracket, round, position, feed_a, feed_b, team_a_id, team_b_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+           (session_id, stage_id, bracket, round, position, feed_a, feed_b, team_a_id, team_b_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          RETURNING id`,
         [
           sessionId,
+          stage.id,
           spec.bracket,
           spec.round,
           spec.position,
@@ -931,8 +1002,8 @@ export async function generateBracket(sessionId: number): Promise<TournamentMatc
     }
 
     const { rows: inserted } = await client.query<LiveMatch>(
-      'SELECT * FROM tournament_matches WHERE session_id = $1 ORDER BY id ASC',
-      [sessionId]
+      'SELECT * FROM tournament_matches WHERE stage_id = $1 ORDER BY id ASC',
+      [stage.id]
     );
     const initial = new Map(inserted.map((m) => [m.id, { ...m }]));
     const byId = new Map(inserted.map((m) => [m.id, m]));
@@ -958,7 +1029,7 @@ export async function generateBracket(sessionId: number): Promise<TournamentMatc
     await persistMatches(client, initial, byId);
 
     await client.query('COMMIT');
-    return inserted;
+    return stage;
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;
@@ -1150,38 +1221,60 @@ function buildRoundRobinSpecs(teams: TournamentTeamRow[]): NewMatchSpec[] {
 }
 
 // ---------------------------------------------------------------------------
-// Reset de l'arbre (aucun match résolu uniquement)
+// Suppression d'un arbre (aucun match résolu uniquement)
 // ---------------------------------------------------------------------------
 
-export async function resetBracket(sessionId: number): Promise<void> {
-  await getTournamentSession(sessionId);
+export async function deleteStage(sessionId: number, stageId: number): Promise<void> {
+  const session = await getTournamentSession(sessionId);
+  assertNotFinished(session);
 
   const client = await pool.connect();
   try {
-    const { rowCount: resolved } = await client.query(
-      'SELECT 1 FROM tournament_matches WHERE session_id = $1 AND winner_team_id IS NOT NULL LIMIT 1',
-      [sessionId]
+    await client.query('BEGIN');
+    const { rowCount: stageExists } = await client.query(
+      'SELECT 1 FROM tournament_stages WHERE id = $1 AND session_id = $2 FOR UPDATE',
+      [stageId, sessionId]
     );
-    if ((resolved ?? 0) > 0) {
+    if ((stageExists ?? 0) === 0) {
+      throw Object.assign(new Error('Arbre introuvable'), { status: 404 });
+    }
+    // Un bye auto-résolu n'est pas un match joué : seuls les matchs à deux équipes comptent
+    const { rowCount: played } = await client.query(
+      `SELECT 1 FROM tournament_matches
+       WHERE stage_id = $1 AND winner_team_id IS NOT NULL
+         AND team_a_id IS NOT NULL AND team_b_id IS NOT NULL
+       LIMIT 1`,
+      [stageId]
+    );
+    if ((played ?? 0) > 0) {
       throw Object.assign(
-        new Error('Impossible de réinitialiser : au moins un match a déjà été joué'),
+        new Error('Impossible de supprimer cet arbre : au moins un match a déjà été joué'),
         { status: 400 }
       );
     }
-    await client.query('DELETE FROM tournament_matches WHERE session_id = $1', [sessionId]);
+    await client.query('DELETE FROM tournament_matches WHERE stage_id = $1', [stageId]);
+    await client.query('DELETE FROM tournament_stages WHERE id = $1', [stageId]);
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
   } finally {
     client.release();
   }
 }
 
+function assertNotFinished(session: EventSessionRow): void {
+  if (session.tournament_finished_at) {
+    throw Object.assign(new Error('Ce tournoi est terminé'), { status: 400 });
+  }
+}
+
 // ---------------------------------------------------------------------------
-// Résolution d'un match + propagation + dotation
+// Résolution d'un match + propagation (dans son arbre)
 // ---------------------------------------------------------------------------
 
 export interface ResolveMatchResult {
-  finished: boolean;
-  championTeamId: number | null;
-  awards: Array<{ userId: number; amount: number; rank: number; teamId: number }>;
+  stageFinished: boolean;
 }
 
 export async function resolveMatch(
@@ -1191,22 +1284,31 @@ export async function resolveMatch(
 ): Promise<ResolveMatchResult> {
   const session = await getTournamentSession(sessionId);
   assertOpen(session);
-  const format = session.tournament_format ?? 'single_elim';
+  assertNotFinished(session);
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
 
+    const { rows: target } = await client.query<{ stage_id: number; format: string }>(
+      `SELECT m.stage_id, st.format
+       FROM tournament_matches m
+       JOIN tournament_stages st ON st.id = m.stage_id
+       WHERE m.id = $1 AND m.session_id = $2`,
+      [matchId, sessionId]
+    );
+    if (!target[0]) {
+      throw Object.assign(new Error('Match introuvable'), { status: 404 });
+    }
+    const { stage_id: stageId, format } = target[0];
+
     const { rows: allRows } = await client.query<LiveMatch>(
-      'SELECT * FROM tournament_matches WHERE session_id = $1 ORDER BY id ASC FOR UPDATE',
-      [sessionId]
+      'SELECT * FROM tournament_matches WHERE stage_id = $1 ORDER BY id ASC FOR UPDATE',
+      [stageId]
     );
     const initial = new Map(allRows.map((m) => [m.id, { ...m }]));
     const byId = new Map(allRows.map((m) => [m.id, m]));
-    const match = byId.get(matchId);
-    if (!match) {
-      throw Object.assign(new Error('Match introuvable'), { status: 404 });
-    }
+    const match = byId.get(matchId)!;
     if (match.winner_team_id) {
       throw Object.assign(new Error('Ce match a déjà été joué'), { status: 400 });
     }
@@ -1240,11 +1342,12 @@ export async function resolveMatch(
       if (lbSideTeam === winnerTeamId) {
         const { rows: resetRows } = await client.query<LiveMatch>(
           `INSERT INTO tournament_matches
-             (session_id, bracket, round, position, feed_a, feed_b, team_a_id, team_b_id)
-           VALUES ($1, 'grand_final_reset', 1, 1, $2, $3, $4, $5)
+             (session_id, stage_id, bracket, round, position, feed_a, feed_b, team_a_id, team_b_id)
+           VALUES ($1, $2, 'grand_final_reset', 1, 1, $3, $4, $5, $6)
            RETURNING *`,
           [
             sessionId,
+            stageId,
             encodeFeed('winner', match.id),
             encodeFeed('loser', match.id),
             match.winner_team_id,
@@ -1259,56 +1362,18 @@ export async function resolveMatch(
     propagate(byId);
     await persistMatches(client, initial, byId);
 
-    // Détection de fin + distribution de la dotation (même transaction)
-    const finished = isTournamentFinished(format, byId);
-    const awards: ResolveMatchResult['awards'] = [];
-    let championTeamId: number | null = null;
-
-    if (finished) {
-      const placements = computePlacements(format, byId);
-      championTeamId = placements.champion;
-      const teams = await getSessionTeams(sessionId);
-      const teamById = new Map(teams.map((t) => [t.id, t]));
-
-      const rewardPlan: Array<{ rank: number; amount: number; teamIds: number[] }> = [
-        {
-          rank: 1,
-          amount: session.reward_1st ?? 0,
-          teamIds: placements.champion != null ? [placements.champion] : [],
-        },
-        {
-          rank: 2,
-          amount: session.reward_2nd ?? 0,
-          teamIds: placements.runnerUp != null ? [placements.runnerUp] : [],
-        },
-        { rank: 3, amount: session.reward_3rd ?? 0, teamIds: placements.thirds },
-      ];
-      for (const { rank, amount, teamIds } of rewardPlan) {
-        if (!amount || amount <= 0) continue;
-        for (const teamId of teamIds) {
-          if (!teamById.has(teamId)) continue;
-          const { rows: members } = await client.query<{ user_id: number }>(
-            'SELECT user_id FROM tournament_team_members WHERE team_id = $1 ORDER BY id ASC',
-            [teamId]
-          );
-          for (const member of members) {
-            await spService.creditSP({
-              userId: member.user_id,
-              amount,
-              type: 'event_reward',
-              seasonId: session.season_id,
-              relatedId: sessionId,
-              note: session.title ?? 'Événement',
-              client,
-            });
-            awards.push({ userId: member.user_id, amount, rank, teamId });
-          }
-        }
-      }
+    // La dotation n'est plus versée à la fin d'un arbre : seulement quand le
+    // MSP termine le tournoi (classement général, voir finishTournament)
+    const stageFinished = isTournamentFinished(format, byId);
+    if (stageFinished) {
+      await client.query(
+        'UPDATE tournament_stages SET finished_at = NOW() WHERE id = $1 AND finished_at IS NULL',
+        [stageId]
+      );
     }
 
     await client.query('COMMIT');
-    return { finished, championTeamId, awards };
+    return { stageFinished };
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;
@@ -1340,55 +1405,124 @@ function isTournamentFinished(format: string, byId: Map<number, LiveMatch>): boo
   return final != null && final.winner_team_id != null;
 }
 
-function computePlacements(
+/**
+ * Placement complet de toutes les équipes d'un arbre terminé (1 = champion).
+ * Éliminations : une équipe est classée selon le tour où elle a été éliminée
+ * (plus tard = mieux) ; les éliminés d'un même tour sont ex-aequo — ex. en
+ * élimination directe à 8 : 1, 2, 3, 3, 5, 5, 5, 5. Round-robin : ordre du
+ * classement (victoires puis seed, pas d'ex-aequo — même règle que l'affichage).
+ */
+function computeStagePlacements(
   format: string,
   byId: Map<number, LiveMatch>
-): { champion: number | null; runnerUp: number | null; thirds: number[] } {
+): Map<number, number> {
   const all = [...byId.values()];
   if (format === 'round_robin') {
     const standings = computeRoundRobinStandings(byId);
-    return {
-      champion: standings[0]?.team_id ?? null,
-      runnerUp: standings[1]?.team_id ?? null,
-      thirds: standings[2] ? [standings[2].team_id] : [],
-    };
+    return new Map(standings.map((st, idx) => [st.team_id, idx + 1]));
   }
+
+  // Clé d'élimination par équipe : plus elle est grande, mieux l'équipe a fini
+  const key = new Map<number, number>();
+  const teamIds = new Set<number>();
+  for (const m of all) {
+    if (m.team_a_id != null) teamIds.add(m.team_a_id);
+    if (m.team_b_id != null) teamIds.add(m.team_b_id);
+  }
+
   if (format === 'double_elim') {
-    const last =
+    // Toute élimination se fait en bracket losers, sauf la finale décisive
+    const losers = all.filter((m) => m.bracket === 'losers');
+    const maxLb = Math.max(0, ...losers.map((m) => m.round));
+    for (const m of losers) {
+      const loser = matchLoser(m);
+      if (loser != null) key.set(loser, m.round);
+    }
+    const decisive =
       all.find((m) => m.bracket === 'grand_final_reset') ??
       all.find((m) => m.bracket === 'grand_final');
-    if (!last || !last.winner_team_id) {
-      return { champion: null, runnerUp: null, thirds: [] };
+    if (decisive?.winner_team_id) {
+      const loser = matchLoser(decisive);
+      if (loser != null) key.set(loser, maxLb + 1);
+      key.set(decisive.winner_team_id, maxLb + 2);
     }
-    // 3e = perdant de la finale losers (s'il existe — pas à 2 équipes)
-    const lbRounds = all.filter((m) => m.bracket === 'losers').map((m) => m.round);
-    const thirds: number[] = [];
-    if (lbRounds.length > 0) {
-      const lbFinal = all.find(
-        (m) => m.bracket === 'losers' && m.round === Math.max(...lbRounds)
-      );
-      if (lbFinal && lbFinal.winner_team_id) {
-        const lbLoser = matchLoser(lbFinal);
-        if (lbLoser != null) thirds.push(lbLoser);
-      }
+  } else {
+    const main = all.filter((m) => m.bracket === 'main');
+    const maxRound = Math.max(0, ...main.map((m) => m.round));
+    for (const m of main) {
+      const loser = matchLoser(m);
+      if (loser != null) key.set(loser, m.round);
     }
-    return { champion: last.winner_team_id, runnerUp: matchLoser(last), thirds };
+    const final = main.find((m) => m.round === maxRound);
+    if (final?.winner_team_id) key.set(final.winner_team_id, maxRound + 1);
   }
-  // single elim : champion + finaliste + les deux perdants des demi-finales
-  const main = all.filter((m) => m.bracket === 'main');
-  const maxRound = Math.max(...main.map((m) => m.round));
-  const final = main.find((m) => m.round === maxRound);
-  if (!final || !final.winner_team_id) {
-    return { champion: null, runnerUp: null, thirds: [] };
+
+  const keys = [...teamIds].map((id) => key.get(id) ?? 0);
+  const places = new Map<number, number>();
+  for (const id of teamIds) {
+    const k = key.get(id) ?? 0;
+    places.set(id, 1 + keys.filter((other) => other > k).length);
   }
-  const thirds: number[] = [];
-  if (maxRound >= 2) {
-    for (const semi of main.filter((m) => m.round === maxRound - 1)) {
-      const semiLoser = matchLoser(semi);
-      if (semiLoser != null) thirds.push(semiLoser);
+  return places;
+}
+
+function pointsForPlace(session: EventSessionRow, place: number): number {
+  const scale = Array.isArray(session.tournament_placement_points)
+    ? session.tournament_placement_points
+    : [];
+  const value = scale[place - 1];
+  return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : 0;
+}
+
+function groupMatchesByStage(matches: LiveMatch[]): Map<number, Map<number, LiveMatch>> {
+  const byStage = new Map<number, Map<number, LiveMatch>>();
+  for (const m of matches) {
+    const map = byStage.get(m.stage_id) ?? new Map<number, LiveMatch>();
+    map.set(m.id, m);
+    byStage.set(m.stage_id, map);
+  }
+  return byStage;
+}
+
+/**
+ * Classement général : somme des points de placement sur les arbres terminés,
+ * rang "compétition" (ex-aequo = même rang, le suivant saute : 1, 1, 3…).
+ * Départage d'affichage par ordre de création des équipes.
+ */
+function computeOverallStandings(
+  session: EventSessionRow,
+  stages: TournamentStageRow[],
+  matches: LiveMatch[],
+  teams: TournamentTeamRow[]
+): TournamentOverallEntry[] {
+  const byStage = groupMatchesByStage(matches);
+  const points = new Map<number, number>(teams.map((t) => [t.id, 0]));
+  const places = new Map<number, Record<number, number>>(teams.map((t) => [t.id, {}]));
+
+  for (const stage of stages) {
+    const stageMatches = byStage.get(stage.id);
+    if (!stageMatches || !isTournamentFinished(stage.format, stageMatches)) continue;
+    for (const [teamId, place] of computeStagePlacements(stage.format, stageMatches)) {
+      if (!points.has(teamId)) continue;
+      points.set(teamId, (points.get(teamId) ?? 0) + pointsForPlace(session, place));
+      places.get(teamId)![stage.id] = place;
     }
   }
-  return { champion: final.winner_team_id, runnerUp: matchLoser(final), thirds };
+
+  const sorted = [...teams].sort(
+    (a, b) => (points.get(b.id) ?? 0) - (points.get(a.id) ?? 0) || a.id - b.id
+  );
+  return sorted.map((team) => {
+    const total = points.get(team.id) ?? 0;
+    return {
+      team_id: team.id,
+      tag: team.tag,
+      logo_url: team.logo_url,
+      points: total,
+      rank: 1 + sorted.filter((other) => (points.get(other.id) ?? 0) > total).length,
+      places: places.get(team.id) ?? {},
+    };
+  });
 }
 
 /** Classement round-robin : victoires décroissantes, départage par seed
@@ -1429,36 +1563,149 @@ export function computeRoundRobinStandings(
   }));
 }
 
-/** État global du tournoi pour la vue détail : arbre généré ? terminé ?
- * champion ? classement (round-robin uniquement). */
+/** État global du tournoi pour la vue détail : arbres (matchs, classement,
+ * placements), classement général et fin du tournoi. */
 export async function getTournamentState(sessionId: number): Promise<{
   bracketGenerated: boolean;
   finished: boolean;
   championTeamId: number | null;
-  standings: TournamentStandingsEntry[];
+  stages: TournamentStageView[];
+  overall: TournamentOverallEntry[];
 }> {
-  const [matches, teams] = await Promise.all([
+  const [session, stages, matches, teams] = await Promise.all([
+    getTournamentSession(sessionId),
+    getSessionStages(sessionId),
     getSessionMatches(sessionId),
     getSessionTeams(sessionId),
   ]);
-  const bracketGenerated = matches.length > 0;
-  if (!bracketGenerated) {
-    return { bracketGenerated, finished: false, championTeamId: null, standings: [] };
-  }
-  const session = await getTournamentSession(sessionId);
-  const format = session.tournament_format ?? 'single_elim';
-  const byId = new Map(matches.map((m) => [m.id, m]));
-  const finished = isTournamentFinished(format, byId);
-  if (format === 'round_robin') {
-    const teamById = new Map(teams.map((t) => [t.id, t]));
-    const standings = computeRoundRobinStandings(byId).map((s) => {
-      const team = teamById.get(s.team_id);
-      return { ...s, tag: team?.tag ?? '', logo_url: team?.logo_url ?? null };
+  const teamById = new Map(teams.map((t) => [t.id, t]));
+  const byStage = groupMatchesByStage(matches);
+
+  const stageViews: TournamentStageView[] = stages.map((stage) => {
+    const stageMatches = byStage.get(stage.id) ?? new Map<number, LiveMatch>();
+    const finished = stageMatches.size > 0 && isTournamentFinished(stage.format, stageMatches);
+    const standings =
+      stage.format === 'round_robin'
+        ? computeRoundRobinStandings(stageMatches).map((st) => {
+            const team = teamById.get(st.team_id);
+            return { ...st, tag: team?.tag ?? '', logo_url: team?.logo_url ?? null };
+          })
+        : [];
+    const placements: TournamentStagePlacement[] = finished
+      ? [...computeStagePlacements(stage.format, stageMatches)]
+          .map(([team_id, place]) => ({ team_id, place, points: pointsForPlace(session, place) }))
+          .sort((a, b) => a.place - b.place)
+      : [];
+    return { ...stage, finished, standings, placements };
+  });
+
+  const overall = computeOverallStandings(session, stages, matches, teams);
+  const finished = session.tournament_finished_at != null;
+  return {
+    bracketGenerated: stages.length > 0,
+    finished,
+    championTeamId: finished ? (overall[0]?.team_id ?? null) : null,
+    stages: stageViews,
+    overall,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Fin du tournoi : dotation sur le classement général
+// ---------------------------------------------------------------------------
+
+export interface FinishTournamentResult {
+  awards: Array<{ userId: number; amount: number; rank: number; teamId: number }>;
+}
+
+/**
+ * Termine le tournoi et verse la dotation reward_1st/2nd/3rd (SP par membre)
+ * aux équipes classées 1re/2e/3e du classement général — les ex-aequo
+ * touchent chacun la dotation de leur rang commun. Exige au moins un arbre
+ * et que tous les arbres soient terminés.
+ */
+export async function finishTournament(sessionId: number): Promise<FinishTournamentResult> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: sessionRows } = await client.query<EventSessionRow>(
+      'SELECT * FROM event_sessions WHERE id = $1 FOR UPDATE',
+      [sessionId]
+    );
+    const session = sessionRows[0];
+    if (!session) {
+      throw Object.assign(new Error('Session introuvable'), { status: 404 });
+    }
+    if (session.game_type !== 'tournament') {
+      throw Object.assign(new Error('Cette session n’est pas un tournoi'), { status: 400 });
+    }
+    assertOpen(session);
+    assertNotFinished(session);
+
+    const { rows: stages } = await client.query<TournamentStageRow>(
+      'SELECT * FROM tournament_stages WHERE session_id = $1 ORDER BY position ASC',
+      [sessionId]
+    );
+    if (stages.length === 0) {
+      throw Object.assign(new Error('Aucun arbre n’a encore été joué'), { status: 400 });
+    }
+    const { rows: matches } = await client.query<LiveMatch>(
+      'SELECT * FROM tournament_matches WHERE session_id = $1',
+      [sessionId]
+    );
+    const byStage = groupMatchesByStage(matches);
+    const unfinished = stages.find((stage) => {
+      const stageMatches = byStage.get(stage.id);
+      return !stageMatches || !isTournamentFinished(stage.format, stageMatches);
     });
-    return { bracketGenerated, finished, championTeamId: standings[0]?.team_id ?? null, standings };
+    if (unfinished) {
+      throw Object.assign(
+        new Error(`L’arbre « ${unfinished.name} » n’est pas terminé — finis-le ou supprime-le`),
+        { status: 400 }
+      );
+    }
+
+    const teams = await getSessionTeams(sessionId);
+    const overall = computeOverallStandings(session, stages, matches, teams);
+    const rewardByRank: Record<number, number> = {
+      1: session.reward_1st ?? 0,
+      2: session.reward_2nd ?? 0,
+      3: session.reward_3rd ?? 0,
+    };
+
+    const awards: FinishTournamentResult['awards'] = [];
+    for (const entry of overall) {
+      const amount = rewardByRank[entry.rank] ?? 0;
+      if (amount <= 0) continue;
+      const { rows: members } = await client.query<{ user_id: number }>(
+        'SELECT user_id FROM tournament_team_members WHERE team_id = $1 ORDER BY id ASC',
+        [entry.team_id]
+      );
+      for (const member of members) {
+        await spService.creditSP({
+          userId: member.user_id,
+          amount,
+          type: 'event_reward',
+          seasonId: session.season_id,
+          relatedId: sessionId,
+          note: session.title ?? 'Événement',
+          client,
+        });
+        awards.push({ userId: member.user_id, amount, rank: entry.rank, teamId: entry.team_id });
+      }
+    }
+
+    await client.query('UPDATE event_sessions SET tournament_finished_at = NOW() WHERE id = $1', [
+      sessionId,
+    ]);
+    await client.query('COMMIT');
+    return { awards };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
   }
-  const championTeamId = finished ? computePlacements(format, byId).champion : null;
-  return { bracketGenerated, finished, championTeamId, standings: [] };
 }
 
 // ---------------------------------------------------------------------------

@@ -21,6 +21,9 @@ router.delete(
   requireSessionManager,
   eventsController.removeParticipant
 );
+router.get('/:id/kicks', requireAuth, eventsController.listKicks);
+router.post('/:id/kicks', requireAuth, requireSessionManager, eventsController.kickPlayer);
+router.delete('/:id/kicks/:userId', requireAuth, requireSessionManager, eventsController.unkickPlayer);
 router.post('/:id/questions', requireAuth, requireSessionManager, eventsController.askQuestion);
 router.post(
   '/:id/questions/:questionId/close',
@@ -130,8 +133,15 @@ router.post(
   requireSessionManager,
   tournamentsController.autoGenerateTeams
 );
-router.post('/:id/tournament/bracket', requireAuth, requireSessionManager, tournamentsController.generateBracket);
-router.delete('/:id/tournament/bracket', requireAuth, requireSessionManager, tournamentsController.resetBracket);
+router.post('/:id/tournament/stages', requireAuth, requireSessionManager, tournamentsController.createStage);
+router.delete(
+  '/:id/tournament/stages/:stageId',
+  requireAuth,
+  requireSessionManager,
+  tournamentsController.deleteStage
+);
+// Verse des SP (dotation sur le classement général) : MSP uniquement
+router.post('/:id/tournament/finish', requireAuth, requireAdmin, tournamentsController.finishTournament);
 router.post(
   '/:id/tournament/matches/:matchId/winner',
   requireAuth,

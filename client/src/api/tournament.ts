@@ -100,11 +100,15 @@ export const autoGenerateTeams = (sessionId: number, teamCount?: number) =>
     ...(teamCount !== undefined ? { teamCount } : {}),
   });
 
-export const generateBracket = (sessionId: number) =>
-  apiClient.post<EventSessionDetail>(`/api/events/${sessionId}/tournament/bracket`);
+export const createStage = (sessionId: number, data: { name?: string; format?: string } = {}) =>
+  apiClient.post<EventSessionDetail>(`/api/events/${sessionId}/tournament/stages`, data);
 
-export const resetBracket = (sessionId: number) =>
-  apiClient.delete<EventSessionDetail>(`/api/events/${sessionId}/tournament/bracket`);
+export const deleteStage = (sessionId: number, stageId: number) =>
+  apiClient.delete<EventSessionDetail>(`/api/events/${sessionId}/tournament/stages/${stageId}`);
+
+/** MSP uniquement : termine le tournoi et verse la dotation (classement général). */
+export const finishTournament = (sessionId: number) =>
+  apiClient.post<EventSessionDetail>(`/api/events/${sessionId}/tournament/finish`);
 
 export const resolveMatch = (sessionId: number, matchId: number, winnerTeamId: number) =>
   apiClient.post<EventSessionDetail>(

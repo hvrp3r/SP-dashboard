@@ -75,6 +75,17 @@ granted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 UNIQUE (user_id, permission)
 ```
 
+### `event_kicks`
+-- (075) Joueurs exclus d'une session d'événement par le MSP ou l'organisateur. Tant que la ligne existe, le joueur ne peut plus rejoindre la session ni y jouer (flappy/speedrun). Réintégrer = supprimer la ligne (les remboursements restent tracés dans `sp_transactions`).
+```sql
+id SERIAL PRIMARY KEY,
+session_id INT NOT NULL REFERENCES event_sessions(id),
+user_id INT NOT NULL REFERENCES users(id),
+kicked_by INT REFERENCES users(id),
+kicked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+UNIQUE (session_id, user_id)
+```
+
 ### `seasons`
 ```sql
 id SERIAL PRIMARY KEY,
@@ -106,7 +117,8 @@ season_id INT REFERENCES seasons(id),
 amount INT NOT NULL,                   -- positif = crédit, négatif = débit
 type VARCHAR(50) NOT NULL,
   -- 'login_bonus' | 'challenge_win' | 'challenge_loss'
-  -- 'event_reward' | 'admin_grant' | 'admin_deduct'
+  -- 'event_reward' | 'event_entry' | 'event_entry_refund' (075, mise remboursée à un joueur exclu)
+  -- 'admin_grant' | 'admin_deduct'
   -- 'gambling_spend' | 'gambling_win'
 related_id INT,                        -- challenge_id ou event_session_id (nullable)
 note TEXT,
@@ -172,7 +184,9 @@ game_image_url TEXT, game_external_url TEXT,  -- (064) fiche jeu speedrun.com
 tournament_format VARCHAR(20),        -- (067) 'single_elim' | 'double_elim' | 'round_robin' — NULL hors tournoi
 tournament_max_teams INT,             -- (067) taille d'arbre prévue (2-64)
 tournament_team_size INT,             -- (067) joueurs par équipe (1-16)
-tournament_player_teams BOOLEAN NOT NULL DEFAULT FALSE  -- (072) true = les inscrits forment eux-mêmes leurs équipes
+tournament_player_teams BOOLEAN NOT NULL DEFAULT FALSE,  -- (072) true = les inscrits forment eux-mêmes leurs équipes
+tournament_placement_points JSONB NOT NULL DEFAULT '[]',  -- (073) barème de points par place dans un arbre (index 0 = 1re place), au moins une valeur > 0
+tournament_finished_at TIMESTAMPTZ    -- (073) tournoi terminé par le MSP (dotation versée sur le classement général)
 ```
 
 ### `event_participants`
@@ -233,6 +247,18 @@ created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 UNIQUE (team_id, user_id)
 ```
 
+### `tournament_stages`
+-- (073) Arbres d'un tournoi : plusieurs arbres successifs ou parallèles avec les mêmes équipes, chacun avec son propre format. `finished_at` est renseigné à la résolution de son dernier match (l'état "terminé" est de toute façon recalculé à partir des matchs).
+```sql
+id SERIAL PRIMARY KEY,
+session_id INT NOT NULL REFERENCES event_sessions(id),
+name VARCHAR(100) NOT NULL,           -- défaut "Arbre N"
+format VARCHAR(20) NOT NULL,          -- 'single_elim' | 'double_elim' | 'round_robin' (CHECK)
+position INT NOT NULL,                -- ordre de création, UNIQUE (session_id, position)
+created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+finished_at TIMESTAMPTZ
+```
+
 ### `tournament_matches`
 -- Matchs de tournoi. L'orientation de l'arbre est portée par les feeds :
 -- 't:5' (équipe 5 posée), 'w:12' (vainqueur du match 12), 'l:12' (perdant du
@@ -241,6 +267,7 @@ UNIQUE (team_id, user_id)
 ```sql
 id SERIAL PRIMARY KEY,
 session_id INT REFERENCES event_sessions(id),
+stage_id INT NOT NULL REFERENCES tournament_stages(id),  -- (073) arbre du match
 bracket VARCHAR(20) NOT NULL DEFAULT 'main',  -- 'main' (élimination simple / round-robin) | 'winners' | 'losers' (double) | 'grand_final' | 'grand_final_reset'
 round INT NOT NULL,                   -- numéro de tour (ou de journée en round-robin)
 position INT NOT NULL,
@@ -250,7 +277,7 @@ team_b_id INT REFERENCES tournament_teams(id),
 winner_team_id INT REFERENCES tournament_teams(id),
 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 resolved_at TIMESTAMPTZ,
-UNIQUE (session_id, bracket, round, position)
+UNIQUE (stage_id, bracket, round, position)  -- (073) avant : (session_id, …)
 ```
 
 ### `tournament_announcements`
@@ -359,7 +386,7 @@ user_id INT REFERENCES users(id),
 type VARCHAR(50) NOT NULL,
   -- 'challenge_received' | 'challenge_accepted' | 'challenge_declined' | 'challenge_resolved'
   -- 'challenge_cancelled' | 'challenge_expired' | 'event_open' | 'sp_gained' | 'sp_lost'
-  -- 'suggestion_comment' | 'suggestion_closed' | 'tournament_announcement' | 'permission_granted'
+  -- 'suggestion_comment' | 'suggestion_closed' | 'tournament_announcement' | 'permission_granted' | 'event_kicked'
 message TEXT NOT NULL,
 link TEXT,                             -- route client pour le clic (ex: '/defis')
 read_at TIMESTAMPTZ,
@@ -637,7 +664,7 @@ Page (`/suggestions`) où les joueurs proposent des features ou signalent des bu
 Nouveau type de session d'événement (migration 067), même pattern que flappy_bird/speedrun : les colonnes génériques d'`event_sessions` servent de socle (`entry_fee` = mise d'inscription, `reward_1st/2nd/3rd` = dotation), et les tables `tournament_*` portent le spécifique. Les matchs se jouent hors-plateforme ; le MSP déclare chaque vainqueur depuis le panel (décision explicite — pas de déclaration par les participants, contrairement aux défis), et l'avancement se propage automatiquement. Les contrôles MSP sont fusionnés dans la page `/evenements/:id` (même pattern que les autres événements — pas de page `/admin/tournois`).
 
 #### Création :
-- Le MSP crée une session depuis la page Événements avec `game_type='tournament'` : format (`single_elim` | `double_elim` | `round_robin`), nombre d'équipes (2-64), taille d'équipe (1-16), dotation (SP **par membre** de l'équipe finissant 1er/2e/3e — les 3 champs sont requis mais peuvent être à 0 ; en élimination directe les deux demi-finalistes sont ex-aequo 3e et reçoivent chacun la dotation 3e).
+- Le MSP crée une session depuis la page Événements avec `game_type='tournament'` : format **par défaut** des arbres (`single_elim` | `double_elim` | `round_robin`), nombre d'équipes (2-64), taille d'équipe (1-16), **barème de points par place** (`tournament_placement_points`, ex : `10, 7, 5, 3, 2, 1`), dotation (SP **par membre** de l'équipe classée 1re/2e/3e du **classement général** — les 3 champs sont requis mais peuvent être à 0).
 - `entry_fee` optionnel (même mécanique de mise au self-join que les autres sessions).
 - La création notifie tout le monde (`event_open`, message "Nouveau tournoi : …") + alerte Discord si activée.
 
@@ -655,13 +682,17 @@ Nouveau type de session d'événement (migration 067), même pattern que flappy_
 - **Élimination directe** : bracket `main`, serpentin classique (seed 1 vs seed P, 2 vs P-1…). Les nombres non-puissance de 2 sont comblés par des **byes** (slot vide, auto-résolu : la seule équipe présente avance). 3e place = les deux perdants des demi-finales (ex-aequo).
 - **Double élimination** : brackets `winners` + `losers`. Les perdants WB descendent en LB (rounds mineurs = arrivée des perdants par paires adjacentes du round WB correspondant ; rounds majeurs = survivants entre eux ; le perdant de la finale WB entre directement dans la finale LB). Grande finale : champion WB vs champion LB. **Match de reset** : si le représentant LB gagne la grande finale, un match `grand_final_reset` est créé (le champion WB doit être battu deux fois pour perdre) — sinon le tournoi s'arrête à la GF. 3e place = perdant de la finale LB.
 - **Round-robin** : poule unique, méthode du cercle (N-1 journées si N pair, N avec un bye si impair). Classement par victoires, départage par seed (ordre de création des équipes — pas de matchs nuls en v1).
+- **Plusieurs arbres par tournoi** (migration 073, demande explicite de l'utilisateur) : le MSP/l'organisateur génère autant d'arbres qu'il veut (`POST /:id/tournament/stages` avec nom et format — **format choisi par arbre**, le format du tournoi n'est que la valeur par défaut), avec **les mêmes équipes et joueurs** (équipes figées dès le premier arbre). Le 1er arbre seed par ordre de création des équipes ; les suivants par **classement général courant** (points décroissants). Un arbre sans match joué peut être supprimé (`DELETE /:id/tournament/stages/:stageId` — remplace l'ancien reset) ; quand il n'en reste plus, les équipes redeviennent modifiables. Les résultats de chaque arbre sont conservés.
 - L'arbre complet est généré d'un coup (tous les matchs, slots TBD) ; les feeds (`w:`/`l:`/`t:`) orientent la propagation : résoudre un match remplit les slots suivants et auto-résout les byes en cascade, le tout dans une transaction (`SELECT … FOR UPDATE` sur les matchs de la session).
 
-#### Résolution & dotation :
-- Le MSP déclare le vainqueur de chaque match **jouable** (les deux équipes connues) — jamais un match en attente.
-- À la résolution du **dernier match** (finale single / GF ou reset double / dernier match RR), le classement final est calculé et la **dotation est distribuée automatiquement** : `reward_1st/2nd/3rd` SP par membre des équipes classées (transactions `event_reward`, note = titre du tournoi, dans la même transaction que la propagation). Les notifications `sp_gained` (avec tag d'équipe) sont créées depuis le contrôleur.
+#### Résolution, score & dotation :
+- Le MSP déclare le vainqueur de chaque match **jouable** (les deux équipes connues) — jamais un match en attente. La propagation se fait au sein de l'arbre du match (`SELECT … FOR UPDATE` sur les matchs de cet arbre).
+- **Placement dans un arbre terminé** (`computeStagePlacements`) : élimination directe/double → selon le tour d'élimination (plus tard = mieux), les éliminés d'un même tour sont **ex-aequo** (8 équipes en élim. directe : 1, 2, 3, 3, 5, 5, 5, 5 ; en double, toute élimination se fait en bracket perdants sauf la finale décisive) ; round-robin → ordre du classement (victoires puis seed, sans ex-aequo).
+- **Score d'équipe** = somme sur les arbres terminés de `tournament_placement_points[place - 1]` (0 au-delà du barème) ; **classement général** en rang "compétition" (ex-aequo = même rang : 1, 1, 3…). Barème configurable à la création — décision explicite de l'utilisateur ; il doit contenir au moins une valeur > 0 (sinon tout le monde serait 1er ex-aequo).
+- **Dotation sur le classement général** (décision explicite de l'utilisateur) : plus de distribution à la fin d'un arbre. Le MSP clique « Terminer le tournoi » (`POST /:id/tournament/finish`, **`requireAdmin`** — c'est le MSP qui donne les SP, même pour un tournoi d'organisateur) : exige ≥ 1 arbre et tous les arbres terminés, verse `reward_1st/2nd/3rd` SP par membre aux équipes de rang 1/2/3 (ex-aequo : chacune touche la dotation du rang commun), transactions `event_reward`, puis fige le tournoi (`tournament_finished_at` : plus de création d'arbre ni de résolution). Notifications `sp_gained` depuis le contrôleur.
+- Migration 073 : les tournois existants passent sur un arbre unique "Arbre 1" ; ceux déjà clôturés ou ayant déjà versé des SP sont marqués terminés pour ne jamais redistribuer une dotation.
 - **Ajustements libres** en plus : le MSP peut attribuer des SP à la main à n'importe quel inscrit (même endpoint `award` que le quiz), puis clôture la session quand il veut.
-- **Réinitialisation de l'arbre** : possible tant qu'**aucun match n'a été résolu** (sinon refus — préserver l'historique). Le reset supprime les matchs, les équipes redeviennent modifiables.
+- **Suppression d'un arbre** : possible tant qu'**aucun match n'y a été joué** (les byes auto-résolus ne comptent pas) — sinon refus, pour préserver l'historique.
 
 #### Annonces :
 - Le MSP publie des annonces (500 caractères max) visibles par tous dans le tournoi ; chaque publication notifie **tous les inscrits** (`tournament_announcement`, message tronqué à 100 caractères, link `/evenements/:id`).
@@ -674,6 +705,7 @@ Le MSP peut déléguer l'organisation d'événements à un joueur sans le promou
 - **Gérer** : uniquement les sessions **qu'il a créées** (`event_sessions.created_by`) — toutes les routes de gestion d'une session (`/:id/...` : questions, participants, équipes/arbre/matchs/annonces, exclusions, clôture/annulation) passent par `requireSessionManager` (MSP = toutes les sessions). Côté client, `canManageSession` (`client/src/lib/permissions.ts`) décide de l'affichage des contrôles ; le serveur revérifie toujours.
 - **Participation** : un organisateur **peut participer** à sa propre session (décision explicite de l'utilisateur), comme le MSP.
 - **Attribution de SP réservée au MSP** : l'attribution libre (`POST /:id/award`, bouton « Attribuer les SP ») reste `requireAdmin`, même sur une session créée par un organisateur — c'est le MSP qui donne les SP (décision explicite de l'utilisateur). Le formulaire est masqué côté client pour l'organisateur. La dotation automatique par rang (fin de tournoi, close-and-distribute flappy/speedrun) n'est pas concernée.
+- **Exclusion (kick)** : le MSP ou l'organisateur de la session peut exclure un joueur (`POST /:id/kicks`, `requireSessionManager`), demande explicite de l'utilisateur. Dans une seule transaction : retrait des participants avec **remboursement de la mise nette réellement payée** (`event_entry_refund` ; rien si le joueur avait été ajouté à la main), retrait de son équipe de tournoi (une équipe créée par un joueur et devenue vide disparaît tant qu'aucun arbre n'existe ; après génération, l'équipe continue sans lui et il ne touchera pas la dotation), exclusion de ses tentatives flappy/speedrun, et ligne `event_kicks` qui bloque toute réinscription ou nouvelle tentative. Refusé si le joueur a déjà été récompensé, sur soi-même, ou sur un MSP par un organisateur. Le joueur est notifié (`event_kicked`) et voit un bandeau sur la page. Le gestionnaire voit la liste « Joueurs exclus » et peut **réintégrer** (`DELETE /:id/kicks/:userId`, ou en le rajoutant à la main) — ses scores exclus ne sont pas restaurés. Remplace l'ancien bouton « Retirer » du quiz (qui laissait le joueur se réinscrire sans rembourser).
 - **Révocation immédiate** : la permission est relue en BDD à chaque requête (pas portée par le JWT). Une fois révoquée, l'ex-organisateur ne gère plus ses sessions — le MSP peut toujours les reprendre.
 - Les permissions sont exposées dans `permissions: UserPermission[]` sur `/api/users/me`, le login et la liste admin des joueurs.
 
@@ -692,6 +724,7 @@ Le MSP peut déléguer l'organisation d'événements à un joueur sans le promou
 | Créer/clôturer une session événement  | ❌ (✅ si organisateur, ses sessions uniquement) | ✅ |
 | Attribuer les SP d'un événement       | ❌ (même organisateur) | ✅ |
 | Gérer équipes/arbre/matchs d'un tournoi | ❌ (✅ si organisateur, ses tournois) | ✅ |
+| Exclure/réintégrer un joueur d'un événement | ❌ (✅ si organisateur, ses sessions) | ✅ |
 | Publier une annonce de tournoi        | ❌ (✅ si organisateur, ses tournois) | ✅ |
 | Nommer/retirer un organisateur d'événements | ❌ | ✅ |
 | Créer/configurer une caisse gambling | ❌ | ✅ |
@@ -788,6 +821,7 @@ Ajoutées en cours de projet, à la demande de l'utilisateur, non prévues dans 
 - Défis "Pierre-feuille-ciseaux" (`challenges.type = 'rps'`) : variante 1v1 en 3 manches (premier à 2 manches gagnées), coups cachés choisis une fois le défi accepté, le serveur départage et les égalités se rejouent (voir section 4)
 - Organisateurs d'événements : permission déléguée par le MSP à un joueur pour créer des événements et gérer les siens (il peut y participer, mais l'attribution libre de SP reste au MSP — voir section 11)
 - Équipes de tournoi formées par les joueurs (option à la création, voir section 10)
+- Plusieurs arbres par tournoi avec les mêmes équipes, score par placement et classement général (voir section 10)
 - Tournois (`game_type = 'tournament'`) : arbre à élimination simple/double ou round-robin, équipes tag+logo générées (serpentin pondéré par rating) ou composées à la main, dotation par rang distribuée automatiquement, annonces du MSP (voir section 10)
 
 ---
@@ -876,7 +910,8 @@ VITE_KOFI_URL=
 | Formats de tournoi ? | **Les 3** : élimination directe, double élimination (avec match de reset si le représentant de la bracket perdants gagne la grande finale) et round-robin — décision explicite de l'utilisateur |
 | Comment se forment les équipes d'un tournoi ? | Inscription individuelle puis équipes formées par le MSP : manuellement, ou génération aléatoire équilibrée (serpentin pondéré par rating, *bucket shuffle* des ex-aequos). Option par tournoi (`tournament_player_teams`) pour que les joueurs choisissent eux-mêmes leur équipe — demande explicite de l'utilisateur |
 | Base de la pondération des équipes ? | Rating MSP (`event_participants.rating`, éditable) avec fallback sur le **solde SP** au moment de la génération — décision explicite |
-| Récompenses de tournoi ? | Dotation par rang (`reward_1st/2nd/3rd` SP **par membre**) configurée à la création, **distribuée automatiquement** à la fin + ajustements libres du MSP ensuite — transaction type `event_reward` |
+| Récompenses de tournoi ? | Dotation par rang (`reward_1st/2nd/3rd` SP **par membre**) configurée à la création, versée par le MSP sur le **classement général** quand il termine le tournoi (plus automatiquement à la fin d'un arbre depuis la migration 073) + ajustements libres du MSP — transaction type `event_reward` |
+| Plusieurs arbres dans un même tournoi ? | Oui (migration 073) — mêmes équipes, format par arbre, résultats conservés ; score d'équipe = somme des points de placement (barème configurable à la création), classement général qui sert à la dotation |
 | Qui déclare les vainqueurs de matchs de tournoi ? | **MSP uniquement** (il organise les parties hors-plateforme) — décision explicite, pas de déclaration par les participants comme les défis |
 | Les tournois sont-ils une entité séparée des événements ? | Non — un tournoi est une session comme les autres (`event_sessions.game_type = 'tournament'`), tables `tournament_*` pour le spécifique (même pattern que flappy_bird/speedrun), contrôles MSP dans la page `/evenements/:id` |
 | Un défi "pile ou face" peut-il avoir plusieurs adversaires comme un défi classique ? | Non — restreint à un seul adversaire (2 participants), un pile ou face n'a que deux faces. Résolution automatique par le serveur dès acceptation, pas de déclaration manuelle ni d'étape "accepted" visible |

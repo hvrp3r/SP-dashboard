@@ -28,6 +28,7 @@ interface CreateSessionInput {
   tournamentMaxTeams?: number | null;
   tournamentTeamSize?: number | null;
   tournamentPlayerTeams?: boolean;
+  tournamentPlacementPoints?: number[];
 }
 
 export async function createSession({
@@ -47,13 +48,15 @@ export async function createSession({
   tournamentMaxTeams = null,
   tournamentTeamSize = null,
   tournamentPlayerTeams = false,
+  tournamentPlacementPoints = [],
 }: CreateSessionInput): Promise<EventSessionRow> {
   const { rows } = await pool.query<EventSessionRow>(
     `INSERT INTO event_sessions
        (season_id, game_type, title, description, entry_fee, status, created_by,
         ends_at, reward_1st, reward_2nd, reward_3rd, game_image_url, game_external_url,
-        tournament_format, tournament_max_teams, tournament_team_size, tournament_player_teams)
-     VALUES ($1, $2, $3, $4, $5, 'open', $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+        tournament_format, tournament_max_teams, tournament_team_size, tournament_player_teams,
+        tournament_placement_points)
+     VALUES ($1, $2, $3, $4, $5, 'open', $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
      RETURNING *`,
     [
       seasonId,
@@ -72,6 +75,7 @@ export async function createSession({
       tournamentMaxTeams,
       tournamentTeamSize,
       tournamentPlayerTeams,
+      JSON.stringify(tournamentPlacementPoints),
     ]
   );
   return rows[0] as EventSessionRow;
@@ -173,6 +177,9 @@ export async function joinSession(
   const existing = await getParticipantByUser(sessionId, userId);
   if (existing) {
     throw Object.assign(new Error('Ce joueur participe déjà à cette session'), { status: 409 });
+  }
+  if (await isKicked(sessionId, userId)) {
+    throw Object.assign(new Error('Tu as été exclu de cet événement'), { status: 403 });
   }
 
   if (!session.entry_fee) {
@@ -460,4 +467,166 @@ export async function awardParticipants(
   }
 
   return awarded;
+}
+
+// ---------------------------------------------------------------------------
+// Exclusion (kick) d'un joueur — event_kicks, migration 075
+// ---------------------------------------------------------------------------
+
+export interface EventKickEntry {
+  user_id: number;
+  username: string;
+  kicked_by: number | null;
+  kicked_at: string;
+}
+
+export async function isKicked(sessionId: number, userId: number): Promise<boolean> {
+  const { rowCount } = await pool.query(
+    'SELECT 1 FROM event_kicks WHERE session_id = $1 AND user_id = $2',
+    [sessionId, userId]
+  );
+  return (rowCount ?? 0) > 0;
+}
+
+export async function listKicks(sessionId: number): Promise<EventKickEntry[]> {
+  const { rows } = await pool.query<EventKickEntry>(
+    `SELECT k.user_id, u.username, k.kicked_by, k.kicked_at
+     FROM event_kicks k
+     JOIN users u ON u.id = k.user_id
+     WHERE k.session_id = $1
+     ORDER BY k.kicked_at DESC`,
+    [sessionId]
+  );
+  return rows;
+}
+
+export interface KickResult {
+  /** SP de mise remboursés (0 si rien n'avait été payé) */
+  refunded: number;
+}
+
+/**
+ * Exclut un joueur d'une session, dans une seule transaction (verrou sur la
+ * session) : retrait des participants avec remboursement net de la mise
+ * réellement payée, retrait de son équipe de tournoi (une équipe créée par un
+ * joueur et devenue vide disparaît tant qu'aucun arbre n'existe), exclusion de
+ * ses tentatives flappy/speedrun, puis inscription dans event_kicks — qui
+ * bloque toute réinscription ou nouvelle tentative.
+ */
+export async function kickPlayer(
+  sessionId: number,
+  userId: number,
+  kickedBy: number
+): Promise<KickResult> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: sessionRows } = await client.query<EventSessionRow>(
+      'SELECT * FROM event_sessions WHERE id = $1 FOR UPDATE',
+      [sessionId]
+    );
+    const session = sessionRows[0];
+    if (!session) {
+      throw Object.assign(new Error('Session introuvable'), { status: 404 });
+    }
+    if (session.status !== 'open') {
+      throw Object.assign(new Error('Cette session est clôturée'), { status: 400 });
+    }
+
+    const { rows: participantRows } = await client.query<EventParticipantRow>(
+      'SELECT * FROM event_participants WHERE session_id = $1 AND user_id = $2 FOR UPDATE',
+      [sessionId, userId]
+    );
+    const participant = participantRows[0];
+    if (participant?.awarded_at) {
+      throw Object.assign(new Error('Impossible d’exclure un joueur déjà récompensé'), {
+        status: 400,
+      });
+    }
+
+    const { rowCount: inserted } = await client.query(
+      `INSERT INTO event_kicks (session_id, user_id, kicked_by)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (session_id, user_id) DO NOTHING`,
+      [sessionId, userId, kickedBy]
+    );
+    if ((inserted ?? 0) === 0) {
+      throw Object.assign(new Error('Ce joueur est déjà exclu de cet événement'), { status: 409 });
+    }
+
+    let refunded = 0;
+    if (participant) {
+      await client.query('DELETE FROM event_participants WHERE id = $1', [participant.id]);
+      // Mise nette réellement payée (un ajout manuel par le MSP ne débite rien,
+      // et un remboursement/une révocation précédente est déjà décompté)
+      const { rows: paidRows } = await client.query<{ paid: string }>(
+        `SELECT COALESCE(-SUM(amount), 0) AS paid FROM sp_transactions
+         WHERE user_id = $1 AND related_id = $2 AND revoked_at IS NULL
+           AND type IN ('event_entry', 'event_entry_refund')`,
+        [userId, sessionId]
+      );
+      const paid = Number(paidRows[0]?.paid ?? 0);
+      if (paid > 0) {
+        await spService.creditSP({
+          userId,
+          amount: paid,
+          type: 'event_entry_refund',
+          seasonId: session.season_id,
+          relatedId: sessionId,
+          note: session.title ?? 'Événement',
+          client,
+        });
+        refunded = paid;
+      }
+    }
+
+    if (session.game_type === 'tournament') {
+      const { rows: teamRows } = await client.query<{ id: number; created_by: number | null }>(
+        `DELETE FROM tournament_team_members m
+         USING tournament_teams t
+         WHERE m.team_id = t.id AND t.session_id = $1 AND m.user_id = $2
+         RETURNING t.id, t.created_by`,
+        [sessionId, userId]
+      );
+      const team = teamRows[0];
+      if (team && team.created_by != null) {
+        await client.query(
+          `DELETE FROM tournament_teams t
+           WHERE t.id = $1
+             AND NOT EXISTS (SELECT 1 FROM tournament_team_members m WHERE m.team_id = t.id)
+             AND NOT EXISTS (SELECT 1 FROM tournament_matches tm WHERE tm.session_id = t.session_id)`,
+          [team.id]
+        );
+      }
+    } else if (session.game_type === 'flappy_bird') {
+      await client.query(
+        `UPDATE flappybird_attempts SET excluded_at = NOW(), excluded_by = $3
+         WHERE session_id = $1 AND user_id = $2 AND excluded_at IS NULL`,
+        [sessionId, userId, kickedBy]
+      );
+    } else if (session.game_type === 'speedrun') {
+      await client.query(
+        `UPDATE speedrun_attempts SET excluded_at = NOW(), excluded_by = $3
+         WHERE session_id = $1 AND user_id = $2 AND excluded_at IS NULL`,
+        [sessionId, userId, kickedBy]
+      );
+    }
+
+    await client.query('COMMIT');
+    return { refunded };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/** Réintègre un joueur exclu : il peut de nouveau rejoindre/jouer la session. */
+export async function unkickPlayer(sessionId: number, userId: number): Promise<boolean> {
+  const { rowCount } = await pool.query(
+    'DELETE FROM event_kicks WHERE session_id = $1 AND user_id = $2',
+    [sessionId, userId]
+  );
+  return (rowCount ?? 0) > 0;
 }

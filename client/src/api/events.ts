@@ -1,5 +1,6 @@
 import { apiClient } from './client.js';
 import type {
+  EventKickList,
   EventQuestionView,
   EventSession,
   EventSessionDetail,
@@ -30,6 +31,7 @@ interface CreateTournamentOptions {
   tournamentMaxTeams: number;
   tournamentTeamSize: number;
   tournamentPlayerTeams?: boolean;
+  tournamentPlacementPoints?: number[];
   reward1st: number;
   reward2nd: number;
   reward3rd: number;
@@ -57,6 +59,16 @@ export const joinSession = (sessionId: number) =>
 
 export const addParticipant = (sessionId: number, userId: number) =>
   apiClient.post<EventSessionDetail>(`/api/events/${sessionId}/participants`, { userId });
+
+export const listKicks = (sessionId: number) =>
+  apiClient.get<EventKickList>(`/api/events/${sessionId}/kicks`);
+
+/** Exclut un joueur (retrait, remboursement de la mise, plus de réinscription). */
+export const kickPlayer = (sessionId: number, userId: number) =>
+  apiClient.post<EventSessionDetail>(`/api/events/${sessionId}/kicks`, { userId });
+
+export const unkickPlayer = (sessionId: number, userId: number) =>
+  apiClient.delete<EventSessionDetail>(`/api/events/${sessionId}/kicks/${userId}`);
 
 export const removeParticipant = (sessionId: number, participantId: number) =>
   apiClient.delete<EventSessionDetail>(

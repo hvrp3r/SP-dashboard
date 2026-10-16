@@ -10,6 +10,7 @@ const VALID_TYPES: SpTransactionType[] = [
   'challenge_loss',
   'event_reward',
   'event_entry',
+  'event_entry_refund',
   'admin_grant',
   'admin_deduct',
   'gambling_spend',
