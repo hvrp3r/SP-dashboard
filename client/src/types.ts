@@ -156,6 +156,7 @@ export type SpTransactionType =
   | 'challenge_loss'
   | 'event_reward'
   | 'event_entry'
+  | 'event_entry_refund'
   | 'admin_grant'
   | 'admin_deduct'
   | 'gambling_spend'
@@ -261,6 +262,19 @@ export type EventStatus = 'open' | 'closed' | 'cancelled';
 
 export const EVENT_GAME_TYPES = ['quiz', 'flappy_bird', 'speedrun', 'tournament'] as const;
 export type EventGameType = (typeof EVENT_GAME_TYPES)[number];
+
+export interface EventKick {
+  user_id: number;
+  username: string;
+  kicked_by: number | null;
+  kicked_at: string;
+}
+
+/** `kicked` n'est rempli que pour le MSP / l'organisateur de la session. */
+export interface EventKickList {
+  me: boolean;
+  kicked: EventKick[];
+}
 
 export interface EventSession {
   id: number;
@@ -524,7 +538,8 @@ export type NotificationType =
   | 'suggestion_comment'
   | 'suggestion_closed'
   | 'tournament_announcement'
-  | 'permission_granted';
+  | 'permission_granted'
+  | 'event_kicked';
 
 export interface AppNotification {
   id: number;

@@ -135,6 +135,7 @@ export type SpTransactionType =
   | 'challenge_loss'
   | 'event_reward'
   | 'event_entry'
+  | 'event_entry_refund'
   | 'admin_grant'
   | 'admin_deduct'
   | 'gambling_spend'
@@ -535,7 +536,8 @@ export type NotificationType =
   | 'suggestion_comment'
   | 'suggestion_closed'
   | 'tournament_announcement'
-  | 'permission_granted';
+  | 'permission_granted'
+  | 'event_kicked';
 
 export type CosmeticSlot = 'avatar_frame' | 'banner' | 'name_color' | 'title' | 'name_font';
 export type CosmeticRarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';

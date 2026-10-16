@@ -434,6 +434,9 @@ export async function addParticipant(
     return;
   }
 
+  // Ajout manuel par le gestionnaire = réintégration explicite d'un joueur exclu
+  await eventService.unkickPlayer(sessionId, userId as number);
+
   try {
     await eventService.addParticipant(sessionId, userId as number);
   } catch (err) {
@@ -728,6 +731,97 @@ export async function closeSession(req: Request<{ id: string }>, res: Response):
   }
 
   await eventService.closeSession(sessionId);
+  const detail = await buildSessionDetail(sessionId, req.user!);
+  res.json(detail);
+}
+
+// ---------------------------------------------------------------------------
+// Exclusion (kick) — MSP ou organisateur de la session (requireSessionManager)
+// ---------------------------------------------------------------------------
+
+export async function listKicks(req: Request<{ id: string }>, res: Response): Promise<void> {
+  const sessionId = Number(req.params.id);
+  if (!Number.isInteger(sessionId)) {
+    res.status(400).json({ error: 'Identifiant de session invalide' });
+    return;
+  }
+  const session = await eventService.getSessionById(sessionId);
+  if (!session) {
+    res.status(404).json({ error: 'Session introuvable' });
+    return;
+  }
+  // La liste n'est visible que des gestionnaires ; un joueur apprend seulement
+  // s'il est lui-même exclu (bandeau côté client)
+  const kicks = await eventService.listKicks(sessionId);
+  const canManage = await permissionService.canManageSession(req.user!, session);
+  res.json({
+    me: kicks.some((k) => k.user_id === req.user!.id),
+    kicked: canManage ? kicks : [],
+  });
+}
+
+export async function kickPlayer(
+  req: Request<{ id: string }, {}, { userId?: number }>,
+  res: Response
+): Promise<void> {
+  const sessionId = Number(req.params.id);
+  const userId = req.body?.userId;
+  if (!Number.isInteger(sessionId) || !Number.isInteger(userId)) {
+    res.status(400).json({ error: 'Identifiant invalide' });
+    return;
+  }
+  if (userId === req.user!.id) {
+    res.status(400).json({ error: 'Tu ne peux pas t’exclure toi-même' });
+    return;
+  }
+  const target = await userService.findById(userId as number);
+  if (!target) {
+    res.status(404).json({ error: 'Joueur introuvable' });
+    return;
+  }
+  if (target.role === 'admin' && req.user!.role !== 'admin') {
+    res.status(403).json({ error: 'Seul le MSP peut exclure un MSP' });
+    return;
+  }
+
+  let result;
+  try {
+    result = await eventService.kickPlayer(sessionId, userId as number, req.user!.id);
+  } catch (err) {
+    const status = (err as { status?: number }).status ?? 500;
+    res.status(status).json({ error: err instanceof Error ? err.message : 'Erreur serveur' });
+    return;
+  }
+
+  const session = await eventService.getSessionById(sessionId);
+  await notificationService.createNotification({
+    userId: userId as number,
+    type: 'event_kicked',
+    message: `Tu as été exclu de l’événement ${session?.title ?? ''}${
+      result.refunded > 0 ? ` — ta mise de ${result.refunded} SP t’a été remboursée` : ''
+    }`.trim(),
+    link: `/evenements/${sessionId}`,
+  });
+
+  const detail = await buildSessionDetail(sessionId, req.user!);
+  res.status(201).json(detail);
+}
+
+export async function unkickPlayer(
+  req: Request<{ id: string; userId: string }>,
+  res: Response
+): Promise<void> {
+  const sessionId = Number(req.params.id);
+  const userId = Number(req.params.userId);
+  if (!Number.isInteger(sessionId) || !Number.isInteger(userId)) {
+    res.status(400).json({ error: 'Identifiant invalide' });
+    return;
+  }
+  const removed = await eventService.unkickPlayer(sessionId, userId);
+  if (!removed) {
+    res.status(404).json({ error: 'Ce joueur n’est pas exclu de cet événement' });
+    return;
+  }
   const detail = await buildSessionDetail(sessionId, req.user!);
   res.json(detail);
 }

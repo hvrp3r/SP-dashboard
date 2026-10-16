@@ -21,6 +21,9 @@ router.delete(
   requireSessionManager,
   eventsController.removeParticipant
 );
+router.get('/:id/kicks', requireAuth, eventsController.listKicks);
+router.post('/:id/kicks', requireAuth, requireSessionManager, eventsController.kickPlayer);
+router.delete('/:id/kicks/:userId', requireAuth, requireSessionManager, eventsController.unkickPlayer);
 router.post('/:id/questions', requireAuth, requireSessionManager, eventsController.askQuestion);
 router.post(
   '/:id/questions/:questionId/close',

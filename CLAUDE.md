@@ -75,6 +75,17 @@ granted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 UNIQUE (user_id, permission)
 ```
 
+### `event_kicks`
+-- (075) Joueurs exclus d'une session d'événement par le MSP ou l'organisateur. Tant que la ligne existe, le joueur ne peut plus rejoindre la session ni y jouer (flappy/speedrun). Réintégrer = supprimer la ligne (les remboursements restent tracés dans `sp_transactions`).
+```sql
+id SERIAL PRIMARY KEY,
+session_id INT NOT NULL REFERENCES event_sessions(id),
+user_id INT NOT NULL REFERENCES users(id),
+kicked_by INT REFERENCES users(id),
+kicked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+UNIQUE (session_id, user_id)
+```
+
 ### `seasons`
 ```sql
 id SERIAL PRIMARY KEY,
@@ -106,7 +117,8 @@ season_id INT REFERENCES seasons(id),
 amount INT NOT NULL,                   -- positif = crédit, négatif = débit
 type VARCHAR(50) NOT NULL,
   -- 'login_bonus' | 'challenge_win' | 'challenge_loss'
-  -- 'event_reward' | 'admin_grant' | 'admin_deduct'
+  -- 'event_reward' | 'event_entry' | 'event_entry_refund' (075, mise remboursée à un joueur exclu)
+  -- 'admin_grant' | 'admin_deduct'
   -- 'gambling_spend' | 'gambling_win'
 related_id INT,                        -- challenge_id ou event_session_id (nullable)
 note TEXT,
@@ -374,7 +386,7 @@ user_id INT REFERENCES users(id),
 type VARCHAR(50) NOT NULL,
   -- 'challenge_received' | 'challenge_accepted' | 'challenge_declined' | 'challenge_resolved'
   -- 'challenge_cancelled' | 'challenge_expired' | 'event_open' | 'sp_gained' | 'sp_lost'
-  -- 'suggestion_comment' | 'suggestion_closed' | 'tournament_announcement' | 'permission_granted'
+  -- 'suggestion_comment' | 'suggestion_closed' | 'tournament_announcement' | 'permission_granted' | 'event_kicked'
 message TEXT NOT NULL,
 link TEXT,                             -- route client pour le clic (ex: '/defis')
 read_at TIMESTAMPTZ,
@@ -693,6 +705,7 @@ Le MSP peut déléguer l'organisation d'événements à un joueur sans le promou
 - **Gérer** : uniquement les sessions **qu'il a créées** (`event_sessions.created_by`) — toutes les routes de gestion d'une session (`/:id/...` : questions, participants, équipes/arbre/matchs/annonces, exclusions, clôture/annulation) passent par `requireSessionManager` (MSP = toutes les sessions). Côté client, `canManageSession` (`client/src/lib/permissions.ts`) décide de l'affichage des contrôles ; le serveur revérifie toujours.
 - **Participation** : un organisateur **peut participer** à sa propre session (décision explicite de l'utilisateur), comme le MSP.
 - **Attribution de SP réservée au MSP** : l'attribution libre (`POST /:id/award`, bouton « Attribuer les SP ») reste `requireAdmin`, même sur une session créée par un organisateur — c'est le MSP qui donne les SP (décision explicite de l'utilisateur). Le formulaire est masqué côté client pour l'organisateur. La dotation automatique par rang (fin de tournoi, close-and-distribute flappy/speedrun) n'est pas concernée.
+- **Exclusion (kick)** : le MSP ou l'organisateur de la session peut exclure un joueur (`POST /:id/kicks`, `requireSessionManager`), demande explicite de l'utilisateur. Dans une seule transaction : retrait des participants avec **remboursement de la mise nette réellement payée** (`event_entry_refund` ; rien si le joueur avait été ajouté à la main), retrait de son équipe de tournoi (une équipe créée par un joueur et devenue vide disparaît tant qu'aucun arbre n'existe ; après génération, l'équipe continue sans lui et il ne touchera pas la dotation), exclusion de ses tentatives flappy/speedrun, et ligne `event_kicks` qui bloque toute réinscription ou nouvelle tentative. Refusé si le joueur a déjà été récompensé, sur soi-même, ou sur un MSP par un organisateur. Le joueur est notifié (`event_kicked`) et voit un bandeau sur la page. Le gestionnaire voit la liste « Joueurs exclus » et peut **réintégrer** (`DELETE /:id/kicks/:userId`, ou en le rajoutant à la main) — ses scores exclus ne sont pas restaurés. Remplace l'ancien bouton « Retirer » du quiz (qui laissait le joueur se réinscrire sans rembourser).
 - **Révocation immédiate** : la permission est relue en BDD à chaque requête (pas portée par le JWT). Une fois révoquée, l'ex-organisateur ne gère plus ses sessions — le MSP peut toujours les reprendre.
 - Les permissions sont exposées dans `permissions: UserPermission[]` sur `/api/users/me`, le login et la liste admin des joueurs.
 
@@ -711,6 +724,7 @@ Le MSP peut déléguer l'organisation d'événements à un joueur sans le promou
 | Créer/clôturer une session événement  | ❌ (✅ si organisateur, ses sessions uniquement) | ✅ |
 | Attribuer les SP d'un événement       | ❌ (même organisateur) | ✅ |
 | Gérer équipes/arbre/matchs d'un tournoi | ❌ (✅ si organisateur, ses tournois) | ✅ |
+| Exclure/réintégrer un joueur d'un événement | ❌ (✅ si organisateur, ses sessions) | ✅ |
 | Publier une annonce de tournoi        | ❌ (✅ si organisateur, ses tournois) | ✅ |
 | Nommer/retirer un organisateur d'événements | ❌ | ✅ |
 | Créer/configurer une caisse gambling | ❌ | ✅ |

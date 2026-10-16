@@ -21,6 +21,8 @@ interface Props {
   isAdmin: boolean;
   /** Attribution libre de SP : MSP uniquement, masquée pour un organisateur */
   canAward?: boolean;
+  /** Exclure un joueur de l'événement (MSP ou organisateur de la session) */
+  onKick?: (userId: number, username: string) => void;
   userId?: number;
   onSessionChange: (session: EventSessionDetail) => void;
   onError: (error: string | null) => void;
@@ -44,6 +46,7 @@ export default function TournamentDetail({
   session,
   isAdmin,
   canAward = isAdmin,
+  onKick,
   userId,
   onSessionChange,
   onError,
@@ -165,6 +168,7 @@ export default function TournamentDetail({
         participants={participants}
         teams={teams}
         isAdmin={isAdmin}
+        onKick={onKick}
         busy={busy}
         onSetRating={async (userIdTarget, rating) => {
           const data = await run(() => tournamentApi.setParticipantRating(sessionId, userIdTarget, rating));
@@ -1381,12 +1385,14 @@ function ParticipantsSection({
   participants,
   teams,
   isAdmin,
+  onKick,
   busy,
   onSetRating,
 }: {
   participants: NonNullable<EventSessionDetail['participants']>;
   teams: TournamentTeam[];
   isAdmin: boolean;
+  onKick?: (userId: number, username: string) => void;
   busy: boolean;
   onSetRating: (userId: number, rating: number | null) => Promise<void>;
 }) {
@@ -1452,6 +1458,17 @@ function ParticipantsSection({
                   ✓
                 </button>
               </span>
+            )}
+            {onKick && !p.awarded_at && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => onKick(p.user_id, p.username)}
+                title="Exclure ce joueur du tournoi"
+                className="text-xs text-zinc-500 hover:text-red-400 transition"
+              >
+                🚫
+              </button>
             )}
           </li>
         ))}

@@ -6,6 +6,7 @@ export const TRANSACTION_TYPE_LABELS: Record<SpTransactionType, string> = {
   challenge_loss: 'Défi perdu',
   event_reward: 'Récompense événement',
   event_entry: 'Entrée événement',
+  event_entry_refund: 'Remboursement entrée événement',
   admin_grant: 'Ajustement MSP',
   admin_deduct: 'Ajustement MSP',
   gambling_spend: 'Mise gambling',

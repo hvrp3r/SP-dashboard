@@ -11,6 +11,8 @@ interface Props {
   sessionId: number;
   session: EventSessionDetail;
   isAdmin: boolean;
+  /** Exclure un joueur de l'événement (MSP ou organisateur de la session) */
+  onKick?: (userId: number, username: string) => void;
   userId: number | undefined;
   onSessionChange: (session: EventSessionDetail) => void;
   onError: (message: string | null) => void;
@@ -20,6 +22,7 @@ export default function FlappyBirdSessionDetail({
   sessionId,
   session,
   isAdmin,
+  onKick,
   userId,
   onSessionChange,
   onError,
@@ -364,8 +367,18 @@ export default function FlappyBirdSessionDetail({
                   <tbody>
                     {attempts.map((a) => (
                       <tr key={a.id} className="border-t border-zinc-800">
-                        <td className="px-3 py-2 text-zinc-200">
+                        <td className="px-3 py-2 text-zinc-200 whitespace-nowrap">
                           <UserNameTag username={a.username} />
+                          {onKick && (
+                            <button
+                            type="button"
+                            onClick={() => onKick(a.user_id, a.username)}
+                            title="Exclure ce joueur de l’événement"
+                            className="ml-2 text-xs text-zinc-500 hover:text-red-400 transition"
+                          >
+                            🚫
+                          </button>
+                          )}
                         </td>
                         <td className="px-3 py-2 text-right font-medium text-zinc-100">{a.score}</td>
                         <td className="px-3 py-2 text-zinc-500 whitespace-nowrap">

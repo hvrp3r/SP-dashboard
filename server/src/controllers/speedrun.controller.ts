@@ -62,6 +62,11 @@ export async function submitAttempt(
     return;
   }
 
+  if (await eventService.isKicked(sessionId, req.user!.id)) {
+    res.status(403).json({ error: 'Tu as été exclu de cet événement' });
+    return;
+  }
+
   const { timeMs, videoUrl } = req.body ?? {};
   if (!Number.isInteger(timeMs) || (timeMs as number) <= 0 || (timeMs as number) > MAX_TIME_MS) {
     res.status(400).json({ error: 'Le temps doit être un nombre de millisecondes positif' });
